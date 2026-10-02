@@ -1,14 +1,18 @@
 # ADW Dashboard
 
 A public dashboard for runs of the AI Developer Workflow (ADW) toolkit across
-projects. Two screens:
+projects. One two-pane screen:
 
-- `/` lists every project with its running, completed and failed counts and
-  the time its last run started.
-- `/projects/<owner>/<repo>` shows one project's runs: an Active section for
+- The left pane is a persistent sidebar listing every project with its
+  running, completed and failed counts and the time its last run started. It
+  lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
+  state and scroll position when the selection changes. Below the `md`
+  breakpoint it becomes a horizontal strip above the detail.
+- The right pane shows the selected project's runs: an Active section for
   runs in progress (phase, branch, last update, a stale marker) and a History
   section for finished runs (final phase, timings, duration) with an
-  all/completed/failed toggle.
+  all/completed/failed toggle. `/` shows an empty "Select a project" panel;
+  `/projects/<owner>/<repo>` selects a project and is the deep link.
 
 ## Status: unwired UI
 
@@ -38,10 +42,12 @@ producing them.
 
 ## Routing
 
-Project slugs are `owner/repo`, so the runs page is a catch-all segment,
-`src/app/projects/[...slug]/page.tsx`. `/projects/SBub/adw-toolkit` arrives as
-`["SBub", "adw-toolkit"]` and is joined back into the slug. An unknown slug
-renders Next's `notFound()`.
+Project slugs are `owner/repo`, so the detail page is a catch-all segment,
+`src/app/(dashboard)/projects/[...slug]/page.tsx`. `/projects/SBub/adw-toolkit`
+arrives as `["SBub", "adw-toolkit"]` and is joined back into the slug. An
+unknown slug calls Next's `notFound()`, which renders
+`src/app/(dashboard)/not-found.tsx` inside the two-pane shell; URLs that match
+no route at all fall through to the root `src/app/not-found.tsx`.
 
 ## Running it
 

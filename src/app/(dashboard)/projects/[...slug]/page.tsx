@@ -27,12 +27,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
 
   return (
     <>
-      <PageHeader
-        title={project.display_name}
-        subtitle={project.slug}
-        repoUrl={project.repo_url}
-        back={{ href: "/", label: "All projects" }}
-      />
+      <PageHeader title={project.display_name} subtitle={project.slug} repoUrl={project.repo_url} />
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-semibold">Active</h2>
