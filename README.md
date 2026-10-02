@@ -60,12 +60,17 @@ project list is in the server HTML at first paint and the browser never
 fetches it again on mount:
 
 1. `src/app/(dashboard)/layout.tsx` (a server component) builds a client from
-   `makeQueryClient()`, awaits `prefetchQuery` under `projectsKey`, and calls
-   `dehydrate()` on it. This happens inside a `"use cache"` function
-   (`getProjectsState`, tagged `projects`). The scope is required: React Query
-   stamps the settled query with `Date.now()`, and with `cacheComponents` on,
-   reading the current time outside a cache scope fails the prerender of `/`
-   (`next-prerender-current-time`). Cached, the stamp is the cache fill time.
+   `makeQueryClient()`, awaits `queryClient.query()` under `projectsKey`, and
+   calls `dehydrate()` on it. (`prefetchQuery` is deprecated in React Query
+   5.104; `query()` is its replacement and, unlike `prefetchQuery`, it rejects
+   when the fetcher throws. The layout does not catch that on purpose: a
+   swallowed failure would dehydrate an empty cache and ship the sidebar's
+   fallback silently, so the build or the request fails instead.) This happens
+   inside a `"use cache"` function (`getProjectsState`, tagged `projects`). The
+   scope is required: React Query stamps the settled query with `Date.now()`,
+   and with `cacheComponents` on, reading the current time outside a cache
+   scope fails the prerender of `/` (`next-prerender-current-time`). Cached,
+   the stamp is the cache fill time.
 2. The layout renders `<Providers><HydrationBoundary state={…}>` around the
    sidebar and the page. `src/app/providers.tsx` is a client component holding
    one `QueryClient` per browser session (lazy `useState` from the same
@@ -88,12 +93,27 @@ fetches it again on mount:
    `invalidateQueries` and `refetchQueries` skip static queries; updates go
    through `setQueryData`, or `refetch()` from the hook.
 
-   The `<Suspense>` around `ProjectNav` in the layout shows its fallback in two
-   cases: if the server ever hands over a still-pending query, and in the
+   The `QueryBoundary` around `ProjectNav` in the layout shows its fallback in
+   two cases: if the server ever hands over a still-pending query, and in the
    partial-prerender shell for a slug outside `generateStaticParams`, where
    `usePathname()` cannot resolve at build time and the sidebar streams in at
    request time behind the boundary. On `/` and the pre-rendered project pages
    the sidebar is in the static HTML.
+
+### QueryBoundary
+
+`src/components/QueryBoundary.tsx` is how every suspended query is wrapped: a
+`Suspense` boundary for the pending state inside a `react-error-boundary`
+`ErrorBoundary` for the failed one. `useSuspenseQuery` throws a failed fetch to
+the nearest error boundary, and React Query keeps that error on the query. A
+plain error boundary reset would re-mount the child, which reads the same
+errored query and throws again, so Retry would loop. `QueryBoundary` takes
+`reset` from `useQueryErrorResetBoundary()` and passes it as the boundary's
+`onReset`, so Retry resets the query error state and the next render
+refetches. It renders a default panel ("Could not load.", an optional `detail`
+line, a Retry button) or whatever `errorFallback(retry)` returns. It renders
+inside `Providers`, where the query it guards has its client. The runs list can
+use it once it moves onto the query layer.
 
 ### Where live updates go
 

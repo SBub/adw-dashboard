@@ -34,8 +34,19 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   (`projectsKey`). Import it wherever the list is prefetched or read; never
   build `["projects"]` inline. A key that differs by one element is a cache
   miss, which means a second fetch in the browser.
+- Any `useSuspenseQuery` is rendered inside `QueryBoundary`
+  (`src/components/QueryBoundary.tsx`), never a bare `Suspense`. Without an
+  error boundary a failed fetch escapes to the segment's `error.tsx` and
+  unmounts the whole shell; without `onReset={reset}` from
+  `useQueryErrorResetBoundary` the Retry button re-reads the cached error.
+  `QueryBoundary` sits inside `Providers`, where the query it guards has its
+  client.
+- `queryClient.prefetchQuery` and `prefetchInfiniteQuery` are deprecated in
+  the installed React Query; use `queryClient.query()` and `infiniteQuery()`.
+  Do not swallow their rejection on the server prefetch: an empty dehydrated
+  cache ships the fallback silently, a thrown error fails the build loudly.
 - `cacheComponents` treats `Date.now()` as IO in both prerender passes. On the
-  server, anything that reads the clock (React Query's `prefetchQuery` and
+  server, anything that reads the clock (React Query's `query()` and
   `dehydrate` do) must sit inside a `"use cache"` function or the build fails.
   In client components it does not fail the build: the first clock read
   silently aborts the client prerender and the component ships as its Suspense

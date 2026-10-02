@@ -1,7 +1,8 @@
 import { type DehydratedState, dehydrate, HydrationBoundary } from "@tanstack/react-query";
 import { cacheTag } from "next/cache";
-import { type ReactNode, Suspense } from "react";
+import type { ReactNode } from "react";
 import { ProjectNav } from "@/components/ProjectNav";
+import { QueryBoundary } from "@/components/QueryBoundary";
 import { fetchProjects, makeQueryClient, projectsKey } from "@/data/projects-query";
 import { Providers } from "../providers";
 
@@ -12,7 +13,7 @@ import { Providers } from "../providers";
  * The cache scope is not optional. React Query stamps the settled query with
  * Date.now(), and under Cache Components reading the current time outside a
  * cache scope fails the prerender of "/" (next-prerender-current-time; the
- * build points at the prefetchQuery line). The other ways out are worse:
+ * build points at the query() line). The other ways out are worse:
  * connection() would make every route dynamic, and a client-side fetch is the
  * duplicate fetch this pattern exists to avoid. Cached, the timestamp is simply
  * the fill time. The tag lets a future data source call revalidateTag("projects").
@@ -24,7 +25,12 @@ async function getProjectsState(): Promise<DehydratedState> {
   const queryClient = makeQueryClient();
   // The await means the query is settled when dehydrate runs, so the HTML
   // holds the list rather than a pending promise.
-  await queryClient.prefetchQuery({ queryKey: projectsKey, queryFn: fetchProjects });
+  //
+  // Deliberately not caught. query() rejects when fetchProjects throws, and
+  // swallowing that (.catch(noop), the documented option) would dehydrate an
+  // empty cache and serve the sidebar's fallback with no sign anything went
+  // wrong. Letting it throw fails the build or the request loudly instead.
+  await queryClient.query({ queryKey: projectsKey, queryFn: fetchProjects });
 
   return dehydrate(queryClient);
 }
@@ -47,14 +53,18 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             {/* The fallback shows if the server ever hands over a still-pending
                 query, and in the partial-prerender shell for a slug outside
                 generateStaticParams, where usePathname suspends until request
-                time and the sidebar streams in behind it. */}
-            <Suspense
+                time and the sidebar streams in behind it. A failed browser
+                fetch lands in the boundary's error panel, not in the segment's
+                error.tsx, so the shell stays up. QueryBoundary sits inside
+                Providers, where the query it guards has its client. */}
+            <QueryBoundary
               fallback={
                 <p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>
               }
+              detail="The project list did not load."
             >
               <ProjectNav />
-            </Suspense>
+            </QueryBoundary>
           </aside>
           <section className="min-w-0 flex-1">{children}</section>
         </div>

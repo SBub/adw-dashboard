@@ -20,7 +20,8 @@
     "@tanstack/react-query": "^5.104.1",
     "next": "^16.2.1",
     "react": "^19.2.3",
-    "react-dom": "^19.2.3"
+    "react-dom": "^19.2.3",
+    "react-error-boundary": "^6.1.6"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
