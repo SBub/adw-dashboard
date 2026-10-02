@@ -44,8 +44,13 @@ producing them.
 
 Project slugs are `owner/repo`, so the detail page is a catch-all segment,
 `src/app/(dashboard)/projects/[...slug]/page.tsx`. `/projects/SBub/adw-toolkit`
-arrives as `["SBub", "adw-toolkit"]` and is joined back into the slug. An
-unknown slug calls Next's `notFound()`, which renders
+arrives as `["SBub", "adw-toolkit"]` and is joined back into the slug. Project
+pages are pre-rendered at build time from the project list
+(`generateStaticParams` reads `getProjects()`); a slug that is not in that list
+still renders on demand. The segment's `loading.tsx` is the Suspense boundary
+that lets the shell prerender while the page streams in, and its `error.tsx` is
+the client error boundary (message, digest, Retry) for anything the page throws.
+An unknown slug calls Next's `notFound()`, which renders
 `src/app/(dashboard)/not-found.tsx` inside the two-pane shell; URLs that match
 no route at all fall through to the root `src/app/not-found.tsx`.
 
