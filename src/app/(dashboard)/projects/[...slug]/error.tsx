@@ -5,10 +5,10 @@
 // click away. notFound() does not land here; it renders not-found.tsx instead.
 export default function ProjectError({
   error,
-  reset,
+  retry,
 }: {
   error: Error & { digest?: string };
-  reset: () => void;
+  retry: () => void;
 }) {
   return (
     <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
@@ -21,7 +21,7 @@ export default function ProjectError({
         ) : null}
         <button
           type="button"
-          onClick={() => reset()}
+          onClick={() => retry()}
           className="mt-4 rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           Retry
