@@ -126,6 +126,29 @@ query is static, `setQueryData` is the update path (not `invalidateQueries`). A
 server side source can also refresh the prefetch with
 `revalidateTag("projects")`, so the next visitor's HTML starts from fresh data.
 
+## Realtime
+
+The header shows a connection indicator, `src/components/ConnectionIndicator.tsx`:
+a pill with a dot and one of three labels, `connecting` (amber, pulsing), `live`
+(green) or `reconnecting` (red). It has `role="status"` and `aria-live="polite"`
+so a screen reader announces changes.
+
+The store for that state lives in the same file, deliberately: a module-level
+`status` variable, a `Set` of listeners, and the `subscribe` / `getSnapshot` /
+`getServerSnapshot` trio that the component hands to `useSyncExternalStore`.
+It is not React state because there is one writer outside React and the only
+thing that should re-render on a change is the pill. The server snapshot is the
+constant `"connecting"`: the socket does not exist on the server, and the SSR
+markup must match the first client render, so every page hydrates as
+`connecting` and moves on from there.
+
+The one way in is the exported `setConnectionStatus(next)`. The realtime module,
+when it is written, calls it from the channel's status callback and nothing else;
+the sidebar's live updates (above) go through the query cache, not this store.
+Until that module exists the export has no caller, which knip would report, so it
+carries a `/** @public */` JSDoc tag (knip always ignores exports tagged
+`@public`, `@beta` or `@alias`).
+
 ## Types
 
 `src/types/adw.ts` has two sections. `Project` and `Run` mirror the database

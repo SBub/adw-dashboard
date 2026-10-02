@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 
 import "./globals.css";
 
@@ -18,9 +19,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <Link href="/" className="font-semibold tracking-tight">
               ADW Dashboard
             </Link>
-            <span className="text-xs text-neutral-500 dark:text-neutral-400">
-              AI Developer Workflow runs
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+                AI Developer Workflow runs
+              </span>
+              <ConnectionIndicator />
+            </div>
           </div>
         </header>
         <main>{children}</main>

@@ -59,7 +59,11 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   data layer.
 - Server components by default; `"use client"` only where the browser must
   hold state (the History filter in `RunHistory`, the React Query provider in
-  `src/app/providers.tsx`, and `ProjectNav`, which reads the pathname and the
-  query cache).
+  `src/app/providers.tsx`, `ProjectNav`, which reads the pathname and the
+  query cache, and `ConnectionIndicator`, which subscribes to its store).
 - `Timestamp` renders ISO strings by substring on purpose so server and client
   markup agree. Do not introduce locale or timezone formatting in components.
+- The connection status in `src/components/ConnectionIndicator.tsx` is written
+  only through its exported `setConnectionStatus`. Do not export the `status`
+  variable, add a second setter, or mirror the value into React state or the
+  query cache; the realtime module's channel status callback is its one caller.
