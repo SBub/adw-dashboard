@@ -1,7 +1,9 @@
 "use client";
 
+import { useSuspenseQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { fetchProjects, projectsKey } from "@/data/projects-query";
 import type { ProjectSummary } from "@/types/adw";
 import { Timestamp } from "./Timestamp";
 
@@ -69,12 +71,38 @@ function ProjectNavItem({ project, selected }: { project: ProjectSummary; select
 }
 
 /**
- * The sidebar project list. A client component only so it can read the
- * current pathname to highlight the selected project; the list itself is
- * passed in from the server layout.
+ * The sidebar project list. A client component so it can read the current
+ * pathname to highlight the selected project, and so its data lives in the
+ * React Query cache where a subscription can update it later. The list itself
+ * is prefetched by the server layout and arrives hydrated, so the query below
+ * is a cache hit on the first render and the server HTML already holds it.
  */
-export function ProjectNav({ projects }: { projects: ProjectSummary[] }) {
+export function ProjectNav() {
   const pathname = usePathname();
+  const { data: projects } = useSuspenseQuery({
+    // The same imported key the layout prefetched under. Never build it inline.
+    queryKey: projectsKey,
+    queryFn: fetchProjects,
+    // "static" is what keeps the list in the prerendered HTML. With
+    // cacheComponents on, Next also prerenders client components and treats
+    // Date.now() as IO: the first clock read aborts the client prerender and
+    // leaves this component as its Suspense fallback in the static shell, to
+    // be rendered in the browser instead. Any numeric staleTime reads the
+    // clock in isStaleByTime on every render; "static" returns before that
+    // read. It also matches the data: the list changes only when something
+    // writes it with setQueryData, never on a timer, and invalidateQueries or
+    // refetchQueries skip static queries, so updates must go through
+    // setQueryData (or refetch() from this hook).
+    staleTime: "static",
+    // The hydrated data is stale on arrival; refetching it is the fetch we avoided
+    refetchOnMount: false,
+  });
+
+  // Extension point for live updates (not implemented). A Realtime
+  // subscription would go here: take the client with useQueryClient(),
+  // subscribe in an effect, and on each change write the new list into the
+  // same cache entry with queryClient.setQueryData(projectsKey, next). React
+  // Query then re-renders this component from the cache; nothing else changes.
 
   if (projects.length === 0) {
     return (

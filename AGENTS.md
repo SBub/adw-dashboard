@@ -30,11 +30,25 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Wiring happens at one boundary, `src/data/`. Pages import `getProjects` and
   `getProjectRuns` from `@/data` and nothing else for data. A real data source
   replaces `src/data/index.ts` while keeping those two signatures.
+- The project-list query key lives only in `src/data/projects-query.ts`
+  (`projectsKey`). Import it wherever the list is prefetched or read; never
+  build `["projects"]` inline. A key that differs by one element is a cache
+  miss, which means a second fetch in the browser.
+- `cacheComponents` treats `Date.now()` as IO in both prerender passes. On the
+  server, anything that reads the clock (React Query's `prefetchQuery` and
+  `dehydrate` do) must sit inside a `"use cache"` function or the build fails.
+  In client components it does not fail the build: the first clock read
+  silently aborts the client prerender and the component ships as its Suspense
+  fallback. That is why the sidebar query has `staleTime: "static"`; keep it,
+  and check the served HTML (not just the build) when adding client hooks to
+  the prerendered shell.
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`) and view
   models (`ProjectSummary`, `RunView`) in clearly separated sections. Row
   types mirror the schema column for column; view models are produced by the
   data layer.
 - Server components by default; `"use client"` only where the browser must
-  hold state (currently the History filter in `RunHistory`).
+  hold state (the History filter in `RunHistory`, the React Query provider in
+  `src/app/providers.tsx`, and `ProjectNav`, which reads the pathname and the
+  query cache).
 - `Timestamp` renders ISO strings by substring on purpose so server and client
   markup agree. Do not introduce locale or timezone formatting in components.

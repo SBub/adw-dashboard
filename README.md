@@ -17,10 +17,13 @@ projects. One two-pane screen:
 ## Status: unwired UI
 
 This iteration is bare UI rendered from hand-written fixture data in
-`src/data/fixtures.ts`. There is no database, no fetching, no environment
-variables, no realtime and no computed values: wherever the real application
-would compute something (counts, staleness, duration labels, "updated 2m ago"),
-the fixture simply contains it. The fixture "now" is 2026-10-02T12:00:00Z.
+`src/data/fixtures.ts`. There is no database, no network fetching, no
+environment variables, no realtime and no computed values: wherever the real
+application would compute something (counts, staleness, duration labels,
+"updated 2m ago"), the fixture simply contains it. The fixture "now" is
+2026-10-02T12:00:00Z. The sidebar's project list already travels through a
+React Query cache (see below), so a live source can update it later without
+restructuring.
 
 `src/data/index.ts` is the single boundary the screens read through. It
 exports two functions:
@@ -31,6 +34,77 @@ exports two functions:
 Wiring a real data source means replacing that one file while keeping those
 two signatures. Nothing under `src/app/` or `src/components/` imports from
 anywhere else for data.
+
+### The query layer
+
+`src/data/projects-query.ts` sits beside the boundary and is the query layer
+over it: what the server and the browser share so the two sides of the React
+Query cache cannot drift apart. It exports three things:
+
+- `projectsKey`, the one query key (`["projects"]`) for the project list. It is
+  imported wherever the list is prefetched or read; it is never built inline.
+- `fetchProjects()`, the fetcher, which calls `getProjects()` through the
+  boundary. It runs on the server during the prefetch, and in the browser only
+  on a cache miss.
+- `makeQueryClient()`, the one `QueryClient` factory for both sides. Its
+  `shouldDehydrateQuery` rule includes pending queries, so a prefetch that is
+  still in flight can be handed to the browser instead of fetched twice.
+
+The run detail pages do not use the query layer; they read `getProjectRuns`
+directly as server components.
+
+### Prefetch and hydration of the sidebar
+
+The sidebar follows the "server prefetch with hydration" pattern, so the
+project list is in the server HTML at first paint and the browser never
+fetches it again on mount:
+
+1. `src/app/(dashboard)/layout.tsx` (a server component) builds a client from
+   `makeQueryClient()`, awaits `prefetchQuery` under `projectsKey`, and calls
+   `dehydrate()` on it. This happens inside a `"use cache"` function
+   (`getProjectsState`, tagged `projects`). The scope is required: React Query
+   stamps the settled query with `Date.now()`, and with `cacheComponents` on,
+   reading the current time outside a cache scope fails the prerender of `/`
+   (`next-prerender-current-time`). Cached, the stamp is the cache fill time.
+2. The layout renders `<Providers><HydrationBoundary state={…}>` around the
+   sidebar and the page. `src/app/providers.tsx` is a client component holding
+   one `QueryClient` per browser session (lazy `useState` from the same
+   factory). It must sit above the boundary, because the boundary writes into
+   the client the provider holds.
+3. `src/components/ProjectNav.tsx` is a client component that reads the list
+   with `useSuspenseQuery` under the same imported `projectsKey`, with
+   `refetchOnMount: false` and `staleTime: "static"`. On the first render the
+   key is a cache hit, so nothing suspends and nothing fetches.
+
+   `staleTime: "static"` is the second `cacheComponents` constraint, on the
+   client side this time. Next also prerenders client components, and in that
+   pass `Date.now()` counts as IO: the first clock read aborts the client
+   prerender, and whatever has not rendered yet is served as its Suspense
+   fallback and rendered in the browser instead. With any numeric `staleTime`
+   React Query reads the clock in `isStaleByTime` on every render, so the
+   sidebar would ship as "Loading..." in the static HTML. `"static"` returns
+   before that read, and it suits this list: it changes only when something
+   writes it with `setQueryData`, never on a timer. Note that
+   `invalidateQueries` and `refetchQueries` skip static queries; updates go
+   through `setQueryData`, or `refetch()` from the hook.
+
+   The `<Suspense>` around `ProjectNav` in the layout shows its fallback in two
+   cases: if the server ever hands over a still-pending query, and in the
+   partial-prerender shell for a slug outside `generateStaticParams`, where
+   `usePathname()` cannot resolve at build time and the sidebar streams in at
+   request time behind the boundary. On `/` and the pre-rendered project pages
+   the sidebar is in the static HTML.
+
+### Where live updates go
+
+Nothing is live yet. When a realtime source is wired, the subscription belongs
+in `ProjectNav` at the commented extension point: take the client with
+`useQueryClient()`, subscribe in an effect, and on each change write the new
+list with `queryClient.setQueryData(projectsKey, next)`. The sidebar re-renders
+from the cache; the layout, the boundary and the key do not change. Because the
+query is static, `setQueryData` is the update path (not `invalidateQueries`). A
+server side source can also refresh the prefetch with
+`revalidateTag("projects")`, so the next visitor's HTML starts from fresh data.
 
 ## Types
 
@@ -88,5 +162,6 @@ script; add one together with the first tests.
 ## Stack
 
 Next.js 16 (App Router), React 19, TypeScript 5.9 strict, Tailwind CSS v4 via
-`@tailwindcss/postcss`. No component or icon library. Light and dark themes
-follow the system preference through Tailwind's `dark:` variants.
+`@tailwindcss/postcss`, TanStack React Query 5 for the sidebar's query cache.
+No component or icon library. Light and dark themes follow the system
+preference through Tailwind's `dark:` variants.
