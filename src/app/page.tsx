@@ -1,3 +1,17 @@
+import Link from "next/link";
+import { getProjects } from "@/data";
+
 export default function HomePage() {
-  return <p className="text-neutral-500 dark:text-neutral-400">Projects will appear here.</p>;
+  const projects = getProjects();
+  return (
+    <ul className="space-y-2">
+      {projects.map((project) => (
+        <li key={project.id}>
+          <Link href={`/projects/${project.slug}`} className="underline underline-offset-4">
+            {project.display_name}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  );
 }
