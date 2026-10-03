@@ -63,9 +63,8 @@ export async function generateMetadata({ params }: ProjectPageProps): Promise<Me
  * generateStaticParams (next-prerender-current-time). The data layer reads the
  * clock once more, for fetched_at (see getProjectRuns in src/data/index.ts),
  * which is likewise only permitted because it happens in here. Cached, both
- * are the fill time, and fetched_at is what the browser's ticking clock starts
- * from while hydrating, so the labels it derives match the server's. The rows
- * themselves carry no derived labels; those are computed in the browser.
+ * are the fill time. The rows carry no derived labels and the UI reads no
+ * clock either (relative labels are removed pending issue #3).
  *
  * Tagged twice so a server side writer can refill one project
  * (revalidateTag(`runs:${slug}`)) or every project (revalidateTag("runs")).

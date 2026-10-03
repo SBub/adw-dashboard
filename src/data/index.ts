@@ -13,10 +13,10 @@ export interface ProjectRuns {
   /** Completed and failed runs, most recently updated first. */
   history: Run[];
   /**
-   * ISO timestamp of the moment the rows were read. It is the "now" the
-   * server HTML's relative labels are computed against, and the value the
-   * browser's ticking clock (useNow in src/lib/use-now.ts) starts from during
-   * hydration, so the first client render matches the server markup.
+   * ISO timestamp of the moment the rows were read. Nothing in the UI reads it
+   * today: it is kept because the realtime catch-up re-stamps it on every
+   * refresh and because issue #3 (relative labels with a leaf-level clock)
+   * needs it as the clock-free server snapshot during hydration.
    */
   fetched_at: string;
 }
@@ -62,23 +62,19 @@ export async function getProjects(): Promise<ProjectSummary[]> {
  * row shape getProjects returns, so the header and the sidebar agree), and a
  * missing row is the not-found case. The runs come from adw.runs by
  * project_id, most recently updated first; RLS limits both to public projects.
- * The split into active and history is the only derivation here. The
- * time-derived labels (is_stale, duration_label, since_update_label) are not
- * computed on the server at all: they are derived in the browser by
- * toRunView (src/lib/run-view.ts) against a ticking clock, so they stay
- * correct however long the cached rows are served.
+ * The split into active and history is the only derivation here. No label is
+ * derived from the current time anywhere (removed pending issue #3); the
+ * screens render the rows as stored, plus a finished run's duration from its
+ * own two timestamps.
  *
  * fetched_at is the one clock read in the data layer. On the server this
  * function runs inside the page's "use cache" scope (getRunsState), where
  * Cache Components permits reading the current time: the value is cached with
- * the rows and every visitor sees the same one until the entry is refilled. It
- * is what the server HTML's labels are relative to and what the browser's
- * clock starts from while hydrating, so the two renders agree. Reading it
- * outside a cache scope would fail the prerender (next-prerender-current-time),
- * so on the server this function must only be called from inside one. In the
- * browser (the queryFn on a cache miss, the realtime catch-up) the clock read
- * is unconstrained, and the fresh fetched_at reseeds a clock the live one has
- * already taken over from.
+ * the rows and every visitor sees the same one until the entry is refilled.
+ * Reading it outside a cache scope would fail the prerender
+ * (next-prerender-current-time), so on the server this function must only be
+ * called from inside one. In the browser (the queryFn on a cache miss, the
+ * realtime catch-up) the clock read is unconstrained.
  */
 export async function getProjectRuns(slug: string): Promise<ProjectRuns | null> {
   const supabase = getSupabase();

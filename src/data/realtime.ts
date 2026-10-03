@@ -125,8 +125,8 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange) {
  * ProjectNav for why), so they would be a silent no-op. The data is read
  * through the boundary functions themselves and written under the same keys
  * the reads use, which is also what keeps the hydration-era prefetch and this
- * refresh identical in shape. getProjectRuns stamps a fresh fetched_at; that
- * only reseeds a clock that the live one has already taken over from.
+ * refresh identical in shape. getProjectRuns stamps a fresh fetched_at, which
+ * nothing in the UI reads today.
  *
  * Cost: one project_summaries read plus one getProjectRuns (two reads) per
  * runs entry in the cache, per (re)connect. The cache holds the project list
