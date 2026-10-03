@@ -14,26 +14,46 @@ projects. One two-pane screen:
   all/completed/failed toggle. `/` shows an empty "Select a project" panel;
   `/projects/<owner>/<repo>` selects a project and is the deep link.
 
-## Status: fixtures plus live patches
+## Data: projects from the database, runs from fixtures
 
-The screens render from hand-written fixture data in `src/data/fixtures.ts`.
-There is no database read yet and no computed values: wherever the real
-application would compute something (counts, staleness, duration labels,
-"updated 2m ago"), the fixture simply contains it. The fixture "now" is
-2026-10-02T12:00:00Z. What is wired is Realtime (see below): a Supabase
-channel on the `adw.projects` table patches the sidebar's React Query cache as
-rows change, so the fixture list is the starting point and live events edit it
-in place. Replacing the fixture fetchers with database reads is the next step.
+The project list is live. `getProjects()` reads the `adw.project_summaries`
+view of the toolkit's Supabase project (one row per project with its
+`running`, `completed` and `failed` counts and `last_run_at`, computed in the
+database, see the toolkit's `supabase/README.md`). The view runs with
+`security_invoker`, so the publishable key sees only public projects. The list
+is ordered by `last_run_at` descending with projects that have no runs yet
+last. Realtime (below) then patches that list in the browser as `adw.projects`
+rows change.
+
+The runs are still hand-written fixtures in `src/data/fixtures.ts`.
+`getProjectRuns(slug)` resolves the project from the fixture project list and
+returns the fixture runs for it; a real project without a fixture entry gets
+`null`, which the page renders as not found. Wherever the real application
+would compute a run label (staleness, duration, "updated 2m ago") the fixture
+simply contains it, with a fixture "now" of 2026-10-02T12:00:00Z. Replacing
+the runs fetcher with a database read is the next step, and the fixture
+project list goes away with it.
 
 `src/data/index.ts` is the single boundary the screens read through. It
 exports two functions:
 
-- `getProjects(): ProjectSummary[]`
+- `getProjects(): Promise<ProjectSummary[]>`
 - `getProjectRuns(slug): { project; active; history } | null`
 
-Wiring a real data source means replacing that one file while keeping those
-two signatures. Nothing under `src/app/` or `src/components/` imports from
-anywhere else for data.
+Nothing under `src/app/` or `src/components/` imports from anywhere else for
+data. The Supabase client is untyped (no generated `Database` type yet), so
+`getProjects` casts the view's rows to `ProjectSummary[]` at the boundary;
+generating types for the `adw` schema is a follow-up.
+
+Because the layout prefetch and `generateStaticParams` both call
+`getProjects()`, the database is read at **build time** as well as at request
+time. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
+must therefore be present for `yarn build`, which reads `.env.local` (not
+`.env.development`); without them `getSupabase()` throws and the build fails
+loudly instead of shipping an empty sidebar. `generateStaticParams` never
+returns an empty array: under `cacheComponents` that fails the build, so an
+empty project list yields one placeholder slug (`_/none`) that falls through
+to `notFound()` at request time.
 
 ### The query layer
 
@@ -128,12 +148,14 @@ change. Because the query is static, `setQueryData` is the update path (not
 
 ### Environment
 
-The browser connects straight to Supabase Realtime, so it needs two public
-values, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
-Both are public by design: the `NEXT_PUBLIC_` prefix inlines them into the
-client bundle, and the publishable key has no privileges of its own, Row Level
+The browser connects straight to Supabase Realtime, and the server reads the
+project list through the same client, so both need two public values,
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. Both
+are public by design: the `NEXT_PUBLIC_` prefix inlines them into the client
+bundle, and the publishable key has no privileges of its own, Row Level
 Security limits it to the public projects. The secret (service role) key is a
-different key and is never used or stored in this repo.
+different key and is never used or stored in this repo. The variables are
+required at build time too (see Data above).
 
 | File               | Tracked | Loaded by                                                        |
 | ------------------ | ------- | ---------------------------------------------------------------- |
@@ -152,7 +174,9 @@ files identical. `.gitignore` ignores `.env` and `.env.*` and un-ignores
 `src/data/supabase.ts` exports `getSupabase()`, the only way to get the
 Supabase client. It builds one `SupabaseClient` on first call (schema `adw`)
 and returns that instance afterwards, so a page holds one websocket. It throws
-if either variable is missing rather than connecting to nowhere.
+if either variable is missing rather than connecting to nowhere. The same
+client serves the server-side read of `project_summaries` in `getProjects()`;
+on the server no channel is ever subscribed, so no socket is opened there.
 
 ### The channel
 
@@ -225,8 +249,8 @@ Project slugs are `owner/repo`, so the detail page is a catch-all segment,
 `src/app/(dashboard)/projects/[...slug]/page.tsx`. `/projects/SBub/adw-toolkit`
 arrives as `["SBub", "adw-toolkit"]` and is joined back into the slug. Project
 pages are pre-rendered at build time from the project list
-(`generateStaticParams` reads `getProjects()`); a slug that is not in that list
-still renders on demand. The segment's `loading.tsx` is the Suspense boundary
+(`generateStaticParams` awaits `getProjects()`, so the database is read during
+the build); a slug that is not in that list still renders on demand. The segment's `loading.tsx` is the Suspense boundary
 that lets the shell prerender while the page streams in, and its `error.tsx` is
 the client error boundary (message, digest, Retry) for anything the page throws.
 An unknown slug calls Next's `notFound()`, which renders

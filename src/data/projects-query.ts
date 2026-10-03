@@ -15,8 +15,10 @@ import { getProjects } from "./index";
 export const projectsKey = ["projects"];
 
 /**
- * Runs on the server during the layout's prefetch. In the browser it runs only
- * when the cache has nothing under projectsKey, which the hydration makes rare.
+ * Runs on the server during the layout's prefetch (and at build time, through
+ * it). In the browser it runs only when the cache has nothing under
+ * projectsKey, which the hydration makes rare. getProjects is itself async
+ * (it reads the database), so this simply hands its promise on.
  */
 export async function fetchProjects(): Promise<ProjectSummary[]> {
   return getProjects();

@@ -29,8 +29,23 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `ProjectSummary[]` and `RunView[]`, so a fixture that drifts from the types
   fails `yarn typecheck`.
 - Wiring happens at one boundary, `src/data/`. Pages import `getProjects` and
-  `getProjectRuns` from `@/data` and nothing else for data. A real data source
-  replaces `src/data/index.ts` while keeping those two signatures.
+  `getProjectRuns` from `@/data` and nothing else for data. `getProjects` is
+  async and reads the `project_summaries` view; `getProjectRuns` is still on
+  fixtures. Wiring the runs means changing `src/data/index.ts` while keeping
+  those two signatures, and nothing elsewhere.
+- `getProjects()` casts the untyped Supabase rows to `ProjectSummary[]` at the
+  boundary. That cast is the only place the view's shape is asserted; do not
+  add a second one in a page or component.
+- `generateStaticParams` in `src/app/(dashboard)/projects/[...slug]/page.tsx`
+  must never return an empty array. Under `cacheComponents` an empty result
+  fails the build (nothing to prerender the segment with), so the empty-list
+  branch returns the placeholder `{ slug: ["_", "none"] }`, which the page
+  turns into `notFound()` at request time. Keep that guard when touching the
+  function.
+- `getProjects()` runs at build time (layout prefetch and
+  `generateStaticParams`), so `yarn build` needs `.env.local` with the two
+  Supabase variables. A missing file fails the build on purpose; do not add a
+  fallback that returns an empty list.
 - The project-list query key lives only in `src/data/projects-query.ts`
   (`projectsKey`). Import it wherever the list is prefetched or read; never
   build `["projects"]` inline. A key that differs by one element is a cache

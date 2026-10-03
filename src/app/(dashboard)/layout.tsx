@@ -16,7 +16,15 @@ import { Providers } from "../providers";
  * build points at the query() line). The other ways out are worse:
  * connection() would make every route dynamic, and a client-side fetch is the
  * duplicate fetch this pattern exists to avoid. Cached, the timestamp is simply
- * the fill time. The tag lets a future data source call revalidateTag("projects").
+ * the fill time.
+ *
+ * The read inside is a network call now (the adw.project_summaries view), made
+ * at build time and again whenever this cache entry is refilled. The default
+ * cacheLife (15 minutes) is kept on purpose: this list is only the starting
+ * point for the static shell, and the Realtime channel that Providers opens is
+ * what keeps the browser's copy fresh, so a tighter server cache would buy
+ * nothing except more build-time and revalidation reads. The tag lets a server
+ * side writer force a refill early with revalidateTag("projects").
  */
 async function getProjectsState(): Promise<DehydratedState> {
   "use cache";

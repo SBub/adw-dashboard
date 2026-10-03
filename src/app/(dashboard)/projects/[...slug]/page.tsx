@@ -19,8 +19,19 @@ interface ProjectPageProps {
 // loading.tsx boundary and resolves params on request, and an unknown project
 // still hits notFound(). (dynamicParams cannot be exported under
 // cacheComponents.)
-export function generateStaticParams() {
-  return getProjects().map((project) => ({ slug: project.slug.split("/") }));
+//
+// This reads the database at build time, so the Supabase env vars must be
+// present for `yarn build`, and a failed read fails the build on purpose.
+export async function generateStaticParams() {
+  const projects = await getProjects();
+  // Under cacheComponents an empty array here is not "prerender nothing": the
+  // build errors out, because it has no params to prerender the segment with.
+  // An empty database (or a database with no public project yet) must still
+  // build, so hand it one placeholder slug. "_/none" is no real owner/repo;
+  // getProjectRuns returns null for it and the page falls through to
+  // notFound() at request time, exactly like any other unknown slug.
+  if (projects.length === 0) return [{ slug: ["_", "none"] }];
+  return projects.map((project) => ({ slug: project.slug.split("/") }));
 }
 
 export async function generateMetadata({ params }: ProjectPageProps): Promise<Metadata> {
