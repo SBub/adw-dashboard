@@ -300,6 +300,26 @@ Per `02-guides/server-actions.md` ("Revalidation"), an action that calls
 the explicit `router.refresh()` afterwards is the guarantee that the order is
 revalidate, then render, whatever the action response carried.
 
+#### Two caches, one source
+
+The `"use cache"` scope is the only server cache in front of the database. On
+the server, the Supabase client's REST calls go through Next's patched `fetch`,
+and per the installed guide (`node_modules/next/dist/docs/01-app/02-guides/
+migrating-to-cache-components.md`, "`fetch` cache options") a fetch inside a
+`"use cache"` scope is cached automatically: Next stored each Supabase response
+in its own data cache (`.next/cache/fetch-cache`, `kind: "FETCH"`) with the
+scope's lifetime and no tags. `updateTag("history:<slug>")` expired the scope
+and `getHistory` re-executed, but the request inside it was answered from that
+untagged entry, so the regenerated History was built from the stale body. For
+that reason `getSupabase()` (`src/data/supabase.ts`) gives the server-side
+client a fetch that sets `cache: "no-store"` on every request (`fetch.md`,
+`options.cache`: fetched from the remote server on every request). Inside a
+`"use cache"` scope that is permitted: it stops the inner request from being
+stored separately and leaves the scope's own output cached and tagged, so
+dropping the tag is the whole story and the next render reads the database.
+The browser's fetch is not patched and keeps the default. After a build,
+`.next/cache/fetch-cache` holds no Supabase entry.
+
 On that refresh the Active `HydrationBoundary` receives a dehydrated state
 again. React Query's `hydrate()` (`@tanstack/query-core`, `hydration.js`)
 overwrites an existing entry only when the incoming `state.dataUpdatedAt` is

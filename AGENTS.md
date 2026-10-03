@@ -215,6 +215,17 @@ refresh would be served the old history (see
 - The Supabase client is only ever obtained via `getSupabase()` from
   `src/data/supabase.ts`. Never call `createClient` anywhere else; a second
   client is a second websocket.
+- Server-side Supabase reads must not be stored in Next's data cache. On the
+  server, `getSupabase()` builds the client with a fetch that sets
+  `cache: "no-store"` on every request; keep that, and do not add a server
+  read that bypasses `getSupabase()` or passes its own `fetch`. Every server
+  read already runs inside a `"use cache"` scope, and Next would otherwise
+  also store the REST response as an untagged `kind: "FETCH"` entry with the
+  scope's lifetime, so `updateTag` would expire the scope while the
+  re-executed function reads the stale body (see README, "Two caches, one
+  source"). `no-store` inside a `"use cache"` scope is permitted and leaves
+  the scope's output cached and tagged. Check after `yarn build` that
+  `.next/cache/fetch-cache` has no Supabase entry.
 - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are
   public by design (browser bundle, RLS-limited). The secret / service role
   key must never be added to this repo, to any `.env*` file in it, or to any
