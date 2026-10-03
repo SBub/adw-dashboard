@@ -842,6 +842,39 @@ cp .env.example .env.development && cp .env.example .env.local   # then fill in 
 yarn dev       # http://localhost:3000, or PORT=3101 yarn dev
 ```
 
+## ADW
+
+This repository can be worked by the [ADW toolkit](https://github.com/SBub/adw-toolkit): a
+GitHub issue goes in, and a plan, an implementation, a test run, a review and a pull request
+against `develop` come out, each run in its own git worktree under `trees/<adw_id>/` on its own
+port. The toolkit is never committed here; it is symlinked in from its own checkout.
+
+The one way onto the queue is the GitHub label `adw:queued` on an issue. The webhook trigger (or
+the runner's offline sweep) puts the issue in the queue, and `uv run adws/adw_queue.py run --apply`
+works it one issue at a time, merging each pull request before the next starts; see the
+toolkit's `adws/QUEUE.md`. GitHub access is whatever `gh auth login` provides; no personal access
+token is configured.
+
+What the toolkit reads here:
+
+- `.adw/project.md`, the committed ADW profile: how to install, build and test this app, which
+  port it runs on, what is protected, and where plans (`specs/`) and documentation (this file and
+  `AGENTS.md`) go. Its nine headings are a contract with the toolkit's slash commands.
+- `.env.development`, which carries the toolkit's keys (`CLAUDE_CODE_PATH`, `ADW_PROJECT_ROOT`,
+  `ADW_BASE_BRANCH`, `ADW_UI_DISPLAY_NAME`; see `.env.example`) next to the app's own.
+- `.mcp.json` and `playwright-mcp-config.json`, the Playwright MCP server the review phase
+  screenshots the app with. Every Claude invocation runs with `--strict-mcp-config`, so only servers
+  declared there reach a run.
+
+One-time setup in a checkout, after cloning the toolkit beside this repository:
+
+```sh
+ln -s /path/to/adw-toolkit/adws adws
+mkdir -p .claude && ln -s /path/to/adw-toolkit/commands .claude/commands
+```
+
+`adws`, `.claude`, `agents/`, `trees/` and `.ports.env` are gitignored.
+
 ## Scripts
 
 | Script              | What it does                                         |

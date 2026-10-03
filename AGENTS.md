@@ -20,6 +20,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `node_modules/next/dist/docs/` before Next.js work; the framework moves
   faster than training data.
 - No em-dashes in any file. Use commas, periods, colons or parentheses.
+- `.adw/project.md` is this repository's ADW profile; the toolkit's slash commands
+  read it before anything else. When a change renames a script, moves a port,
+  adds an env file or changes where docs live, update the profile in the same
+  change, and never rename or reorder its nine `##` headings.
 
 ## Architecture
 
