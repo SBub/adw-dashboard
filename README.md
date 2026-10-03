@@ -138,8 +138,10 @@ clock and is unit-tested with fixed timestamps in `src/lib/run-view.test.ts`.
 The labels that need the current time, "updated 2m ago", the stale badge for a
 running run with no progress for 30 minutes, and the elapsed time of a run
 still in progress, are removed for now and tracked in issue #3. An active row
-shows the absolute `updated_at` ("Updated 2026-10-03 11:52 UTC") through the
-`Timestamp` component instead. The reason they are not simply computed in
+shows the absolute `updated_at` ("Updated 03.10.2026 11:52 UTC") through the
+`Timestamp` component instead, which formats every timestamp through the pure
+`formatTimestamp` helper in `src/lib/format-date.ts` (UTC getters, no clock, no
+locale). The reason they are not simply computed in
 render: under `cacheComponents` the time is the one thing neither prerender
 pass may read (details in the sections below), so a clock-dependent label needs
 a `useSyncExternalStore` hook with a data-derived server snapshot, and the

@@ -35,8 +35,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
   anywhere for runs.
-- No clock reads outside the cached boundary. The only `new Date()` /
-  `Date.now()` in the codebase is `getActiveRuns`'s `fetched_at` stamp, which
+- No clock reads outside the cached boundary. The only argument-less
+  `new Date()` / `Date.now()` in the codebase is `getActiveRuns`'s
+  `fetched_at` stamp (`new Date(ms)` on a parsed input, as in
+  `formatTimestamp`, is not a clock read), which
   on the server only ever executes inside the page's `"use cache"` scope (in
   the browser it runs as a `queryFn` on a cache miss and in the realtime
   catch-up, where a clock read is fine). `getCompletedRuns` reads no clock and
@@ -171,8 +173,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   server component with no state; do not put `"use client"` back on it or
   give it a filter that needs one. `src/lib/run-view.ts` is plain and
   importable from anywhere.
-- `Timestamp` renders ISO strings by substring on purpose so server and client
-  markup agree. Do not introduce locale or timezone formatting in components.
+- The visible text of every timestamp comes from `formatTimestamp` in
+  `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
+  the input, unit-tested in `src/lib/format-date.test.ts`), called only by
+  `Timestamp`, whose `<time>` keeps the ISO value in `dateTime`. The output
+  depends on the input string alone, so server and client markup agree. Do not
+  introduce `toLocaleString`, `Intl` or runtime-time-zone formatting, and every
+  change to the format goes with a test case.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written
   only through its exported `setConnectionStatus`, with a `ConnectionStatus`
   enum member, never a bare string. Do not export the `status` variable, add a
