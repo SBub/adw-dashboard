@@ -30,3 +30,6 @@ trees/
 # ./.next/dev/types/routes.d.ts (dev) and ./.next/types/routes.d.ts (build),
 # so tracking it would turn every build into a diff.
 next-env.d.ts
+
+# Playwright MCP writes snapshots and console logs here during ADW reviews; never commit them
+.playwright-mcp/
