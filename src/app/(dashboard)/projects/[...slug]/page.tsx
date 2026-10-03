@@ -37,9 +37,14 @@ export async function generateStaticParams() {
   return projects.map((project) => ({ slug: project.slug.split("/") }));
 }
 
+// Reads the project through the same cached state function as the page body,
+// not through getProjectRuns directly: the read is deduplicated with the body's
+// (one database round trip per slug, not two), and getProjectRuns stamps
+// fetched_at with the current time, which is only allowed inside a "use cache"
+// scope during the prerender.
 export async function generateMetadata({ params }: ProjectPageProps): Promise<Metadata> {
   const { slug } = await params;
-  const data = getProjectRuns(slug.join("/"));
+  const { data } = await getRunsState(slug.join("/"));
   return { title: data ? `${data.project.display_name} | ADW Dashboard` : "Not found" };
 }
 
@@ -55,10 +60,12 @@ export async function generateMetadata({ params }: ProjectPageProps): Promise<Me
  * The cache scope is required for the same reason as in the layout. React
  * Query stamps the settled query with Date.now(), and under Cache Components a
  * clock read outside a cache scope fails the prerender of every slug in
- * generateStaticParams (next-prerender-current-time). The data itself reads no
- * clock: getProjectRuns returns fixtures whose time-derived labels are
- * precomputed, so the only timestamps inside this scope are React Query's own
- * (see getProjectRuns in src/data/index.ts). Cached, they are the fill time.
+ * generateStaticParams (next-prerender-current-time). The data layer reads the
+ * clock once more, for fetched_at (see getProjectRuns in src/data/index.ts),
+ * which is likewise only permitted because it happens in here. Cached, both
+ * are the fill time, and fetched_at is what the browser's ticking clock starts
+ * from while hydrating, so the labels it derives match the server's. The rows
+ * themselves carry no derived labels; those are computed in the browser.
  *
  * Tagged twice so a server side writer can refill one project
  * (revalidateTag(`runs:${slug}`)) or every project (revalidateTag("runs")).

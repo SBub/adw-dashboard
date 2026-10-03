@@ -24,22 +24,47 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 ## Architecture
 
 - Components take typed props only. They never fetch, compute, count or
-  format business values; they render what they are given.
-- Fixtures satisfy the types. `src/data/fixtures.ts` is typed as
-  `ProjectSummary[]` and `RunView[]`, so a fixture that drifts from the types
-  fails `yarn typecheck`.
+  format business values; they render what they are given. The one container
+  that turns rows into view models is `ProjectRunsView`, and it does so only
+  by calling the pure `toRunView`; `RunRow`, `RunHistory` and every other leaf
+  take a finished `RunView`.
+- No clock reads anywhere except two places: `useNow` in `src/lib/use-now.ts`
+  (the browser's ticking clock) and `getProjectRuns`'s `fetched_at` stamp,
+  which only ever executes inside the page's `"use cache"` scope. Never call
+  `Date.now()` or `new Date()` in a component, a hook body, a `queryFn` outside
+  a cache scope, `generateMetadata` or `generateStaticParams`; under
+  `cacheComponents` the server form fails the build and the client form
+  silently drops the component out of the static HTML.
+- `toRunView` in `src/lib/run-view.ts` is pure (takes `now` as an argument,
+  reads no clock) and unit-tested in `src/lib/run-view.test.ts` with fixed
+  timestamps. Every change to a label format or to `STALE_AFTER_MS` goes with
+  a test case; do not move label derivation into a component or into SQL.
+- `fetched_at` on `ProjectRuns` is the hydration seed: `useNow(data.fetched_at)`
+  returns it on the server and during hydration, and the live clock after.
+  Keep it in the boundary's return value, keep it an ISO string (it travels
+  through the dehydrated cache as JSON) and always pass it to `useNow`; a hook
+  seeded with anything else produces a hydration mismatch or a clock read in
+  the prerender.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects` and `getProjectRuns` from `@/data` and nothing else for data;
   those two functions are also the `queryFn`s, passed directly, with no
   fetcher wrapper in between (a function that only calls the boundary adds
-  nothing; do not reintroduce one). `getProjects` is async and reads the
-  `project_summaries` view; `getProjectRuns` is still on fixtures. Wiring the
-  runs means changing `src/data/index.ts` while keeping those two signatures,
+  nothing; do not reintroduce one). Both are async database reads:
+  `getProjects` reads the `project_summaries` view, `getProjectRuns` reads the
+  same view by slug and then the `runs` table by `project_id`. Changing what is
+  read means changing `src/data/index.ts` while keeping those two signatures,
   and nothing elsewhere. The query layer (`query-keys.ts`, `query-client.ts`)
-  holds keys and the client factory only; it never reads Supabase or fixtures.
-- `getProjects()` casts the untyped Supabase rows to `ProjectSummary[]` at the
-  boundary. That cast is the only place the view's shape is asserted; do not
-  add a second one in a page or component.
+  holds keys and the client factory only; it never reads Supabase.
+- The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
+  `Run[]` for the table) in `src/data/index.ts`. Those casts are the only place
+  the shapes are asserted; do not add another in a page or component. When
+  touching the `runs` select, keep the column list equal to the fields of
+  `Run`, in `src/types/adw.ts`.
+- `getProjectRuns` is called on the server only from inside `getRunsState`,
+  the page's `"use cache"` function: both the page body and `generateMetadata`
+  go through it. Do not call `getProjectRuns` directly from a page, layout or
+  metadata function; its `fetched_at` clock read is only allowed inside a cache
+  scope, and the cached call deduplicates the read per slug.
 - `generateStaticParams` in `src/app/(dashboard)/projects/[...slug]/page.tsx`
   must never return an empty array. Under `cacheComponents` an empty result
   fails the build (nothing to prerender the segment with), so the empty-list
@@ -47,7 +72,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   turns into `notFound()` at request time. Keep that guard when touching the
   function.
 - `getProjects()` runs at build time (layout prefetch and
-  `generateStaticParams`), so `yarn build` needs `.env.local` with the two
+  `generateStaticParams`), and `getProjectRuns()` runs at build time for every
+  slug (page prefetch), so `yarn build` needs `.env.local` with the two
   Supabase variables. A missing file fails the build on purpose; do not add a
   fallback that returns an empty list.
 - Every query key is defined in `src/data/query-keys.ts` (`queryKeys.projects`,
@@ -91,21 +117,26 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   silently aborts the client prerender and the component ships as its Suspense
   fallback. That is why the sidebar and runs queries have
   `staleTime: "static"`; keep it, and check the served HTML (not just the
-  build) when adding client hooks to the prerendered shell. When you do, know
-  that a pre-rendered project page legitimately contains the runs pane as a
-  streamed Suspense completion (fallback plus hidden segment plus `$RC` swap in
-  the same document); that is the page's cold SSR client chunk, not a cache
-  miss or a clock read. See README, "Prefetch and hydration of a project's
-  runs".
+  build) when adding client hooks to the prerendered shell: the run rows (an
+  `adw_id` in a `<code>`) must be in the document. A `useSyncExternalStore`
+  hook with a data-derived `getServerSnapshot` (the pattern `useNow` uses) is
+  how a client component may depend on the time without that read. When you
+  check, know that a pre-rendered project page may legitimately carry the runs
+  pane either inline or as a streamed Suspense completion (fallback plus
+  hidden segment plus `$RC` swap in the same document); the latter is the
+  page's cold SSR client chunk, not a cache miss or a clock read. See README,
+  "Prefetch and hydration of a project's runs".
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`) and view
   models (`ProjectSummary`, `RunView`) in clearly separated sections. Row
-  types mirror the schema column for column; view models are produced by the
-  data layer.
+  types mirror the schema column for column; `ProjectSummary` is produced by
+  the data layer and `RunView` by `toRunView` in `src/lib/run-view.ts`.
 - Server components by default; `"use client"` only where the browser must
   hold state (the History filter in `RunHistory`, the React Query provider in
   `src/app/providers.tsx`, `ProjectNav`, which reads the pathname and the
-  query cache, `ProjectRunsView`, which reads the runs from the query cache,
-  and `ConnectionIndicator`, which subscribes to its store).
+  query cache, `ProjectRunsView`, which reads the runs from the query cache
+  and the clock through `useNow`, and `ConnectionIndicator`, which subscribes
+  to its store). `src/lib/use-now.ts` is `"use client"` too; `src/lib/run-view.ts`
+  is plain and importable from anywhere.
 - `Timestamp` renders ISO strings by substring on purpose so server and client
   markup agree. Do not introduce locale or timezone formatting in components.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written

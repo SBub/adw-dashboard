@@ -40,8 +40,8 @@ export function makeQueryClient(): QueryClient {
  * the build or the request loudly instead.
  *
  * Callers run this inside a `"use cache"` scope, so the return value must be
- * serialisable: DehydratedState is plain JSON, and the data is plain rows or
- * the plain fixture object.
+ * serialisable: DehydratedState is plain JSON, and the data is plain rows (or
+ * the plain object getProjectRuns builds from them).
  */
 export async function prefetch<T>(
   queryKey: QueryKey,
