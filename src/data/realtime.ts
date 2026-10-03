@@ -25,7 +25,8 @@ export interface RealtimeOptions {
    * completed runs (a run completed, or a completed run was deleted). History
    * is server-rendered and not in the query cache, so nothing in here can
    * update it; the caller (Providers) asks the server to drop its cache tag
-   * and then refreshes the route. Called after the cache writes for the event.
+   * and then refreshes the route if that project's page is the one on screen.
+   * Called after the cache writes for the event.
    */
   onHistoryChange?: (slug: string) => void;
 }

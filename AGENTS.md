@@ -207,12 +207,25 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - A completion triggers revalidate THEN refresh, in that order and only in
   that order. The realtime module removes the run from the Active entry
   (`applyRunChange`), calls `onHistoryChange(slug)` when `isHistoryChange` is
-  true, and `Providers` does
-  `revalidateHistory(slug).then(() => router.refresh())`. Never call
-  `router.refresh()` before the action resolves (the history scope would still
-  be cached and the refresh would re-render the old list), and never skip the
-  refresh (the action's own re-render is not the contract). The action's
-  rejection is swallowed; do not surface it in the UI.
+  true, and `Providers` calls `revalidateHistory(slug)` and, in its `.then`,
+  `router.refresh()` guarded by `isProjectPath(window.location.pathname, slug)`.
+  Never call `router.refresh()` before the action resolves (the history scope
+  would still be cached and the refresh would re-render the old list), and
+  never skip the refresh when that project's page is on screen (the action's
+  own re-render is not the contract). The action's rejection is swallowed; do
+  not surface it in the UI.
+- The refresh is conditional on the viewed route, the action is not. The
+  action drops the project's server cache for everyone, so it runs on every
+  completion; `router.refresh()` only re-renders the route in the address
+  bar, so on the overview or another project's page it is a round trip that
+  changes nothing and is skipped. Read the route off `window.location` inside
+  the callback (after the action resolves), through `isProjectPath` in
+  `src/lib/project-route.ts`; do not switch `Providers` to `usePathname()`,
+  which would subscribe the whole tree to navigation and re-render it on
+  every route change. `isProjectPath` decodes the pathname before comparing
+  (Next decodes route params, so a percent-encoded slug renders the same
+  page) and answers false for a malformed sequence; keep it pure and tested
+  in `src/lib/project-route.test.ts`.
 - `src/app/actions/revalidate-history.ts` is a public endpoint. It validates
   the slug against `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` and returns early
   otherwise; for a valid slug it calls `updateTag(\`history:${slug}\`)`and`updateTag(\`runs:${slug}\`)`and does nothing else. Do not add a database

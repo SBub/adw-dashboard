@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { makeQueryClient } from "@/data/query-client";
 import { startRealtime } from "@/data/realtime";
+import { isProjectPath } from "@/lib/project-route";
 import { revalidateHistory } from "./actions/revalidate-history";
 
 /**
@@ -42,9 +43,23 @@ export function Providers({ children }: { children: ReactNode }) {
         // src/data/hydration.test.ts, so the live entry is never set back.
         // A failed action (offline, a deploy in flight) is swallowed: History
         // is stale until the cache lifetime, and nothing else is affected.
+        //
+        // The action runs for every completion, whatever is on screen: it
+        // drops the server cache for that project so the next render of its
+        // page, by anyone, is fresh. The refresh only re-renders the route in
+        // the address bar, so it is useful only when that route is the
+        // changed project's page; on the overview or another project's page
+        // it would be a server round trip that changes nothing. The route is
+        // read off window.location inside the callback, after the action has
+        // resolved, rather than through usePathname(): that hook would make
+        // Providers subscribe to navigation and re-render the whole tree on
+        // every route change, and the route that matters is the one at
+        // refresh time anyway.
         onHistoryChange: (slug) => {
           void revalidateHistory(slug)
-            .then(() => router.refresh())
+            .then(() => {
+              if (isProjectPath(window.location.pathname, slug)) router.refresh();
+            })
             .catch(() => {});
         },
       }),

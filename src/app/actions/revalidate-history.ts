@@ -16,7 +16,9 @@ const SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * after a run completes: the reducer has already removed the run from the
  * Active entry in the query cache, and this is step two of the move; step
  * three, router.refresh(), re-renders the server-rendered History with the new
- * row. Two tags:
+ * row when that project's page is the route on screen. This step runs for
+ * every completion regardless, so the project's next render is fresh for
+ * whoever opens it. Two tags:
  *
  * - history:<slug>, the "use cache" scope the page renders History from.
  * - runs:<slug>, the "use cache" scope of the Active prefetch, so the refresh

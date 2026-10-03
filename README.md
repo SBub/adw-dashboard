@@ -295,9 +295,22 @@ When a run completes, three things happen in the browser, in this order:
    refresh (and the next visitor) from getting an Active list that still holds
    the finished run. On a resumed prerender it does not reach that scope (see
    "What is prerendered and what is not"); the browser covers Active anyway.
-3. Only after the action resolves, `router.refresh()` re-renders the route on
-   the server. The history scope is a cache miss, so `HistorySection` reads
-   `getCompletedRuns` from the database and the new row appears.
+3. Only after the action resolves, and only if the route in the address bar is
+   that project's page, `router.refresh()` re-renders the route on the server.
+   The history scope is a cache miss, so `HistorySection` reads
+   `getCompletedRuns` from the database and the new row appears. Step 2 runs
+   for every completion whatever is on screen (it drops the server cache for
+   that project, so its next render is fresh for whoever opens it); step 3 only
+   re-renders the current route, which is useful only when that route is the
+   changed project's page. On the overview or another project's page the
+   refresh would be a server round trip that changes nothing, so it is skipped.
+   The check is `isProjectPath(window.location.pathname, slug)` from
+   `src/lib/project-route.ts`, read inside the callback after the action has
+   resolved rather than through `usePathname()`, so `Providers` does not
+   subscribe to navigation and re-render on every route change. The pathname is
+   decoded first: Next decodes every route param, so a percent-encoded spelling
+   of the slug renders the same page while `window.location.pathname` keeps it
+   encoded; a malformed sequence answers false instead of throwing.
 
 `updateTag`, not `revalidateTag`. The installed Next docs
 (`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`
@@ -559,9 +572,10 @@ catch-up read (below). The function returns a closer that removes the channel
 and resets the indicator to `Connecting`.
 
 `src/app/providers.tsx` starts it from a `useEffect`, passing
-`onHistoryChange: (slug) => { void revalidateHistory(slug).then(() => router.refresh()).catch(() => {}) }`
-(revalidate first, refresh second; a failed action is swallowed and leaves
-History stale until the cache lifetime). The returned closer is the effect's
+`onHistoryChange: (slug) => { void revalidateHistory(slug).then(() => { if (isProjectPath(window.location.pathname, slug)) router.refresh(); }).catch(() => {}) }`
+(revalidate first, refresh second and only when that project's page is the
+route on screen; a failed action is swallowed and leaves History stale until
+the cache lifetime). The returned closer is the effect's
 cleanup, so the channel is removed when the provider unmounts. In development React's strict mode runs
 mount, cleanup, mount, so the indicator shows one connect, close and reconnect;
 production connects once.
