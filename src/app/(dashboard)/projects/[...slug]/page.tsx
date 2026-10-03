@@ -3,10 +3,10 @@ import type { Metadata } from "next";
 import { cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
-import { Suspense } from "react";
 import { ActiveRunsView } from "@/components/ActiveRunsView";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { RunHistory } from "@/components/RunHistory";
+import { SectionBoundary } from "@/components/SectionBoundary";
 import { getActiveRuns, getCompletedRuns, getProjects } from "@/data";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
@@ -101,7 +101,8 @@ async function getHistory(slug: string): Promise<Run[]> {
 
 // The History half of the pane, an async server component. It reads through
 // the cached getHistory and hands the rows to RunHistory as stored. It renders
-// under its own Suspense boundary so the Active half above never waits on it.
+// under its own SectionBoundary (Suspense plus an error boundary) so the Active
+// half above never waits on it and never falls with it.
 //
 // `await connection()` comes first so this section is a request-time hole in
 // the prerendered page rather than part of its static shell. A "use cache"
@@ -118,7 +119,7 @@ async function getHistory(slug: string): Promise<Run[]> {
 // from prerenders (node_modules/next/dist/docs/01-app/03-api-reference/
 // 04-functions/cacheLife.md, "Prerendering behavior"); connection() is
 // preferred because it keeps the long lifetime (connection.md: "prerendering
-// stops here"). The Suspense boundary below is therefore a real streaming
+// stops here"). The SectionBoundary below is therefore a real streaming
 // boundary: the shell ships the fallback and this section streams in.
 //
 // The same limitation applies to the Active prefetch scope (runs:<slug>),
@@ -176,21 +177,28 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
         </QueryBoundary>
       </HydrationBoundary>
 
-      {/* Server-rendered, not hydrated: no query, no boundary of the query
-          kind. HistorySection awaits connection(), so this boundary is a real
-          streaming boundary: the prerendered shell carries the fallback and
-          the section streams in at request time (from the cached scope, or
-          from the database on a miss after a completion or the lifetime). */}
-      <Suspense
+      {/* Server-rendered, not hydrated: no query, so not a QueryBoundary but a
+          SectionBoundary, whose Retry refreshes the route instead of resetting
+          a query. HistorySection awaits connection(), so the Suspense inside
+          it is a real streaming boundary: the prerendered shell carries the
+          fallback and the section streams in at request time (from the cached
+          scope, or from the database on a miss after a completion or the
+          lifetime). If getHistory throws (database down, an RLS change), the
+          error lands in this boundary's panel and the Active list above stays
+          on screen, instead of the segment's error.tsx replacing the pane. A
+          server component is a fine child of this client boundary; the hole
+          semantics are unchanged. */}
+      <SectionBoundary
         fallback={
           <section>
             <h2 className="mb-3 text-lg font-semibold">History</h2>
             <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading history...</p>
           </section>
         }
+        detail="This project's history did not load."
       >
         <HistorySection slug={slug} />
-      </Suspense>
+      </SectionBoundary>
     </>
   );
 }

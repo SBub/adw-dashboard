@@ -114,13 +114,21 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `getActiveRuns` call and not by searching the dehydrated state's queries by
   hash; `HistorySection` renders only after that decision, so
   `getCompletedRuns` returning `[]` for an unknown slug is never shown.
-- Any `useSuspenseQuery` is rendered inside `QueryBoundary`
-  (`src/components/QueryBoundary.tsx`), never a bare `Suspense`. Without an
-  error boundary a failed fetch escapes to the segment's `error.tsx` and
-  unmounts the whole shell; without `onReset={reset}` from
-  `useQueryErrorResetBoundary` the Retry button re-reads the cached error.
-  `QueryBoundary` sits inside `Providers`, where the query it guards has its
-  client.
+- Two boundaries, never a bare `Suspense`. Any `useSuspenseQuery` is rendered
+  inside `QueryBoundary` (`src/components/QueryBoundary.tsx`); any
+  server-rendered section that can fail independently of its siblings (the
+  page's `HistorySection`) is rendered inside `SectionBoundary`
+  (`src/components/SectionBoundary.tsx`). Without an error boundary a failed
+  read escapes to the segment's `error.tsx` and unmounts the whole pane,
+  Active included. The two differ in their Retry and must not be swapped:
+  `QueryBoundary` passes `reset` from `useQueryErrorResetBoundary` as
+  `onReset`, or Retry re-reads the cached query error; `SectionBoundary` does
+  not use `useQueryErrorResetBoundary` (its child is not in the query cache,
+  there is nothing to reset) and instead calls `router.refresh()` and then
+  `resetErrorBoundary()`, in that order, so the re-mounted server component
+  is a fresh server render, not a replay of the failed one. Both share the
+  panel in `src/components/ErrorPanel.tsx`. `QueryBoundary` sits inside
+  `Providers`, where the query it guards has its client.
 - `queryClient.prefetchQuery` and `prefetchInfiniteQuery` are deprecated in
   the installed React Query; use `queryClient.query()` and `infiniteQuery()`.
   Do not swallow their rejection on the server prefetch: an empty dehydrated
@@ -170,7 +178,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   Do not move failed runs into History or add a status toggle to it.
 - History is server-rendered and never enters the React Query cache. It is
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
-  `cacheTag(\`history:${slug}\`)`) and rendered by the async `HistorySection`under its own`Suspense`. No `queryKeys`entry, no`useSuspenseQuery`, no
+  `cacheTag(\`history:${slug}\`)`) and rendered by the async `HistorySection`under its own`SectionBoundary`. No `queryKeys`entry, no`useSuspenseQuery`, no
 `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
@@ -182,8 +190,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `updateTag`, `revalidateTag` or `revalidatePath` reaches it; a request-time
   hole is resolved from the live cache handler and keeps its lifetime (see
   README, "What is prerendered and what is not"). The `await connection()`
-  stays the first statement of `HistorySection`, the `Suspense` stays around
-  it, and `getHistory` stays out of the page body and `generateMetadata`,
+  stays the first statement of `HistorySection`, the `SectionBoundary` (whose
+  inner `Suspense` is the streaming boundary) stays around it, and
+  `getHistory` stays out of the page body and `generateMetadata`,
   where it would be prerendered again. Do not swap it
   for a short `cacheLife` (`expire` under 5 minutes also makes a hole but
   gives up the long lifetime). The Active scope (`runs:<slug>`) stays in the

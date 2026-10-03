@@ -262,10 +262,17 @@ History is rendered below that, by the same page:
    clock read, no React Query. `HistorySection` is an async server component
    that awaits `connection()` (from `next/server`) and then `getHistory`, and
    renders `<RunHistory runs={...} projectSlug={slug} />`, wrapped in its own
-   `<Suspense>` (fallback "Loading history...") so Active never waits on it.
-   The `connection()` call makes the section a request-time hole, which is
-   what lets the tag revalidation below reach it; see "What is prerendered and
-   what is not". `src/components/RunHistory.tsx` is a server component
+   `SectionBoundary` (fallback "Loading history...") so Active never waits on
+   it and never falls with it: if `getHistory` throws (database down, an RLS
+   change), the boundary shows its panel ("Could not load.", "This project's
+   history did not load.", Retry) in the History slot and the Active list
+   above stays on screen, instead of the segment's `error.tsx` replacing the
+   whole pane. Retry there refreshes the route (`router.refresh()`) and then
+   resets the boundary, so the section is re-rendered by the server rather
+   than replayed from the failed render; see "SectionBoundary" below. The
+   `connection()` call makes the section a request-time hole, which is what
+   lets the tag revalidation below reach it; see "What is prerendered and what
+   is not". `src/components/RunHistory.tsx` is a server component
    with no state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant still shows Finished
    and Duration.
@@ -448,6 +455,28 @@ refetches. It renders a default panel ("Could not load.", an optional `detail`
 line, a Retry button) or whatever `errorFallback(retry)` returns. It renders
 inside `Providers`, where the query it guards has its client. The layout wraps
 `ProjectNav` in it and the project page wraps `ActiveRunsView` in it.
+
+### SectionBoundary
+
+`src/components/SectionBoundary.tsx` is the second boundary, for a
+server-rendered section that is not a query: the same shape (a `Suspense` for
+the streaming state inside a `react-error-boundary` `ErrorBoundary` for the
+failed one, the same default panel from `src/components/ErrorPanel.tsx`), but
+a different Retry. The section it wraps is an async server component whose
+render already happened on the server, so there is no query error to reset
+(`useQueryErrorResetBoundary` is not used) and a local boundary reset alone
+would only re-mount the same failed output. Retry calls `router.refresh()`
+first, which asks the server to render the route again (the section's cache
+scope is read again and, on a miss, the database), and then resets the
+boundary, so the re-mounted child is the fresh server result streaming in
+behind the fallback. The project page wraps `HistorySection` in it; the
+`connection()` hole semantics are unchanged, since a server component is a
+legitimate child of a client boundary and the Suspense inside is still the
+streaming boundary the shell carries the fallback for.
+
+Which one to use: a `useSuspenseQuery` goes in `QueryBoundary`; a
+server-rendered section that can fail independently goes in
+`SectionBoundary`; neither is ever rendered under a bare `Suspense`.
 
 ### Where live updates go
 
@@ -679,7 +708,10 @@ pages are pre-rendered at build time from the project list
 (`generateStaticParams` awaits `getProjects()`, so the database is read during
 the build); a slug that is not in that list still renders on demand. The segment's `loading.tsx` is the Suspense boundary
 that lets the shell prerender while the page streams in, and its `error.tsx` is
-the client error boundary (message, digest, Retry) for anything the page throws.
+the client error boundary (message, digest, Retry) for anything the page body
+throws. A failure inside one of the pane's own boundaries (`QueryBoundary`
+around Active, `SectionBoundary` around History) stays in that section and
+never reaches it.
 An unknown slug calls Next's `notFound()`, which renders
 `src/app/(dashboard)/not-found.tsx` inside the two-pane shell; URLs that match
 no route at all fall through to the root `src/app/not-found.tsx`.
