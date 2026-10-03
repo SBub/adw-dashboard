@@ -288,9 +288,11 @@ When a run completes, three things happen in the browser, in this order:
 2. The listener's `onHistoryChange(slug)` callback (wired in
    `src/app/providers.tsx`) calls the server action
    `revalidateHistory(slug)` in `src/app/actions/revalidate-history.ts`. The
-   action validates the slug against `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` and
-   returns early otherwise; for a valid slug it calls `updateTag` on
-   `history:<slug>` and on `runs:<slug>`, and nothing else. The second tag is
+   action validates the slug with `isProjectSlug` (`src/lib/slug.ts`, the
+   pattern `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`) and returns early otherwise;
+   for a valid slug it calls `updateTag` on each tag of `historyTags(slug)`
+   (`src/lib/history-tags.ts`: `history:<slug>` and `runs:<slug>`, the same
+   helpers the page's `cacheTag` calls use), and nothing else. The second tag is
    the Active prefetch scope: on a full regeneration of the page it keeps the
    refresh (and the next visitor) from getting an Active list that still holds
    the finished run. On a resumed prerender it does not reach that scope (see
@@ -324,6 +326,105 @@ Per `02-guides/server-actions.md` ("Revalidation"), an action that calls
 `updateTag` also ships a re-render of the current route in its own response;
 the explicit `router.refresh()` afterwards is the guarantee that the order is
 revalidate, then render, whatever the action response carried.
+
+#### Webhook revalidation: completions nobody is watching
+
+The move above is driven by a browser that received the Realtime event. If no
+browser had the channel open when a run completed (a dashboard nobody has on
+screen at the time), nothing calls the action, and the server's History for
+that project stays as the cache has it until the lifetime ends or until a
+completion someone does see. The route handler `src/app/api/revalidate/route.ts`
+closes that gap from the database side: the toolkit's database tells the
+dashboard about every history change, watched or not, and the handler drops
+the same two tags the action drops.
+
+**The trigger.** The toolkit owns the database, so the trigger lives in the
+toolkit repository (`adw-toolkit`, `supabase/migrations/*_history_webhook.sql`,
+documented in its `supabase/README.md`). The function
+`adw.notify_history_change()` is attached to `adw.runs` by three triggers,
+`runs_history_webhook_insert`, `runs_history_webhook_update` and
+`runs_history_webhook_delete` (one per event, because Postgres does not let a
+multi-event trigger's `WHEN` clause reference `OLD` when `INSERT` is among the
+events, `NEW` when `DELETE` is, or `TG_OP` at all). They fire only on a history
+change: a row inserted or updated to `completed`, a `completed` row updated to
+something else, or a `completed` row deleted. The function reads the dashboard
+URL and the secret from two database settings; while either is unset it returns
+without doing anything, so the migration is inert on a database whose dashboard
+is not deployed yet. Otherwise it enqueues, through `pg_net`, a POST of the
+Supabase database-webhook shape `{ type, schema: "adw", table: "runs", record,
+old_record }` (`record` is null on DELETE, `old_record` on INSERT) with the
+secret in the `x-adw-secret` header. The enqueue is wrapped so that no failure
+of it (extension missing, queue full) can fail the toolkit's own write of the
+row.
+
+**The handler.** `POST` only; any other method is 405 by Next's routing. In
+order:
+
+1. If `ADW_REVALIDATE_SECRET` is unset in the server's environment, every
+   request is answered 503 and the fact is logged once per process; nothing is
+   ever allowed through by default. Otherwise the `x-adw-secret` header is
+   compared with the configured value in constant time
+   (`crypto.timingSafeEqual` on equal-length buffers; a different length is a
+   mismatch) and anything else is 401.
+2. A body that is not JSON is 400. A JSON body that is not an `adw.runs` event
+   with a UUID `project_id` in `record` or `old_record` (another table, a
+   malformed payload) is answered `200 { "ignored": true }`.
+3. The slug is resolved with `getProjectSlug(projectId)` from `src/data`, a
+   read of `adw.projects` with the publishable key. RLS shows it only public
+   projects, and a private or unknown project has no page whose cache could be
+   stale, so a null result is `{ "ignored": true }`, as is a slug that fails
+   `isProjectSlug` (no page is served for it). A failed lookup is 502.
+4. `revalidateTag(tag, { expire: 0 })` for each tag of `historyTags(slug)`,
+   and the response `{ "revalidated": "<slug>" }`.
+
+The handler does nothing else: no write, no other read, no other side effect.
+It is reachable by anyone who has the secret, and the worst such a caller can do
+is make the next render of one project page read the database once.
+
+**Why `revalidateTag(tag, { expire: 0 })` and not `updateTag`.** The installed
+docs are explicit:
+`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`
+says `updateTag` "can **only** be called from within Server Actions. It cannot
+be used in Route Handlers", and points to `revalidateTag` for them.
+`revalidateTag.md` ("Revalidation Behavior") lists the second argument's forms:
+`"max"` is stale-while-revalidate (the next visitor would be served the old
+History once), and `{ expire: 0 }` means "stale content is never served, so the
+next request is a blocking revalidate/cache miss", to be used "when the caller
+needs the data gone immediately and you cannot use `updateTag`"; its closing
+example is exactly a webhook Route Handler calling
+`revalidateTag(tag, { expire: 0 })`. The one-argument form behaves the same but
+is deprecated. So the handler reaches the same end state as the action. With
+`NEXT_PRIVATE_DEBUG_CACHE=1` on `yarn start`, a successful call logs one
+`FileSystemCache: revalidateTag` line per tag.
+
+**The secret.** `ADW_REVALIDATE_SECRET` is a server-only variable (no
+`NEXT_PUBLIC_` prefix, so Next never inlines it into the browser bundle) that
+exists in exactly two places: the dashboard host's environment (locally,
+`.env.local`) and the database setting the trigger reads. Generate it once with
+`openssl rand -hex 32`. `.env.example` carries a placeholder and a comment, no
+real value; no real value is committed anywhere, which is why the migration
+reads the URL and the secret from settings instead of containing them.
+
+**Wiring it after deployment.** The migration lands first and is inert. Once
+the dashboard is deployed with the variable set, run these two statements
+against the toolkit's hosted database (SQL editor, or
+`supabase db query --linked`), with the dashboard's public origin and the same
+secret:
+
+```sql
+alter database postgres set app.settings.dashboard_revalidate_url
+  = 'https://<dashboard-host>/api/revalidate';
+alter database postgres set app.settings.dashboard_revalidate_secret
+  = '<the value of ADW_REVALIDATE_SECRET>';
+```
+
+Database-level settings apply to new connections, so the first completion
+written over a connection opened before the statements ran still goes out
+silently; PostgREST's pool recycles on its own, and restarting the project's API
+forces it. From then on every completion revalidates the dashboard whether or
+not a browser is open, and the browser-side action and the conditional refresh
+keep doing their part for whoever is watching. The toolkit's `supabase/README.md`
+has the same statements and a way to test the trigger by hand.
 
 #### Two caches, one source
 
@@ -418,14 +519,14 @@ Two caveats of the design:
   call it with any string. That is why it validates the slug strictly and does
   nothing but drop two tags; the worst a caller can do is make the next render
   of one project page read the database once.
-- A completion nobody is watching does not move. The move is triggered by a
-  browser that received the event; if no browser had the channel open when the
-  run completed, the server's History for that project stays as it was until
-  the cache lifetime (15 minutes, the default `cacheLife`) or until the next
-  completion anyone sees. A database webhook calling the same two
-  `updateTag`s (through a Route Handler with `revalidateTag(tag, { expire: 0 })`,
-  since `updateTag` is Server Actions only) is the follow-up that closes this.
-  The Active half has no such gap: the catch-up re-reads it on every
+- A completion nobody is watching is not moved by the browser. The move is
+  triggered by a browser that received the event; if no browser had the
+  channel open when the run completed, nothing calls the action. The database
+  webhook ("Webhook revalidation" above) covers that case from the server
+  side, dropping the same two tags through the route handler. Until its two
+  database settings are set, History stays as it was until the cache lifetime
+  (15 minutes, the default `cacheLife`) or until the next completion anyone
+  sees. The Active half has no such gap: the catch-up re-reads it on every
   `SUBSCRIBED`.
 
 A DELETE of a run that is not in the Active list is treated as a history

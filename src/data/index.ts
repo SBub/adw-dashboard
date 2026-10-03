@@ -81,6 +81,33 @@ async function getProjectBySlug(slug: string): Promise<ProjectSummary | null> {
 }
 
 /**
+ * The slug of the project with this id, or null when the publishable key sees
+ * no such project (unknown id, or a private project: RLS hides it, and a
+ * private project has no page whose cache could be stale).
+ *
+ * Server only, and only from the /api/revalidate route handler: a database
+ * webhook names a run's project by project_id, and the cache tags are keyed
+ * by slug, so this is the one read that turns the one into the other. It runs
+ * outside any "use cache" scope (a route handler has none), reads no clock,
+ * and is never a queryFn. It reads adw.projects directly rather than the
+ * project_summaries view: one column is wanted and the view's aggregate would
+ * count the project's runs for nothing.
+ */
+export async function getProjectSlug(projectId: string): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .from("projects")
+    .select("slug")
+    .eq("id", projectId)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`projects: ${error.message}`);
+  }
+  // Same untyped client as everywhere in this file; the one selected column is
+  // asserted here, at the boundary.
+  return (data as { slug: string } | null)?.slug ?? null;
+}
+
+/**
  * One project with its live runs (status running or failed), or null for an
  * unknown slug.
  *

@@ -1,12 +1,8 @@
 "use server";
 
 import { updateTag } from "next/cache";
-
-// A project slug is "owner/repo": one slash, and on each side only the
-// characters GitHub allows in a user, organisation or repository name. Static
-// (not built from input), so the lint rule against non-literal regexps is
-// satisfied and the pattern cannot be made pathological by a caller.
-const SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+import { historyTags } from "@/lib/history-tags";
+import { isProjectSlug } from "@/lib/slug";
 
 /**
  * Drops the server cache for one project's history and active prefetch, so
@@ -18,7 +14,8 @@ const SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * three, router.refresh(), re-renders the server-rendered History with the new
  * row when that project's page is the route on screen. This step runs for
  * every completion regardless, so the project's next render is fresh for
- * whoever opens it. Two tags:
+ * whoever opens it. Two tags, from historyTags in src/lib/history-tags.ts,
+ * the one place their spelling lives:
  *
  * - history:<slug>, the "use cache" scope the page renders History from.
  * - runs:<slug>, the "use cache" scope of the Active prefetch, so the refresh
@@ -33,16 +30,18 @@ const SLUG = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
  * waits for fresh data. revalidateTag(tag, "max") is stale-while-revalidate:
  * the refresh that follows would be served the old History and the new row
  * would only show on a later visit. The deprecated one-argument revalidateTag
- * behaves like updateTag but is on its way out.
+ * behaves like updateTag but is on its way out. The route handler in
+ * src/app/api/revalidate/route.ts drops the same two tags for a completion no
+ * browser saw; it cannot use updateTag (Server Actions only) and uses
+ * revalidateTag(tag, { expire: 0 }) instead, which has the same effect.
  *
  * A Server Action is a public endpoint: anyone who can reach the site can
- * call it with any string. So it validates the slug strictly and does nothing
- * else: no database write, no read, no return value worth having. The worst a
- * caller can do is make the next render of one project page read the
- * database once.
+ * call it with any string. So it validates the slug strictly (isProjectSlug,
+ * src/lib/slug.ts) and does nothing else: no database write, no read, no
+ * return value worth having. The worst a caller can do is make the next
+ * render of one project page read the database once.
  */
 export async function revalidateHistory(slug: string): Promise<void> {
-  if (typeof slug !== "string" || !SLUG.test(slug)) return;
-  updateTag(`history:${slug}`);
-  updateTag(`runs:${slug}`);
+  if (!isProjectSlug(slug)) return;
+  for (const tag of historyTags(slug)) updateTag(tag);
 }

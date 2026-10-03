@@ -54,7 +54,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   format goes with a test case; do not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects`, `getActiveRuns` and `getCompletedRuns` from `@/data` and
-  nothing else for data. The first two are also the `queryFn`s, passed
+  nothing else for data. The fourth export, `getProjectSlug(projectId)`, is
+  read only by the `/api/revalidate` route handler (it turns a webhook's
+  `project_id` into the slug the tags are keyed by); never call it from a
+  page, a component or a `queryFn`. The first two are also the `queryFn`s, passed
   directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All three are async database reads: `getProjects` reads the
@@ -76,8 +79,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   metadata function; its `fetched_at` clock read is only allowed inside a cache
   scope, and the cached call deduplicates the read per slug. Likewise
   `getCompletedRuns` is called only from `getHistory`, the page's second
-  `"use cache"` function, tagged `history:<slug>`; that tag is the contract
-  with the `revalidateHistory` action, so keep the two spellings identical.
+  `"use cache"` function, tagged `historyTag(slug)`; that tag is the contract
+  with the `revalidateHistory` action and the `/api/revalidate` route handler,
+  and all three take the spelling from `src/lib/history-tags.ts`.
 - `generateStaticParams` in `src/app/(dashboard)/projects/[...slug]/page.tsx`
   must never return an empty array. Under `cacheComponents` an empty result
   fails the build (nothing to prerender the segment with), so the empty-list
@@ -227,21 +231,27 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   page) and answers false for a malformed sequence; keep it pure and tested
   in `src/lib/project-route.test.ts`.
 - `src/app/actions/revalidate-history.ts` is a public endpoint. It validates
-  the slug against `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` and returns early
-  otherwise; for a valid slug it calls `updateTag(\`history:${slug}\`)`and`updateTag(\`runs:${slug}\`)`and does nothing else. Do not add a database
-read or write, a parameter beyond the slug, a return value, or a third tag
-without deciding what an anonymous caller can do with it.`updateTag`, not
-`revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
-refresh would be served the old history (see
-`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`).
+  the slug with `isProjectSlug` from `src/lib/slug.ts` (the pattern
+  `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`, defined nowhere else) and returns early
+  otherwise; for a valid slug it calls `updateTag` on each tag of
+  `historyTags(slug)` and does nothing else. Do not add a database read or
+  write, a parameter beyond the slug, a return value, or a third tag without
+  deciding what an anonymous caller can do with it. `updateTag`, not
+  `revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
+  refresh would be served the old history (see
+  `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`).
 - The `runs:<slug>` tag is dropped alongside `history:<slug>` on purpose: it
   is the Active prefetch scope, and on a full regeneration of the page (or a
   host whose cache handler behaves differently) leaving it would let the
   refresh (and the next visitor) hydrate an Active list that still holds the
   completed run. Know that on a resumed prerender the tag does not reach that
   scope (it is in the static shell); Realtime, the hydration rule and the
-  catch-up cover Active there. Keep the two `cacheTag` spellings in the page
-  equal to the two `updateTag` spellings in the action.
+  catch-up cover Active there. Both tag spellings live in one place,
+  `src/lib/history-tags.ts` (`historyTag`, `runsTag`, and `historyTags`, which
+  returns both): the page's `cacheTag` calls, the action's `updateTag` calls
+  and the route handler's `revalidateTag` calls all import from it, and
+  `src/lib/history-tags.test.ts` pins the strings. Never write
+  `history:`/`runs:` inline anywhere.
 - Hydration after a refresh is safe because React Query only overwrites an
   existing entry when the incoming `dataUpdatedAt` is strictly newer
   (`src/data/hydration.test.ts` pins this against the installed
@@ -251,10 +261,34 @@ refresh would be served the old history (see
 - A DELETE of a run the Active list does not hold counts as a history change
   (`isHistoryChange(ev, undefined)` is true) and runs the same action. Do not
   special-case it.
-- An unwatched completion (no browser had the channel open) leaves that
-  project's History stale until the cache lifetime. That is known; the fix is
-  a database webhook into a Route Handler using
-  `revalidateTag(tag, { expire: 0 })`, not a client-side poll.
+- An unwatched completion (no browser had the channel open) is covered by
+  the database webhook, not by a client-side poll: the toolkit's trigger on
+  `adw.runs` posts to `src/app/api/revalidate/route.ts`, which drops the same
+  `historyTags(slug)`. Rules for that handler:
+  - It does nothing but validate and revalidate. Check the secret, parse the
+    body, resolve the slug through `getProjectSlug`, call `revalidateTag` on
+    `historyTags(slug)`, respond. No write, no other read, no other side
+    effect, and no other method than `POST`.
+  - `ADW_REVALIDATE_SECRET` is server-only: no `NEXT_PUBLIC_` prefix, never
+    read in client code, never a real value in `.env.example` or any tracked
+    file. The handler compares it with `crypto.timingSafeEqual` (a length
+    difference is a mismatch, not a throw) and, when the variable is unset,
+    rejects everything with 503 and logs once. Never add a fallback that lets
+    an unconfigured deployment accept requests.
+  - `revalidateTag(tag, { expire: 0 })`, not `updateTag` (Server Actions only,
+    throws in a route handler) and not `"max"` (stale-while-revalidate, the
+    next visitor would see the old History once). Both facts are in the
+    installed `updateTag.md` and `revalidateTag.md`; re-read them before
+    changing the call.
+  - Anything that is not an `adw.runs` event with a UUID `project_id` in
+    `record` or `old_record`, or whose project the publishable key cannot see,
+    is answered `200 { ignored: true }`, not an error: the trigger does not
+    read the response and a 4xx would only make a healthy setup look broken
+    in the `net._http_response` table.
+  - The trigger, its `WHEN` clauses and the two database settings
+    (`app.settings.dashboard_revalidate_url`, `..._secret`) are the toolkit's
+    (`adw-toolkit/supabase`). Changing the payload shape or the header name
+    here means changing them there in the same change.
 
 ## Realtime and Supabase
 
@@ -275,7 +309,9 @@ refresh would be served the old history (see
 - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are
   public by design (browser bundle, RLS-limited). The secret / service role
   key must never be added to this repo, to any `.env*` file in it, or to any
-  variable with a `NEXT_PUBLIC_` prefix. `.env.example` is tracked with
+  variable with a `NEXT_PUBLIC_` prefix. `ADW_REVALIDATE_SECRET` is the one
+  server-only variable: it stays without the prefix and is read only in the
+  route handler. `.env.example` is tracked with
   placeholders; `.env.development` (dev) and `.env.local` (all modes,
   including build and start) hold the real values and are gitignored.
 - Every Realtime write to the query cache goes through a pure, unit-tested
