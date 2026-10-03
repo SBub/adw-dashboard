@@ -8,8 +8,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Yarn only (4.6.0 Berry, pinned via `packageManager` and corepack). Never npm
   or npx; `yarn dlx` if a one-off binary is unavoidable.
 - lefthook runs on every commit: Prettier on staged files (re-staged
-  automatically), `yarn lint`, `yarn typecheck`, `yarn knip`. Hooks install
-  through `postinstall` on `yarn install`. Do not bypass them.
+  automatically), `yarn lint`, `yarn typecheck`, `yarn knip`; and `yarn test`
+  on every push. Hooks install through `postinstall` on `yarn install`. Do not
+  bypass them.
 - Conventional-commit messages (`feat:`, `fix:`, `chore:`, `docs:`). No
   trailers of any kind: no `Co-Authored-By`, no `Signed-off-by`.
 - Default branch is `develop`.
@@ -64,6 +65,26 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - `Timestamp` renders ISO strings by substring on purpose so server and client
   markup agree. Do not introduce locale or timezone formatting in components.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written
-  only through its exported `setConnectionStatus`. Do not export the `status`
-  variable, add a second setter, or mirror the value into React state or the
-  query cache; the realtime module's channel status callback is its one caller.
+  only through its exported `setConnectionStatus`, with a `ConnectionStatus`
+  enum member, never a bare string. Do not export the `status` variable, add a
+  second setter, or mirror the value into React state or the query cache; the
+  channel status callback in `src/data/realtime.ts` is its one caller.
+
+## Realtime and Supabase
+
+- The Supabase client is only ever obtained via `getSupabase()` from
+  `src/data/supabase.ts`. Never call `createClient` anywhere else; a second
+  client is a second websocket.
+- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are
+  public by design (browser bundle, RLS-limited). The secret / service role
+  key must never be added to this repo, to any `.env*` file in it, or to any
+  variable with a `NEXT_PUBLIC_` prefix. `.env.example` is tracked with
+  placeholders; `.env.development` (dev) and `.env.local` (all modes,
+  including build and start) hold the real values and are gitignored.
+- `applyProjectChange` in `src/data/apply-project-change.ts` is pure (no
+  cache, client, clock or mutation) and unit-tested. Keep it that way: new
+  event handling goes into the function and gets a test case; the realtime
+  module stays a thin wiring layer around it.
+- One channel, named `adw`, opened by `startRealtime` and started only from
+  `Providers`. Add further listeners (runs) to that channel, do not open a
+  second one or start it from another component.

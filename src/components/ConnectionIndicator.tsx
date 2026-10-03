@@ -22,9 +22,13 @@ import { useSyncExternalStore } from "react";
  * Date.now(), so it prerenders into the static shell instead of falling back.
  */
 
-export type ConnectionStatus = "connecting" | "live" | "reconnecting";
+export enum ConnectionStatus {
+  Connecting = "connecting",
+  Live = "live",
+  Reconnecting = "reconnecting",
+}
 
-let status: ConnectionStatus = "connecting";
+let status: ConnectionStatus = ConnectionStatus.Connecting;
 const listeners = new Set<() => void>();
 
 function subscribe(listener: () => void) {
@@ -39,15 +43,13 @@ function getSnapshot() {
 }
 
 function getServerSnapshot(): ConnectionStatus {
-  return "connecting";
+  return ConnectionStatus.Connecting;
 }
 
 /**
- * The only way to change the connection status. The realtime module calls this
- * from the channel's status callback; nothing else writes `status`.
- *
- * @public Not imported yet: the realtime module that will call it is not
- * written. The tag keeps knip from reporting it as an unused export.
+ * The only way to change the connection status. The realtime module
+ * (src/data/realtime.ts) calls this from the channel's status callback;
+ * nothing else writes `status`.
  */
 export function setConnectionStatus(next: ConnectionStatus) {
   if (next === status) return;
@@ -56,17 +58,17 @@ export function setConnectionStatus(next: ConnectionStatus) {
 }
 
 const STYLES: Record<ConnectionStatus, { pill: string; dot: string; pulse: boolean }> = {
-  live: {
+  [ConnectionStatus.Live]: {
     pill: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
     dot: "bg-emerald-500",
     pulse: false,
   },
-  connecting: {
+  [ConnectionStatus.Connecting]: {
     pill: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
     dot: "bg-amber-500",
     pulse: true,
   },
-  reconnecting: {
+  [ConnectionStatus.Reconnecting]: {
     pill: "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300",
     dot: "bg-red-500",
     pulse: false,

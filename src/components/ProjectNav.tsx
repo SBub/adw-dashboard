@@ -98,11 +98,10 @@ export function ProjectNav() {
     refetchOnMount: false,
   });
 
-  // Extension point for live updates (not implemented). A Realtime
-  // subscription would go here: take the client with useQueryClient(),
-  // subscribe in an effect, and on each change write the new list into the
-  // same cache entry with queryClient.setQueryData(projectsKey, next). React
-  // Query then re-renders this component from the cache; nothing else changes.
+  // Live updates do not live here. src/data/realtime.ts (started once from
+  // Providers) writes each change into this same cache entry with
+  // queryClient.setQueryData(projectsKey, ...), and React Query re-renders
+  // this component from the cache; nothing in this file knows about the socket.
 
   if (projects.length === 0) {
     return (

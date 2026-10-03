@@ -1,9 +1,7 @@
 # Installed into .git/hooks by `lefthook install`, which `yarn install` runs
 # through the `postinstall` script. No manual step.
 #
-# There is no pre-push hook on purpose: this iteration has no test script, so
-# there is nothing for one to run. Add `pre-push: { commands: { tests: { run:
-# yarn test } } }` together with the first test script.
+# pre-commit keeps the fast checks; pre-push runs the unit tests once per push.
 pre-commit:
   parallel: true
   commands:
@@ -20,3 +18,7 @@ pre-commit:
     knip:
       glob: "*.{ts,tsx,js,mjs,json}"
       run: yarn knip
+pre-push:
+  commands:
+    tests:
+      run: yarn test

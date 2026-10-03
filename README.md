@@ -14,16 +14,16 @@ projects. One two-pane screen:
   all/completed/failed toggle. `/` shows an empty "Select a project" panel;
   `/projects/<owner>/<repo>` selects a project and is the deep link.
 
-## Status: unwired UI
+## Status: fixtures plus live patches
 
-This iteration is bare UI rendered from hand-written fixture data in
-`src/data/fixtures.ts`. There is no database, no network fetching, no
-environment variables, no realtime and no computed values: wherever the real
+The screens render from hand-written fixture data in `src/data/fixtures.ts`.
+There is no database read yet and no computed values: wherever the real
 application would compute something (counts, staleness, duration labels,
 "updated 2m ago"), the fixture simply contains it. The fixture "now" is
-2026-10-02T12:00:00Z. The sidebar's project list already travels through a
-React Query cache (see below), so a live source can update it later without
-restructuring.
+2026-10-02T12:00:00Z. What is wired is Realtime (see below): a Supabase
+channel on the `adw.projects` table patches the sidebar's React Query cache as
+rows change, so the fixture list is the starting point and live events edit it
+in place. Replacing the fixture fetchers with database reads is the next step.
 
 `src/data/index.ts` is the single boundary the screens read through. It
 exports two functions:
@@ -117,37 +117,99 @@ use it once it moves onto the query layer.
 
 ### Where live updates go
 
-Nothing is live yet. When a realtime source is wired, the subscription belongs
-in `ProjectNav` at the commented extension point: take the client with
-`useQueryClient()`, subscribe in an effect, and on each change write the new
-list with `queryClient.setQueryData(projectsKey, next)`. The sidebar re-renders
-from the cache; the layout, the boundary and the key do not change. Because the
-query is static, `setQueryData` is the update path (not `invalidateQueries`). A
-server side source can also refresh the prefetch with
+Live updates write into the same cache entry. `src/data/realtime.ts` (below)
+calls `queryClient.setQueryData(projectsKey, ...)` on every change; the sidebar
+re-renders from the cache and the layout, the boundary and the key do not
+change. Because the query is static, `setQueryData` is the update path (not
+`invalidateQueries`). A server side source can also refresh the prefetch with
 `revalidateTag("projects")`, so the next visitor's HTML starts from fresh data.
 
 ## Realtime
 
+### Environment
+
+The browser connects straight to Supabase Realtime, so it needs two public
+values, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+Both are public by design: the `NEXT_PUBLIC_` prefix inlines them into the
+client bundle, and the publishable key has no privileges of its own, Row Level
+Security limits it to the public projects. The secret (service role) key is a
+different key and is never used or stored in this repo.
+
+| File               | Tracked | Loaded by                                                        |
+| ------------------ | ------- | ---------------------------------------------------------------- |
+| `.env.example`     | yes     | nobody; the two names with placeholder values, copy it to start  |
+| `.env.development` | no      | `yarn dev` only (Next loads it when `NODE_ENV` is `development`) |
+| `.env.local`       | no      | every mode: `yarn dev`, `yarn build` and `yarn start`            |
+
+Next does not read `.env.development` for a production build or `next start`
+(those read `.env.production` and `.env`), which is why the real values go in
+`.env.local` as well: it is loaded in every mode and gitignored. Keep the two
+files identical. `.gitignore` ignores `.env` and `.env.*` and un-ignores
+`.env.example`.
+
+### The client
+
+`src/data/supabase.ts` exports `getSupabase()`, the only way to get the
+Supabase client. It builds one `SupabaseClient` on first call (schema `adw`)
+and returns that instance afterwards, so a page holds one websocket. It throws
+if either variable is missing rather than connecting to nowhere.
+
+### The channel
+
+`src/data/realtime.ts` exports `startRealtime(queryClient)`. It opens one
+channel named `adw` and listens to `postgres_changes` for every event on
+`adw.projects`. Each event goes through `applyProjectChange` (next section) and
+the result is written to the cache under `projectsKey` with `setQueryData`.
+The channel's subscribe callback is the one writer of the connection
+indicator: `SUBSCRIBED` sets `Live`, `CHANNEL_ERROR` and `TIMED_OUT` set
+`Reconnecting`, `CLOSED` sets `Connecting`. The function returns a closer that
+removes the channel and resets the indicator to `Connecting`. A runs listener
+will be added to the same channel later (there is a one-line comment where).
+
+`src/app/providers.tsx` starts it: `useEffect(() => startRealtime(queryClient),
+[queryClient])`. The returned closer is the effect's cleanup, so the channel is
+removed when the provider unmounts. In development React's strict mode runs
+mount, cleanup, mount, so the indicator shows one connect, close and reconnect;
+production connects once.
+
+### Event to cache
+
+`src/data/apply-project-change.ts` exports `applyProjectChange(current, ev)`,
+a pure function from the cached `ProjectSummary[]` and one
+`RealtimePostgresChangesPayload<Project>` to the next list. INSERT prepends
+the row as a summary with zero counts and `last_run_at: null` (and is a no-op
+if the id is already present); UPDATE merges the row into the matching entry,
+keeping its counts, which are not table columns and so are not in the event;
+DELETE removes by `ev.old.id`, the only field Supabase guarantees in `old`
+unless the table's replica identity is FULL. It never mutates its input.
+
+It is covered by `src/data/apply-project-change.test.ts` (vitest): the three
+events, a duplicate insert and an update for an unknown id. Run with
+`yarn test`; `vitest.config.ts` maps the `@/` alias and picks up
+`src/**/*.test.ts`.
+
+### The indicator
+
 The header shows a connection indicator, `src/components/ConnectionIndicator.tsx`:
 a pill with a dot and one of three labels, `connecting` (amber, pulsing), `live`
 (green) or `reconnecting` (red). It has `role="status"` and `aria-live="polite"`
-so a screen reader announces changes.
+so a screen reader announces changes. The three states are the string enum
+`ConnectionStatus` (`Connecting = "connecting"`, `Live = "live"`,
+`Reconnecting = "reconnecting"`) exported from the same file; the enum value is
+the rendered label, and the style table is keyed by it.
 
 The store for that state lives in the same file, deliberately: a module-level
 `status` variable, a `Set` of listeners, and the `subscribe` / `getSnapshot` /
 `getServerSnapshot` trio that the component hands to `useSyncExternalStore`.
 It is not React state because there is one writer outside React and the only
 thing that should re-render on a change is the pill. The server snapshot is the
-constant `"connecting"`: the socket does not exist on the server, and the SSR
-markup must match the first client render, so every page hydrates as
-`connecting` and moves on from there.
+constant `ConnectionStatus.Connecting`: the socket does not exist on the
+server, and the SSR markup must match the first client render, so every page
+hydrates as `connecting` and moves on from there.
 
-The one way in is the exported `setConnectionStatus(next)`. The realtime module,
-when it is written, calls it from the channel's status callback and nothing else;
-the sidebar's live updates (above) go through the query cache, not this store.
-Until that module exists the export has no caller, which knip would report, so it
-carries a `/** @public */` JSDoc tag (knip always ignores exports tagged
-`@public`, `@beta` or `@alias`).
+The one way in is the exported `setConnectionStatus(next)`. `startRealtime`
+calls it from the channel's status callback and nothing else; the sidebar's
+live updates (above) go through the query cache, not this store.
 
 ## Types
 
@@ -178,6 +240,7 @@ npm or npx.
 
 ```sh
 yarn install   # also installs the git hooks (lefthook) through postinstall
+cp .env.example .env.development && cp .env.example .env.local   # then fill in the real values
 yarn dev       # http://localhost:3000, or PORT=3101 yarn dev
 ```
 
@@ -194,17 +257,18 @@ yarn dev       # http://localhost:3000, or PORT=3101 yarn dev
 | `yarn format`       | Prettier, write                                      |
 | `yarn format:check` | Prettier, check only                                 |
 | `yarn knip`         | Unused files, exports and dependencies               |
+| `yarn test`         | Unit tests (vitest, `src/**/*.test.ts`)              |
 
 ## Git hooks
 
 `lefthook.yml` runs format (staged files, re-staged), lint, typecheck and knip
-in parallel on every commit. Hooks are installed by `yarn install`; there is no
-manual step. There is no pre-push hook because this iteration has no test
-script; add one together with the first tests.
+in parallel on every commit, and `yarn test` on every push. Hooks are installed
+by `yarn install`; there is no manual step.
 
 ## Stack
 
 Next.js 16 (App Router), React 19, TypeScript 5.9 strict, Tailwind CSS v4 via
-`@tailwindcss/postcss`, TanStack React Query 5 for the sidebar's query cache.
-No component or icon library. Light and dark themes follow the system
+`@tailwindcss/postcss`, TanStack React Query 5 for the sidebar's query cache,
+`@supabase/supabase-js` for Realtime, vitest for unit tests. No component or
+icon library. Light and dark themes follow the system
 preference through Tailwind's `dark:` variants.
