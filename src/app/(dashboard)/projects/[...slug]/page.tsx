@@ -1,9 +1,12 @@
+import { HydrationBoundary } from "@tanstack/react-query";
 import type { Metadata } from "next";
+import { cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
-import { PageHeader } from "@/components/PageHeader";
-import { RunHistory } from "@/components/RunHistory";
-import { RunRow } from "@/components/RunRow";
+import { ProjectRunsView } from "@/components/ProjectRunsView";
+import { QueryBoundary } from "@/components/QueryBoundary";
 import { getProjectRuns, getProjects } from "@/data";
+import { prefetch } from "@/data/query-client";
+import { queryKeys } from "@/data/query-keys";
 
 // Project slugs contain a slash ("owner/repo"), so this is a catch-all
 // segment: /projects/SBub/adw-toolkit arrives as ["SBub", "adw-toolkit"] and
@@ -40,36 +43,66 @@ export async function generateMetadata({ params }: ProjectPageProps): Promise<Me
   return { title: data ? `${data.project.display_name} | ADW Dashboard` : "Not found" };
 }
 
+/**
+ * One project's runs, prefetched into a fresh QueryClient and dehydrated
+ * through the shared prefetch helper, inside a "use cache" scope: the same
+ * shape as the layout's getProjectsState, one entry per slug. The helper
+ * awaits the query (so the HTML holds the runs, not a pending promise) and
+ * does not catch its rejection (so a failed read fails the build or the
+ * request loudly, see prefetch in src/data/query-client.ts). It also hands
+ * back the resolved data, which is what the not-found decision below reads.
+ *
+ * The cache scope is required for the same reason as in the layout. React
+ * Query stamps the settled query with Date.now(), and under Cache Components a
+ * clock read outside a cache scope fails the prerender of every slug in
+ * generateStaticParams (next-prerender-current-time). The data itself reads no
+ * clock: getProjectRuns returns fixtures whose time-derived labels are
+ * precomputed, so the only timestamps inside this scope are React Query's own
+ * (see getProjectRuns in src/data/index.ts). Cached, they are the fill time.
+ *
+ * Tagged twice so a server side writer can refill one project
+ * (revalidateTag(`runs:${slug}`)) or every project (revalidateTag("runs")).
+ */
+async function getRunsState(slug: string) {
+  "use cache";
+  cacheTag("runs", `runs:${slug}`);
+
+  return prefetch(queryKeys.runs(slug), () => getProjectRuns(slug));
+}
+
 // Awaiting params makes this page request-time for slugs outside
 // generateStaticParams. The sibling loading.tsx is the Suspense boundary for
 // the segment, so the layout and sidebar above it still prerender.
 export default async function ProjectPage({ params }: ProjectPageProps) {
-  const { slug } = await params;
-  const data = getProjectRuns(slug.join("/"));
-  if (!data) notFound();
+  const { slug: parts } = await params;
+  const slug = parts.join("/");
 
-  const { project, active, history } = data;
+  const { data, state } = await getRunsState(slug);
+
+  // The not-found decision is made here, before any boundary renders, from the
+  // very data that was prefetched: getProjectRuns returns null for an unknown
+  // slug, so the data layer is read once per slug, not twice. notFound()
+  // renders the segment's not-found.tsx inside the two-pane shell. Caveat kept
+  // from before: for a slug outside generateStaticParams the static shell has
+  // already been sent with a 200 before this runs, so the not-found panel
+  // streams in as a soft 404 (the body says not found, the status does not).
+  if (data === null) notFound();
 
   return (
-    <>
-      <PageHeader title={project.display_name} subtitle={project.slug} repoUrl={project.repo_url} />
-
-      <section className="mb-10">
-        <h2 className="mb-3 text-lg font-semibold">Active</h2>
-        {active.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-            No runs in progress.
-          </p>
-        ) : (
-          <ul className="space-y-3">
-            {active.map((run) => (
-              <RunRow key={run.adw_id} run={run} projectSlug={project.slug} variant="active" />
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <RunHistory runs={history} projectSlug={project.slug} />
-    </>
+    // Not nested inside the layout's HydrationBoundary: that one is scoped to
+    // the sidebar, and this page renders outside it. Both still hydrate into
+    // the one client Providers holds, so the sidebar's entry and this
+    // project's entry sit side by side in the same cache.
+    <HydrationBoundary state={state}>
+      {/* The fallback shows only if the server ever hands over a still-pending
+          query. A failed browser fetch lands in the boundary's error panel,
+          not in the segment's error.tsx, so the shell stays up. */}
+      <QueryBoundary
+        fallback={<p className="text-sm text-neutral-500 dark:text-neutral-400">Loading runs...</p>}
+        detail="This project's runs did not load."
+      >
+        <ProjectRunsView slug={slug} />
+      </QueryBoundary>
+    </HydrationBoundary>
   );
 }

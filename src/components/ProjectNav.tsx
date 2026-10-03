@@ -3,7 +3,8 @@
 import { useSuspenseQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { fetchProjects, projectsKey } from "@/data/projects-query";
+import { getProjects } from "@/data";
+import { queryKeys } from "@/data/query-keys";
 import type { ProjectSummary } from "@/types/adw";
 import { Timestamp } from "./Timestamp";
 
@@ -81,8 +82,8 @@ export function ProjectNav() {
   const pathname = usePathname();
   const { data: projects } = useSuspenseQuery({
     // The same imported key the layout prefetched under. Never build it inline.
-    queryKey: projectsKey,
-    queryFn: fetchProjects,
+    queryKey: queryKeys.projects,
+    queryFn: getProjects,
     // "static" is what keeps the list in the prerendered HTML. With
     // cacheComponents on, Next also prerenders client components and treats
     // Date.now() as IO: the first clock read aborts the client prerender and
@@ -100,7 +101,7 @@ export function ProjectNav() {
 
   // Live updates do not live here. src/data/realtime.ts (started once from
   // Providers) writes each change into this same cache entry with
-  // queryClient.setQueryData(projectsKey, ...), and React Query re-renders
+  // queryClient.setQueryData(queryKeys.projects, ...), and React Query re-renders
   // this component from the cache; nothing in this file knows about the socket.
 
   if (projects.length === 0) {

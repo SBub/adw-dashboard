@@ -1,14 +1,19 @@
-import { type DehydratedState, dehydrate, HydrationBoundary } from "@tanstack/react-query";
+import { HydrationBoundary } from "@tanstack/react-query";
 import { cacheTag } from "next/cache";
 import type { ReactNode } from "react";
 import { ProjectNav } from "@/components/ProjectNav";
 import { QueryBoundary } from "@/components/QueryBoundary";
-import { fetchProjects, makeQueryClient, projectsKey } from "@/data/projects-query";
+import { getProjects } from "@/data";
+import { prefetch } from "@/data/query-client";
+import { queryKeys } from "@/data/query-keys";
 import { Providers } from "../providers";
 
 /**
- * The project list, prefetched into a fresh QueryClient and dehydrated, inside
- * a "use cache" scope.
+ * The project list, prefetched into a fresh QueryClient and dehydrated through
+ * the shared prefetch helper, inside a "use cache" scope. The helper awaits the
+ * query (so the HTML holds the list, not a pending promise) and does not catch
+ * its rejection (so a failed read fails the build or the request loudly, see
+ * prefetch in src/data/query-client.ts).
  *
  * The cache scope is not optional. React Query stamps the settled query with
  * Date.now(), and under Cache Components reading the current time outside a
@@ -26,21 +31,11 @@ import { Providers } from "../providers";
  * nothing except more build-time and revalidation reads. The tag lets a server
  * side writer force a refill early with revalidateTag("projects").
  */
-async function getProjectsState(): Promise<DehydratedState> {
+async function getProjectsState() {
   "use cache";
   cacheTag("projects");
 
-  const queryClient = makeQueryClient();
-  // The await means the query is settled when dehydrate runs, so the HTML
-  // holds the list rather than a pending promise.
-  //
-  // Deliberately not caught. query() rejects when fetchProjects throws, and
-  // swallowing that (.catch(noop), the documented option) would dehydrate an
-  // empty cache and serve the sidebar's fallback with no sign anything went
-  // wrong. Letting it throw fails the build or the request loudly instead.
-  await queryClient.query({ queryKey: projectsKey, queryFn: fetchProjects });
-
-  return dehydrate(queryClient);
+  return prefetch(queryKeys.projects, getProjects);
 }
 
 // Master-detail shell shared by "/" and "/projects/[...slug]". The project
@@ -50,21 +45,29 @@ async function getProjectsState(): Promise<DehydratedState> {
 // mount. The sidebar is a client component so a later Realtime subscription
 // can update the same cache entry in place.
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  // Only the dehydrated state is needed here; the sidebar reads the list from
+  // the cache once it is hydrated.
+  const { state } = await getProjectsState();
+
   return (
     <Providers>
-      <HydrationBoundary state={await getProjectsState()}>
-        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:items-start md:gap-8">
-          <aside className="shrink-0 md:sticky md:top-6 md:max-h-[calc(100vh-5.5rem)] md:w-72 md:overflow-y-auto">
-            <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-              Projects
-            </h2>
-            {/* The fallback shows if the server ever hands over a still-pending
-                query, and in the partial-prerender shell for a slug outside
-                generateStaticParams, where usePathname suspends until request
-                time and the sidebar streams in behind it. A failed browser
-                fetch lands in the boundary's error panel, not in the segment's
-                error.tsx, so the shell stays up. QueryBoundary sits inside
-                Providers, where the query it guards has its client. */}
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:items-start md:gap-8">
+        <aside className="shrink-0 md:sticky md:top-6 md:max-h-[calc(100vh-5.5rem)] md:w-72 md:overflow-y-auto">
+          <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+            Projects
+          </h2>
+          {/* The HydrationBoundary is scoped to the sidebar because ProjectNav
+              is the only consumer of the dehydrated project list; the page's
+              own boundary hydrates its runs into the same client Providers
+              holds, so nothing below needs to sit inside this one. The
+              fallback shows if the server ever hands over a still-pending
+              query, and in the partial-prerender shell for a slug outside
+              generateStaticParams, where usePathname suspends until request
+              time and the sidebar streams in behind it. A failed browser
+              fetch lands in the boundary's error panel, not in the segment's
+              error.tsx, so the shell stays up. QueryBoundary sits inside
+              Providers, where the query it guards has its client. */}
+          <HydrationBoundary state={state}>
             <QueryBoundary
               fallback={
                 <p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>
@@ -73,10 +76,10 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             >
               <ProjectNav />
             </QueryBoundary>
-          </aside>
-          <section className="min-w-0 flex-1">{children}</section>
-        </div>
-      </HydrationBoundary>
+          </HydrationBoundary>
+        </aside>
+        <section className="min-w-0 flex-1">{children}</section>
+      </div>
     </Providers>
   );
 }
