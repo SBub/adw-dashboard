@@ -14,7 +14,7 @@ projects. One two-pane screen:
   all/completed/failed toggle. `/` shows an empty "Select a project" panel;
   `/projects/<owner>/<repo>` selects a project and is the deep link.
 
-## Data: projects from the database, runs from fixtures
+## Data: projects and runs from the database
 
 The project list is live. `getProjects()` reads the `adw.project_summaries`
 view of the toolkit's Supabase project (one row per project with its
@@ -25,30 +25,44 @@ is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
 rows change.
 
-The runs are still hand-written fixtures in `src/data/fixtures.ts`.
-`getProjectRuns(slug)` resolves the project from the fixture project list and
-returns the fixture runs for it; a real project without a fixture entry gets
-`null`, which the page renders as not found. Wherever the real application
-would compute a run label (staleness, duration, "updated 2m ago") the fixture
-simply contains it, with a fixture "now" of 2026-10-02T12:00:00Z. Replacing
-the runs fetcher with a database read is the next step, and the fixture
-project list goes away with it.
+The runs are live too. `getProjectRuns(slug)` makes two reads through the same
+client: the project row from `adw.project_summaries` where `slug` matches (the
+same shape the sidebar shows, so the header and the sidebar agree; no row means
+`null`, which the page renders as not found), then the rows of `adw.runs` where
+`project_id` is that project's id, ordered by `updated_at` descending. In SQL
+terms:
+
+```sql
+select * from adw.project_summaries where slug = $1;
+select project_id, adw_id, issue_number, issue_class, branch_name, phase, status,
+       state, toolkit_version, started_at, updated_at, finished_at
+  from adw.runs where project_id = $2 order by updated_at desc;
+```
+
+The function splits the rows into `active` (status `running`) and `history`
+(everything else), both newest first as returned, and stamps the result with
+`fetched_at`, the ISO time the rows were read. The rows are the raw `Run` type;
+no label is derived on the server (see "Derived labels" below). There are no
+fixtures any more; `src/data/fixtures.ts` is gone.
 
 `src/data/index.ts` is the single boundary the screens read through. It
 exports two functions and the shape the second one returns:
 
 - `getProjects(): Promise<ProjectSummary[]>`
-- `getProjectRuns(slug): ProjectRuns | null`, where `ProjectRuns` is
-  `{ project; active; history }`
+- `getProjectRuns(slug): Promise<ProjectRuns | null>`, where `ProjectRuns` is
+  `{ project: ProjectSummary; active: Run[]; history: Run[]; fetched_at: string }`
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
 data; the query keys and the `QueryClient` factory (next section) are cache
-plumbing, not data. The Supabase client is untyped (no generated `Database` type yet), so
-`getProjects` casts the view's rows to `ProjectSummary[]` at the boundary;
-generating types for the `adw` schema is a follow-up.
+plumbing, not data. The Supabase client is untyped (no generated `Database` type
+yet), so both functions cast rows at the boundary: `getProjects` and the project
+lookup in `getProjectRuns` cast the view's rows to `ProjectSummary`, and
+`getProjectRuns` casts the table's rows to `Run[]`. Generating types for the
+`adw` schema is a follow-up.
 
 Because the layout prefetch and `generateStaticParams` both call
-`getProjects()`, the database is read at **build time** as well as at request
+`getProjects()`, and the page prefetch calls `getProjectRuns()` for every slug,
+the database is read at **build time** as well as at request
 time. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 must therefore be present for `yarn build`, which reads `.env.local` (not
 `.env.development`); without them `getSupabase()` throws and the build fails
@@ -91,9 +105,49 @@ wrappers; the boundary functions `getProjects` and `getProjectRuns` are the
 
 Each boundary function runs on the server during its prefetch (and at build
 time, through it) and in the browser only on a cache miss, which the hydration
-makes rare. `getProjectRuns` is synchronous today (fixtures); React Query
-accepts a plain value from a `queryFn`, so it needs no async wrapper, and making
-it async when it becomes a database read changes nothing at the call sites.
+makes rare.
+
+### Derived labels: a clock seeded with `fetched_at`
+
+The three labels a run row shows that are not columns (`is_stale`,
+`duration_label`, `since_update_label`) depend on what time it is, and under
+`cacheComponents` the time is the one thing neither prerender pass may read
+(details in the sections below). So they are derived in the browser, from a
+ticking clock, by two small modules under `src/lib/`:
+
+- `src/lib/run-view.ts` exports `toRunView(run, now): RunView` and
+  `STALE_AFTER_MS`. It is pure (the caller passes `now` in epoch milliseconds)
+  and unit-tested with fixed timestamps in `src/lib/run-view.test.ts`. A running
+  run whose `updated_at` is more than `STALE_AFTER_MS` (30 minutes) before `now`
+  is stale; finished runs never are. `duration_label` is `started_at` to
+  `finished_at`, or to `now` while running, as `47m 26s` under an hour and
+  `1h 03m` from an hour up. `since_update_label` is `just now` under 30 seconds,
+  then `2m ago`, `3h ago`, `2d ago`.
+- `src/lib/use-now.ts` exports `useNow(serverNow)`, a `useSyncExternalStore`
+  hook over a module-level store: one `setInterval` of 30 seconds, started with
+  the first subscriber and stopped with the last, whose snapshot is the current
+  time. Its server snapshot is `Date.parse(serverNow)`.
+
+`ProjectRunsView` calls `useNow(data.fetched_at)` once and maps every run
+through `toRunView(run, now)` before handing `RunView`s to `RunRow` and
+`RunHistory`, which are unchanged and know nothing about the clock. The seed is
+what makes this safe under `cacheComponents`: during the server render and
+during hydration React uses the server snapshot, so no clock is read while
+prerendering and the first client render matches the server markup; right after
+hydration React notices the live snapshot differs and re-renders once with it,
+and the labels tick from there. The consequence to know: **the labels in the
+static HTML are relative to `fetched_at`**, the moment the cached rows were
+read (the build, or the last refill of the `runs:<slug>` cache entry), not the
+moment the page is viewed. A page served from the cache a day later says
+"updated 1d ago" in its HTML and corrects itself as soon as it hydrates.
+
+`fetched_at` itself is `new Date().toISOString()` taken inside
+`getProjectRuns`, which only ever runs inside the page's `"use cache"` scope on
+the server. A clock read inside a cache scope is allowed (the value is cached
+with the rows, so every visitor sees the same one until revalidation); the same
+read outside one fails the prerender. That is also why `generateMetadata` goes
+through the cached `getRunsState` rather than calling `getProjectRuns`
+directly.
 
 ### Prefetch and hydration of the sidebar
 
@@ -150,16 +204,18 @@ The project page follows the same pattern, one cache entry per slug:
    `prefetch(queryKeys.runs(slug), () => getProjectRuns(slug))`: the same
    one-liner shape as the layout's `getProjectsState`. The cache scope is
    required for the same reason as in the layout (React Query stamps the
-   settled query with `Date.now()`). The data itself reads no clock:
-   `getProjectRuns` returns fixtures whose time-derived labels are precomputed,
-   and that must stay true when the database read lands (derive labels in the
-   fetcher or in SQL, never from the clock inside the cache scope or a
-   component). The rejection is not caught, as in the layout.
+   settled query with `Date.now()`), and `getProjectRuns` reads the clock once
+   more for `fetched_at`, which is permitted for the same reason: inside the
+   scope, the value is cached with the rows. The rows carry no derived labels;
+   those are computed in the browser against a clock seeded with `fetched_at`
+   (see "Derived labels" above). The rejection is not caught, as in the layout.
 2. The page decides not-found from the prefetched data: it destructures
    `{ data, state }` from `getRunsState`, and `data === null` means
    `notFound()` before any boundary renders, so the data layer is read once
    per slug, not twice, and nothing searches the dehydrated queries by hash.
-   `generateStaticParams` and `generateMetadata` are unchanged. The caveat from
+   `generateMetadata` reads the title through the same `getRunsState`, so the
+   slug costs one database round trip, not two, and the `fetched_at` clock read
+   stays inside the cache scope. `generateStaticParams` is unchanged. The caveat from
    before stands: for a slug outside `generateStaticParams` the static shell
    has already gone out with a 200 when `notFound()` runs, so the not-found
    panel streams in as a soft 404.
@@ -171,25 +227,27 @@ The project page follows the same pattern, one cache entry per slug:
    entry and the project's entry sit side by side in the same cache.
 4. `src/components/ProjectRunsView.tsx` is a client component that reads
    `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"` and
-   `refetchOnMount: false` (same two reasons as the sidebar) and renders the
-   header, the Active section (`RunRow`) and the History section (`RunHistory`)
-   from the cache. It renders the not-found panel for `null` data as a guard
-   only; the server has already excluded that case.
+   `refetchOnMount: false` (same two reasons as the sidebar), seeds `useNow`
+   with the data's `fetched_at`, maps the rows through `toRunView` and renders
+   the header, the Active section (`RunRow`) and the History section
+   (`RunHistory`) from the result. It renders the not-found panel for `null`
+   data as a guard only; the server has already excluded that case.
 
 One rendering detail to know when reading the served HTML of a pre-rendered
-project page. The pane is in the static HTML, but as a streamed Suspense
-completion: the document carries the "Loading runs..." fallback at the pane's
+project page. The pane is in the static HTML; in the current build it is
+rendered inline (the "Loading runs..." fallback occurs only inside the RSC
+payload, as the boundary's `fallback` prop). An earlier build shipped the same
+pane as a streamed Suspense completion instead: the fallback at the pane's
 position, the rendered rows in a hidden segment a few kilobytes later, and
-React's inline `$RC` script swaps them in as the document parses, before any
-bundle loads and without a fetch. This is not the query cache (the view's query
-is a cache hit during the server render, verified with a build-time log). It is
-the SSR module for `ProjectRunsView`: it lives in the page's own client chunk,
-which is still loading when the prerender first reaches the element, so React
-suspends on the lazy module reference and completes the boundary once the chunk
-is in. The sidebar does not do this because its chunk is already loading for the
-root layout's client components. The page behaved exactly the same before the
-runs moved onto the query layer, with `RunHistory` as the cold module and
-`loading.tsx` as the boundary that caught it.
+React's inline `$RC` script swapping them in as the document parses, before any
+bundle loads and without a fetch. Both are legitimate. The streamed form is not
+the query cache (the view's query is a cache hit during the server render) and
+not a clock read; it is the SSR module for `ProjectRunsView` living in the
+page's own client chunk, which React may still be loading when the prerender
+first reaches the element, so it suspends on the lazy module reference and
+completes the boundary once the chunk is in. What would be a problem is the
+rows missing from the document altogether, which is what a clock read in a
+client component during the prerender produces.
 
 ### QueryBoundary
 
@@ -316,8 +374,10 @@ live updates (above) go through the query cache, not this store.
 `src/types/adw.ts` has two sections. `Project` and `Run` mirror the database
 tables column for column. `ProjectSummary` and `RunView` are view models the
 screens need that the database does not store (counts, `is_stale`,
-`duration_label`, `since_update_label`); the data layer is responsible for
-producing them.
+`duration_label`, `since_update_label`). `ProjectSummary` comes from the data
+layer (the `project_summaries` view computes the counts); `RunView` comes from
+`toRunView` in `src/lib/run-view.ts`, applied in the browser to a `Run` and the
+current time.
 
 ## Routing
 

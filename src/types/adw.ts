@@ -1,7 +1,10 @@
 // Domain types. The two interfaces in the first section mirror the database
 // tables column for column; keep them in lockstep with the schema. The second
 // section holds view models that the screens need but the database does not
-// store. They are produced by the data layer in src/data/, never by components.
+// store. ProjectSummary is produced by the data layer in src/data/ (the
+// project_summaries view); RunView is produced by the pure toRunView in
+// src/lib/run-view.ts from a Run and a moment in time. Neither is produced by
+// a leaf component.
 
 // ---------------------------------------------------------------------------
 // Database rows
@@ -46,11 +49,14 @@ export interface ProjectSummary extends Project {
   last_run_at: string | null;
 }
 
-/** A run plus the derived labels the runs page shows. */
+/**
+ * A run plus the derived labels the runs page shows, all relative to one
+ * moment ("now"): see toRunView in src/lib/run-view.ts.
+ */
 export interface RunView extends Run {
-  /** True when a running run has not reported progress for too long. */
+  /** True when a running run has not reported progress for STALE_AFTER_MS. */
   is_stale: boolean;
-  /** Human-readable wall-clock duration, null while the run is still going. */
+  /** Human-readable wall-clock duration, to finished_at or to now while running. */
   duration_label: string | null;
   /** Human-readable "time since updated_at", for example "2m ago". */
   since_update_label: string;

@@ -1,18 +1,24 @@
 // The single boundary between the screens and wherever the data comes from.
-// The pages and components only ever import from "@/data" and only ever see
-// ProjectSummary and RunView, so wiring a data source is a change to this file
-// alone. The project list is live (the adw.project_summaries view); the runs
-// are still the hand-written fixtures until the runs read is wired.
-import type { ProjectSummary, RunView } from "@/types/adw";
-import { projects as fixtureProjects, runs } from "./fixtures";
+// The pages and components only ever import from "@/data", so wiring a data
+// source is a change to this file alone. Both reads are live: the project list
+// comes from the adw.project_summaries view and a project's runs from the
+// adw.runs table, through the one Supabase client.
+import type { ProjectSummary, Run } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
 export interface ProjectRuns {
   project: ProjectSummary;
-  /** Runs with status "running", in the order the data layer gives them. */
-  active: RunView[];
-  /** Completed and failed runs, newest first, as given by the data layer. */
-  history: RunView[];
+  /** Runs with status "running", most recently updated first. */
+  active: Run[];
+  /** Completed and failed runs, most recently updated first. */
+  history: Run[];
+  /**
+   * ISO timestamp of the moment the rows were read. It is the "now" the
+   * server HTML's relative labels are computed against, and the value the
+   * browser's ticking clock (useNow in src/lib/use-now.ts) starts from during
+   * hydration, so the first client render matches the server markup.
+   */
+  fetched_at: string;
 }
 
 /**
@@ -50,29 +56,61 @@ export async function getProjects(): Promise<ProjectSummary[]> {
  * Also the queryFn for queryKeys.runs(slug): it runs on the server during the
  * page's prefetch (and at build time, through it, for every slug in
  * generateStaticParams), and in the browser only when the cache has nothing
- * under that key, which the hydration makes rare. It is synchronous today;
- * React Query accepts a plain value from a queryFn, so no wrapper is needed,
- * and making it async when the database read lands changes nothing upstream.
+ * under that key, which the hydration makes rare.
  *
- * No clock is read here: the fixtures carry every time-derived label
- * (is_stale, duration_label, since_update_label) precomputed against a fixed
- * fixture "now", so nothing inside the page's "use cache" scope calls
- * Date.now() apart from React Query's own stamps. Keep it that way when the
- * database read lands; derive labels in SQL or here, never in the component.
+ * Two reads. The project comes from adw.project_summaries by slug (the same
+ * row shape getProjects returns, so the header and the sidebar agree), and a
+ * missing row is the not-found case. The runs come from adw.runs by
+ * project_id, most recently updated first; RLS limits both to public projects.
+ * The split into active and history is the only derivation here. The
+ * time-derived labels (is_stale, duration_label, since_update_label) are not
+ * computed on the server at all: they are derived in the browser by
+ * toRunView (src/lib/run-view.ts) against a ticking clock, so they stay
+ * correct however long the cached rows are served.
  *
- * TEMPORARY: runs are not read from the database yet, so this still resolves
- * the project from the fixture project list (the fixture runs reference
- * fixture project ids). A real project that has no fixture entry gets null,
- * which the page renders as not found. The runs read replaces this whole
- * function and the fixture lookup goes with it.
+ * fetched_at is the one clock read in the data layer. This function runs
+ * inside the page's "use cache" scope (getRunsState), where Cache Components
+ * permits reading the current time: the value is cached with the rows and
+ * every visitor sees the same one until the entry is refilled. It is what the
+ * server HTML's labels are relative to and what the browser's clock starts
+ * from while hydrating, so the two renders agree. Reading it outside a cache
+ * scope would fail the prerender (next-prerender-current-time), so this
+ * function must only be called from inside one on the server.
  */
-export function getProjectRuns(slug: string): ProjectRuns | null {
-  const project = fixtureProjects.find((candidate) => candidate.slug === slug);
-  if (!project) return null;
-  const own = runs.filter((run) => run.project_id === project.id);
+export async function getProjectRuns(slug: string): Promise<ProjectRuns | null> {
+  const supabase = getSupabase();
+
+  const projectResult = await supabase
+    .from("project_summaries")
+    .select("*")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (projectResult.error) {
+    throw new Error(`project_summaries: ${projectResult.error.message}`);
+  }
+  if (projectResult.data === null) return null;
+  // Same untyped client, same reasoning as in getProjects: the view's columns
+  // are exactly the fields of ProjectSummary, asserted once at the boundary.
+  const project = projectResult.data as ProjectSummary;
+
+  const runsResult = await supabase
+    .from("runs")
+    .select(
+      "project_id, adw_id, issue_number, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at",
+    )
+    .eq("project_id", project.id)
+    .order("updated_at", { ascending: false });
+  if (runsResult.error) {
+    throw new Error(`runs: ${runsResult.error.message}`);
+  }
+  // The selected columns are exactly the fields of Run, so this cast is the
+  // one place the table's shape is asserted.
+  const runs = (runsResult.data ?? []) as Run[];
+
   return {
     project,
-    active: own.filter((run) => run.status === "running"),
-    history: own.filter((run) => run.status !== "running"),
+    active: runs.filter((run) => run.status === "running"),
+    history: runs.filter((run) => run.status !== "running"),
+    fetched_at: new Date().toISOString(),
   };
 }
