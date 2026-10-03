@@ -174,6 +174,27 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
+- Any `"use cache"` scope that must reflect on-demand revalidation on a
+  prerendered route awaits `connection()` (from `next/server`) before the
+  cached call, as `HistorySection` does before `getHistory`. A scope that is
+  prerendered into the static shell is read from the shell's embedded Resume
+  Data Cache on every resumed request, frozen at build time, and no
+  `updateTag`, `revalidateTag` or `revalidatePath` reaches it; a request-time
+  hole is resolved from the live cache handler and keeps its lifetime (see
+  README, "What is prerendered and what is not"). The `await connection()`
+  stays the first statement of `HistorySection`, the `Suspense` stays around
+  it, and `getHistory` stays out of the page body and `generateMetadata`,
+  where it would be prerendered again. Do not swap it
+  for a short `cacheLife` (`expire` under 5 minutes also makes a hole but
+  gives up the long lifetime). The Active scope (`runs:<slug>`) stays in the
+  shell on purpose; the browser keeps it current.
+- Proof rule for anything about revalidation: verify with a database change
+  made **after** `yarn build` (a test row inserted, a run completing), call
+  the action, and look for the change in the next response's HTML. A row that
+  existed at build time is in the shell regardless and proves nothing. With
+  `NEXT_PRIVATE_DEBUG_CACHE=1` on `yarn start`, a plain GET must not add a
+  `use-cache: ... generated entry` line for the `getHistory` scope, and the
+  first GET after the action must.
 - A completion triggers revalidate THEN refresh, in that order and only in
   that order. The realtime module removes the run from the Active entry
   (`applyRunChange`), calls `onHistoryChange(slug)` when `isHistoryChange` is
@@ -192,10 +213,13 @@ without deciding what an anonymous caller can do with it.`updateTag`, not
 refresh would be served the old history (see
 `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`).
 - The `runs:<slug>` tag is dropped alongside `history:<slug>` on purpose: it
-  is the Active prefetch scope, and leaving it would let the refresh (and the
-  next visitor) hydrate an Active list that still holds the completed run.
-  Keep the two `cacheTag` spellings in the page equal to the two `updateTag`
-  spellings in the action.
+  is the Active prefetch scope, and on a full regeneration of the page (or a
+  host whose cache handler behaves differently) leaving it would let the
+  refresh (and the next visitor) hydrate an Active list that still holds the
+  completed run. Know that on a resumed prerender the tag does not reach that
+  scope (it is in the static shell); Realtime, the hydration rule and the
+  catch-up cover Active there. Keep the two `cacheTag` spellings in the page
+  equal to the two `updateTag` spellings in the action.
 - Hydration after a refresh is safe because React Query only overwrites an
   existing entry when the incoming `dataUpdatedAt` is strictly newer
   (`src/data/hydration.test.ts` pins this against the installed

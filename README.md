@@ -260,9 +260,12 @@ History is rendered below that, by the same page:
 5. `getHistory(slug)` is a second `"use cache"` function in the page, tagged
    `history:<slug>`, that returns `getCompletedRuns(slug)`: plain rows, no
    clock read, no React Query. `HistorySection` is an async server component
-   that awaits it and renders `<RunHistory runs={...} projectSlug={slug} />`,
-   wrapped in its own `<Suspense>` (fallback "Loading history...") so Active
-   never waits on it. `src/components/RunHistory.tsx` is a server component
+   that awaits `connection()` (from `next/server`) and then `getHistory`, and
+   renders `<RunHistory runs={...} projectSlug={slug} />`, wrapped in its own
+   `<Suspense>` (fallback "Loading history...") so Active never waits on it.
+   The `connection()` call makes the section a request-time hole, which is
+   what lets the tag revalidation below reach it; see "What is prerendered and
+   what is not". `src/components/RunHistory.tsx` is a server component
    with no state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant still shows Finished
    and Duration.
@@ -281,8 +284,10 @@ When a run completes, three things happen in the browser, in this order:
    action validates the slug against `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$` and
    returns early otherwise; for a valid slug it calls `updateTag` on
    `history:<slug>` and on `runs:<slug>`, and nothing else. The second tag is
-   the Active prefetch scope: without it, the refresh (and the next visitor)
-   would get an Active list that still holds the finished run.
+   the Active prefetch scope: on a full regeneration of the page it keeps the
+   refresh (and the next visitor) from getting an Active list that still holds
+   the finished run. On a resumed prerender it does not reach that scope (see
+   "What is prerendered and what is not"); the browser covers Active anyway.
 3. Only after the action resolves, `router.refresh()` re-renders the route on
    the server. The history scope is a cache miss, so `HistorySection` reads
    `getCompletedRuns` from the database and the new row appears.
@@ -319,6 +324,50 @@ stored separately and leaves the scope's own output cached and tagged, so
 dropping the tag is the whole story and the next render reads the database.
 The browser's fetch is not patched and keeps the default. After a build,
 `.next/cache/fetch-cache` holds no Supabase entry.
+
+#### What is prerendered and what is not
+
+A pre-rendered project page has two kinds of content. The sidebar (the
+layout's `projects` scope) and Active (the page's `runs:<slug>` scope) are in
+the **static shell**: their `"use cache"` results are resolved at build time
+and embedded in the shell as its Resume Data Cache. History is a
+**request-time hole**: `HistorySection` awaits `connection()` before
+`getHistory`, so the shell carries the "Loading history..." fallback and the
+section streams in on each request. The build's route table shows the project
+pages as "Partial Prerender" for this reason.
+
+The distinction matters because of how a prerendered route is served. Under
+`cacheComponents`, a request for a prerendered page resumes the shell, and a
+`"use cache"` scope that was part of the shell is read from the shell's
+embedded Resume Data Cache (debug log, `NEXT_PRIVATE_DEBUG_CACHE=1`:
+`use-cache: Resume Data Cache entry found`), frozen at build time. The live
+cache handler is never consulted for it. `updateTag("history:<slug>")` did
+expire the live entry and `getHistory` did re-execute with fresh rows, but
+every later request kept resuming the shell and reading the build-time rows;
+`revalidatePath` changes nothing about that. A hole is resolved from the
+live cache handler on every request, so a tag update reaches it, and the
+scope keeps its default lifetime, so `getHistory` still runs only on a miss
+(build, then once after each tag update), not per request. The documented
+alternative is a `cacheLife` with `expire` under 5 minutes, which also
+excludes the scope from prerenders (`node_modules/next/dist/docs/01-app/
+03-api-reference/04-functions/cacheLife.md`, "Prerendering behavior");
+`connection()` is used instead because it keeps the long lifetime.
+
+The same applies to Active: `runs:<slug>` is in the shell, so
+`updateTag("runs:<slug>")` does not refresh it on a resume. That is left as
+is. The browser patches Active through Realtime, hydration skips a dehydrated
+state older than the live entry (next paragraph), and the catch-up on every
+`SUBSCRIBED` re-reads it; the action keeps dropping the tag because it is
+correct on a full regeneration and on hosts whose handler behaves differently.
+
+How to prove any of this: make a database change **after** the build (a run
+completing, or a test row inserted), call the action, and look for the change
+in the next response's HTML. A row that already existed at build time proves
+nothing, because the shell carries it whether or not the tag worked; the
+earlier fix in this file was verified that way and looked correct until a
+post-build row showed it was not. With the debug log on, a fresh
+`use-cache: ... generated entry` line for the `getHistory` scope after the
+action, and none between two plain GETs, is the mechanical half of the proof.
 
 On that refresh the Active `HydrationBoundary` receives a dehydrated state
 again. React Query's `hydrate()` (`@tanstack/query-core`, `hydration.js`)
@@ -365,10 +414,14 @@ event cannot say what the deleted run was, and a completed run that no longer
 exists should leave History on the next render rather than at cache expiry.
 
 One rendering detail to know when reading the served HTML of a pre-rendered
-project page. Both panes are in the static HTML; in the current build they are
-rendered inline (the "Loading runs..." and "Loading history..." fallbacks occur
-only inside the RSC payload, as the boundaries' `fallback` props). An earlier
-build shipped the Active pane as a streamed Suspense completion instead: the
+project page. The Active pane is in the static shell; History streams in
+behind its Suspense boundary on every request (see "What is prerendered and
+what is not"), so in the served document the "Loading history..." fallback
+sits at the section's position, the rendered rows follow in a hidden segment,
+and React's inline `$RC` script swaps them in as the document parses. The
+Active pane is rendered inline in the current build (its "Loading runs..."
+fallback occurs only inside the RSC payload, as the boundary's `fallback`
+prop). An earlier build shipped the Active pane as a streamed completion too: the
 fallback at the pane's position, the rendered rows in a hidden segment a few
 kilobytes later, and React's inline `$RC` script swapping them in as the
 document parses, before any bundle loads and without a fetch. Both are

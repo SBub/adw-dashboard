@@ -2,6 +2,7 @@ import { HydrationBoundary } from "@tanstack/react-query";
 import type { Metadata } from "next";
 import { cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { ActiveRunsView } from "@/components/ActiveRunsView";
 import { QueryBoundary } from "@/components/QueryBoundary";
@@ -101,7 +102,35 @@ async function getHistory(slug: string): Promise<Run[]> {
 // The History half of the pane, an async server component. It reads through
 // the cached getHistory and hands the rows to RunHistory as stored. It renders
 // under its own Suspense boundary so the Active half above never waits on it.
+//
+// `await connection()` comes first so this section is a request-time hole in
+// the prerendered page rather than part of its static shell. A "use cache"
+// scope that is prerendered into the shell is read, on every later request,
+// from the shell's embedded Resume Data Cache (debug log: "use-cache: Resume
+// Data Cache entry found"), which is frozen at build time; updateTag expires
+// the live cache entry and re-executes getHistory, but a resumed render never
+// consults the live handler for that scope, so the new rows are never served.
+// Made a hole, the scope is resolved per request from the live cache handler,
+// and the tag reaches it. The scope keeps its default cacheLife, so history is
+// still cached between completions (observed: getHistory runs at build and
+// once after the tag update, not per request). The documented alternative is
+// a cacheLife with `expire` under 5 minutes, which also excludes the scope
+// from prerenders (node_modules/next/dist/docs/01-app/03-api-reference/
+// 04-functions/cacheLife.md, "Prerendering behavior"); connection() is
+// preferred because it keeps the long lifetime (connection.md: "prerendering
+// stops here"). The Suspense boundary below is therefore a real streaming
+// boundary: the shell ships the fallback and this section streams in.
+//
+// The same limitation applies to the Active prefetch scope (runs:<slug>),
+// which IS prerendered into the shell: updateTag("runs:<slug>") does not
+// refresh it on a resumed render. That is left as is on purpose. The browser
+// patches Active through Realtime, hydration skips a dehydrated state older
+// than the live entry (src/data/hydration.test.ts), and the catch-up on every
+// SUBSCRIBED re-reads it. The action keeps dropping the tag because it is
+// correct on a full regeneration of the page and on hosts whose cache handler
+// behaves differently.
 async function HistorySection({ slug }: { slug: string }) {
+  await connection();
   const runs = await getHistory(slug);
   return <RunHistory runs={runs} projectSlug={slug} />;
 }
@@ -148,8 +177,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       </HydrationBoundary>
 
       {/* Server-rendered, not hydrated: no query, no boundary of the query
-          kind. The fallback shows while the history scope fills on a cache
-          miss (first visit after a completion or after the cache lifetime). */}
+          kind. HistorySection awaits connection(), so this boundary is a real
+          streaming boundary: the prerendered shell carries the fallback and
+          the section streams in at request time (from the cached scope, or
+          from the database on a miss after a completion or the lifetime). */}
       <Suspense
         fallback={
           <section>
