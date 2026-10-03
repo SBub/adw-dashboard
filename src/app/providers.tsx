@@ -2,7 +2,7 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useState } from "react";
-import { makeQueryClient } from "@/data/projects-query";
+import { makeQueryClient } from "@/data/query-client";
 import { startRealtime } from "@/data/realtime";
 
 /**

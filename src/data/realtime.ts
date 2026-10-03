@@ -7,12 +7,12 @@ import type { QueryClient } from "@tanstack/react-query";
 import { ConnectionStatus, setConnectionStatus } from "@/components/ConnectionIndicator";
 import type { Project, ProjectSummary } from "@/types/adw";
 import { applyProjectChange } from "./apply-project-change";
-import { projectsKey } from "./projects-query";
+import { queryKeys } from "./query-keys";
 import { getSupabase } from "./supabase";
 
 /**
  * Opens the "adw" channel and subscribes to every change on adw.projects.
- * Each event is folded into the cached list under projectsKey with
+ * Each event is folded into the cached list under queryKeys.projects with
  * setQueryData, which is the update path for a static query (invalidation
  * would skip it). The channel's status callback is the one writer of the
  * connection indicator.
@@ -26,7 +26,7 @@ export function startRealtime(queryClient: QueryClient): () => void {
   const channel: RealtimeChannel = supabase
     .channel("adw")
     .on<Project>("postgres_changes", { event: "*", schema: "adw", table: "projects" }, (ev) => {
-      queryClient.setQueryData<ProjectSummary[]>(projectsKey, (current = []) =>
+      queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, (current = []) =>
         applyProjectChange(current, ev),
       );
     })

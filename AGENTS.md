@@ -28,11 +28,15 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Fixtures satisfy the types. `src/data/fixtures.ts` is typed as
   `ProjectSummary[]` and `RunView[]`, so a fixture that drifts from the types
   fails `yarn typecheck`.
-- Wiring happens at one boundary, `src/data/`. Pages import `getProjects` and
-  `getProjectRuns` from `@/data` and nothing else for data. `getProjects` is
-  async and reads the `project_summaries` view; `getProjectRuns` is still on
-  fixtures. Wiring the runs means changing `src/data/index.ts` while keeping
-  those two signatures, and nothing elsewhere.
+- Wiring happens at one boundary, `src/data/`. Pages and components import
+  `getProjects` and `getProjectRuns` from `@/data` and nothing else for data;
+  those two functions are also the `queryFn`s, passed directly, with no
+  fetcher wrapper in between (a function that only calls the boundary adds
+  nothing; do not reintroduce one). `getProjects` is async and reads the
+  `project_summaries` view; `getProjectRuns` is still on fixtures. Wiring the
+  runs means changing `src/data/index.ts` while keeping those two signatures,
+  and nothing elsewhere. The query layer (`query-keys.ts`, `query-client.ts`)
+  holds keys and the client factory only; it never reads Supabase or fixtures.
 - `getProjects()` casts the untyped Supabase rows to `ProjectSummary[]` at the
   boundary. That cast is the only place the view's shape is asserted; do not
   add a second one in a page or component.
@@ -46,10 +50,29 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `generateStaticParams`), so `yarn build` needs `.env.local` with the two
   Supabase variables. A missing file fails the build on purpose; do not add a
   fallback that returns an empty list.
-- The project-list query key lives only in `src/data/projects-query.ts`
-  (`projectsKey`). Import it wherever the list is prefetched or read; never
-  build `["projects"]` inline. A key that differs by one element is a cache
-  miss, which means a second fetch in the browser.
+- Every query key is defined in `src/data/query-keys.ts` (`queryKeys.projects`,
+  `queryKeys.runs(slug)`) and imported from there: in the layout's and the
+  page's prefetch, in `ProjectNav`'s and `ProjectRunsView`'s `useSuspenseQuery`,
+  and in every `setQueryData` the Realtime listeners do. Never build a key inline and never
+  add a key literal elsewhere: a key that differs by one element is a cache
+  miss, which means a second fetch in the browser. The slug is part of the runs
+  key's hash, so join it the same way on both sides (`parts.join("/")`, as the
+  page does).
+- `makeQueryClient()` in `src/data/query-client.ts` is the one `QueryClient`
+  factory. Every server prefetch and `Providers` build from it; do not call
+  `new QueryClient()` anywhere else, or the dehydrate rule drifts between sides.
+- `prefetch(queryKey, queryFn)` in the same file is the one server prefetch.
+  Every `"use cache"` state function (the layout's `getProjectsState`, the
+  page's `getRunsState`) is a one-liner around it that adds only its
+  `cacheTag`s; do not inline `makeQueryClient` + `query()` + `dehydrate()`
+  again in a page or layout, and do not add a `.catch` to the helper (an empty
+  dehydrated cache ships the fallback silently). Whatever it returns must stay
+  plain JSON, because it is a `"use cache"` result.
+- A project page's not-found decision is read off the `data` half of
+  `getRunsState`'s result (`data === null`), not from a second
+  `getProjectRuns` call and not by searching the dehydrated state's queries by
+  hash. Keep it that way when the runs become a database read, or every
+  unknown slug costs two reads.
 - Any `useSuspenseQuery` is rendered inside `QueryBoundary`
   (`src/components/QueryBoundary.tsx`), never a bare `Suspense`. Without an
   error boundary a failed fetch escapes to the segment's `error.tsx` and
@@ -66,9 +89,14 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `dehydrate` do) must sit inside a `"use cache"` function or the build fails.
   In client components it does not fail the build: the first clock read
   silently aborts the client prerender and the component ships as its Suspense
-  fallback. That is why the sidebar query has `staleTime: "static"`; keep it,
-  and check the served HTML (not just the build) when adding client hooks to
-  the prerendered shell.
+  fallback. That is why the sidebar and runs queries have
+  `staleTime: "static"`; keep it, and check the served HTML (not just the
+  build) when adding client hooks to the prerendered shell. When you do, know
+  that a pre-rendered project page legitimately contains the runs pane as a
+  streamed Suspense completion (fallback plus hidden segment plus `$RC` swap in
+  the same document); that is the page's cold SSR client chunk, not a cache
+  miss or a clock read. See README, "Prefetch and hydration of a project's
+  runs".
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`) and view
   models (`ProjectSummary`, `RunView`) in clearly separated sections. Row
   types mirror the schema column for column; view models are produced by the
@@ -76,7 +104,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Server components by default; `"use client"` only where the browser must
   hold state (the History filter in `RunHistory`, the React Query provider in
   `src/app/providers.tsx`, `ProjectNav`, which reads the pathname and the
-  query cache, and `ConnectionIndicator`, which subscribes to its store).
+  query cache, `ProjectRunsView`, which reads the runs from the query cache,
+  and `ConnectionIndicator`, which subscribes to its store).
 - `Timestamp` renders ISO strings by substring on purpose so server and client
   markup agree. Do not introduce locale or timezone formatting in components.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written

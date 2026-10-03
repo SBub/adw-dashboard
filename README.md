@@ -35,13 +35,15 @@ the runs fetcher with a database read is the next step, and the fixture
 project list goes away with it.
 
 `src/data/index.ts` is the single boundary the screens read through. It
-exports two functions:
+exports two functions and the shape the second one returns:
 
 - `getProjects(): Promise<ProjectSummary[]>`
-- `getProjectRuns(slug): { project; active; history } | null`
+- `getProjectRuns(slug): ProjectRuns | null`, where `ProjectRuns` is
+  `{ project; active; history }`
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
-data. The Supabase client is untyped (no generated `Database` type yet), so
+data; the query keys and the `QueryClient` factory (next section) are cache
+plumbing, not data. The Supabase client is untyped (no generated `Database` type yet), so
 `getProjects` casts the view's rows to `ProjectSummary[]` at the boundary;
 generating types for the `adw` schema is a follow-up.
 
@@ -57,21 +59,41 @@ to `notFound()` at request time.
 
 ### The query layer
 
-`src/data/projects-query.ts` sits beside the boundary and is the query layer
-over it: what the server and the browser share so the two sides of the React
-Query cache cannot drift apart. It exports three things:
+`src/data/query-keys.ts` and `src/data/query-client.ts` sit beside the boundary
+and are the query layer over it: what the server and the browser share so the
+two sides of the React Query cache cannot drift apart. There are no fetcher
+wrappers; the boundary functions `getProjects` and `getProjectRuns` are the
+`queryFn`s themselves, passed straight from `@/data` at every call site.
 
-- `projectsKey`, the one query key (`["projects"]`) for the project list. It is
-  imported wherever the list is prefetched or read; it is never built inline.
-- `fetchProjects()`, the fetcher, which calls `getProjects()` through the
-  boundary. It runs on the server during the prefetch, and in the browser only
-  on a cache miss.
-- `makeQueryClient()`, the one `QueryClient` factory for both sides. Its
-  `shouldDehydrateQuery` rule includes pending queries, so a prefetch that is
-  still in flight can be handed to the browser instead of fetched twice.
+- `queryKeys` in `query-keys.ts`, the single home of every query key:
+  `queryKeys.projects` (`["projects"]`) for the project list and
+  `queryKeys.runs(slug)` (`["runs", slug]`) for a project's runs. A key is
+  imported from there wherever a resource is prefetched, read or written by the
+  Realtime listener; no key is ever built inline, and no key literal exists
+  anywhere else.
+- `makeQueryClient()` in `query-client.ts`, the one `QueryClient` factory for
+  both sides. Its `shouldDehydrateQuery` rule includes pending queries, so a
+  prefetch that is still in flight can be handed to the browser instead of
+  fetched twice.
+- `prefetch(queryKey, queryFn)` in the same file, the one server prefetch:
+  it builds a client from the factory, awaits `queryClient.query()` and
+  returns `{ data, state }`, the resolved value next to `dehydrate()` of the
+  client. Both `"use cache"` state functions (the layout's `getProjectsState`,
+  the page's `getRunsState`) are one-liners around it, so the two prefetches
+  cannot drift apart, and a caller that needs the value (the page's not-found
+  decision) reads `data` instead of searching the dehydrated queries by hash.
+  (`prefetchQuery` is deprecated in React Query 5.104; `query()` is its
+  replacement and, unlike `prefetchQuery`, it rejects when the fetcher throws.
+  `prefetch` does not catch that on purpose: a swallowed failure would
+  dehydrate an empty cache and ship the fallback silently, so the build or the
+  request fails instead.) The returned object is plain JSON, as a result of a
+  `"use cache"` function must be.
 
-The run detail pages do not use the query layer; they read `getProjectRuns`
-directly as server components.
+Each boundary function runs on the server during its prefetch (and at build
+time, through it) and in the browser only on a cache miss, which the hydration
+makes rare. `getProjectRuns` is synchronous today (fixtures); React Query
+accepts a plain value from a `queryFn`, so it needs no async wrapper, and making
+it async when it becomes a database read changes nothing at the call sites.
 
 ### Prefetch and hydration of the sidebar
 
@@ -79,25 +101,24 @@ The sidebar follows the "server prefetch with hydration" pattern, so the
 project list is in the server HTML at first paint and the browser never
 fetches it again on mount:
 
-1. `src/app/(dashboard)/layout.tsx` (a server component) builds a client from
-   `makeQueryClient()`, awaits `queryClient.query()` under `projectsKey`, and
-   calls `dehydrate()` on it. (`prefetchQuery` is deprecated in React Query
-   5.104; `query()` is its replacement and, unlike `prefetchQuery`, it rejects
-   when the fetcher throws. The layout does not catch that on purpose: a
-   swallowed failure would dehydrate an empty cache and ship the sidebar's
-   fallback silently, so the build or the request fails instead.) This happens
-   inside a `"use cache"` function (`getProjectsState`, tagged `projects`). The
-   scope is required: React Query stamps the settled query with `Date.now()`,
+1. `src/app/(dashboard)/layout.tsx` (a server component) calls
+   `prefetch(queryKeys.projects, getProjects)` and keeps the `state` half of
+   the result (the sidebar reads the list from the cache, so the layout has no
+   use for `data`). This happens inside a `"use cache"` function
+   (`getProjectsState`, tagged `projects`). The scope is required: React Query
+   stamps the settled query with `Date.now()`,
    and with `cacheComponents` on, reading the current time outside a cache
    scope fails the prerender of `/` (`next-prerender-current-time`). Cached,
    the stamp is the cache fill time.
-2. The layout renders `<Providers><HydrationBoundary state={…}>` around the
-   sidebar and the page. `src/app/providers.tsx` is a client component holding
-   one `QueryClient` per browser session (lazy `useState` from the same
-   factory). It must sit above the boundary, because the boundary writes into
-   the client the provider holds.
+2. The layout renders `<Providers>` around the whole two-pane shell and
+   `<HydrationBoundary state={…}>` around the sidebar's `QueryBoundary` only,
+   since `ProjectNav` is the one consumer of that state; the page renders
+   outside it. `src/app/providers.tsx` is a client component holding one
+   `QueryClient` per browser session (lazy `useState` from the same factory).
+   It must sit above every boundary, because each boundary writes into the
+   client the provider holds.
 3. `src/components/ProjectNav.tsx` is a client component that reads the list
-   with `useSuspenseQuery` under the same imported `projectsKey`, with
+   with `useSuspenseQuery` under the same imported `queryKeys.projects`, with
    `refetchOnMount: false` and `staleTime: "static"`. On the first render the
    key is a cache hit, so nothing suspends and nothing fetches.
 
@@ -120,6 +141,56 @@ fetches it again on mount:
    request time behind the boundary. On `/` and the pre-rendered project pages
    the sidebar is in the static HTML.
 
+### Prefetch and hydration of a project's runs
+
+The project page follows the same pattern, one cache entry per slug:
+
+1. `src/app/(dashboard)/projects/[...slug]/page.tsx` has a `"use cache"`
+   function `getRunsState(slug)`, tagged `runs` and `runs:<slug>`, that returns
+   `prefetch(queryKeys.runs(slug), () => getProjectRuns(slug))`: the same
+   one-liner shape as the layout's `getProjectsState`. The cache scope is
+   required for the same reason as in the layout (React Query stamps the
+   settled query with `Date.now()`). The data itself reads no clock:
+   `getProjectRuns` returns fixtures whose time-derived labels are precomputed,
+   and that must stay true when the database read lands (derive labels in the
+   fetcher or in SQL, never from the clock inside the cache scope or a
+   component). The rejection is not caught, as in the layout.
+2. The page decides not-found from the prefetched data: it destructures
+   `{ data, state }` from `getRunsState`, and `data === null` means
+   `notFound()` before any boundary renders, so the data layer is read once
+   per slug, not twice, and nothing searches the dehydrated queries by hash.
+   `generateStaticParams` and `generateMetadata` are unchanged. The caveat from
+   before stands: for a slug outside `generateStaticParams` the static shell
+   has already gone out with a 200 when `notFound()` runs, so the not-found
+   panel streams in as a soft 404.
+3. It renders `<HydrationBoundary state={state}>` around
+   `<QueryBoundary fallback="Loading runs..."><ProjectRunsView slug={slug} /></QueryBoundary>`.
+   That boundary does not nest inside the layout's, which is scoped to the
+   sidebar; the two are siblings in effect, and React Query hydrates both
+   dehydrated states into the one client `Providers` holds, so the sidebar's
+   entry and the project's entry sit side by side in the same cache.
+4. `src/components/ProjectRunsView.tsx` is a client component that reads
+   `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"` and
+   `refetchOnMount: false` (same two reasons as the sidebar) and renders the
+   header, the Active section (`RunRow`) and the History section (`RunHistory`)
+   from the cache. It renders the not-found panel for `null` data as a guard
+   only; the server has already excluded that case.
+
+One rendering detail to know when reading the served HTML of a pre-rendered
+project page. The pane is in the static HTML, but as a streamed Suspense
+completion: the document carries the "Loading runs..." fallback at the pane's
+position, the rendered rows in a hidden segment a few kilobytes later, and
+React's inline `$RC` script swaps them in as the document parses, before any
+bundle loads and without a fetch. This is not the query cache (the view's query
+is a cache hit during the server render, verified with a build-time log). It is
+the SSR module for `ProjectRunsView`: it lives in the page's own client chunk,
+which is still loading when the prerender first reaches the element, so React
+suspends on the lazy module reference and completes the boundary once the chunk
+is in. The sidebar does not do this because its chunk is already loading for the
+root layout's client components. The page behaved exactly the same before the
+runs moved onto the query layer, with `RunHistory` as the cold module and
+`loading.tsx` as the boundary that caught it.
+
 ### QueryBoundary
 
 `src/components/QueryBoundary.tsx` is how every suspended query is wrapped: a
@@ -132,17 +203,21 @@ errored query and throws again, so Retry would loop. `QueryBoundary` takes
 `onReset`, so Retry resets the query error state and the next render
 refetches. It renders a default panel ("Could not load.", an optional `detail`
 line, a Retry button) or whatever `errorFallback(retry)` returns. It renders
-inside `Providers`, where the query it guards has its client. The runs list can
-use it once it moves onto the query layer.
+inside `Providers`, where the query it guards has its client. The layout wraps
+`ProjectNav` in it and the project page wraps `ProjectRunsView` in it.
 
 ### Where live updates go
 
 Live updates write into the same cache entry. `src/data/realtime.ts` (below)
-calls `queryClient.setQueryData(projectsKey, ...)` on every change; the sidebar
+calls `queryClient.setQueryData(queryKeys.projects, ...)` on every change; the sidebar
 re-renders from the cache and the layout, the boundary and the key do not
 change. Because the query is static, `setQueryData` is the update path (not
 `invalidateQueries`). A server side source can also refresh the prefetch with
 `revalidateTag("projects")`, so the next visitor's HTML starts from fresh data.
+The runs follow suit: the runs listener (not written yet) will write with
+`queryClient.setQueryData(queryKeys.runs(slug), ...)`, and `revalidateTag("runs")` or
+``revalidateTag(`runs:${slug}`)`` refreshes the page prefetch for every project
+or for one.
 
 ## Realtime
 
@@ -183,7 +258,8 @@ on the server no channel is ever subscribed, so no socket is opened there.
 `src/data/realtime.ts` exports `startRealtime(queryClient)`. It opens one
 channel named `adw` and listens to `postgres_changes` for every event on
 `adw.projects`. Each event goes through `applyProjectChange` (next section) and
-the result is written to the cache under `projectsKey` with `setQueryData`.
+the result is written to the cache under `queryKeys.projects` with
+`setQueryData`.
 The channel's subscribe callback is the one writer of the connection
 indicator: `SUBSCRIBED` sets `Live`, `CHANNEL_ERROR` and `TIMED_OUT` set
 `Reconnecting`, `CLOSED` sets `Connecting`. The function returns a closer that
@@ -292,7 +368,8 @@ by `yarn install`; there is no manual step.
 ## Stack
 
 Next.js 16 (App Router), React 19, TypeScript 5.9 strict, Tailwind CSS v4 via
-`@tailwindcss/postcss`, TanStack React Query 5 for the sidebar's query cache,
+`@tailwindcss/postcss`, TanStack React Query 5 for the query cache (sidebar and
+runs),
 `@supabase/supabase-js` for Realtime, vitest for unit tests. No component or
 icon library. Light and dark themes follow the system
 preference through Tailwind's `dark:` variants.
