@@ -10,6 +10,7 @@ import { SectionBoundary } from "@/components/SectionBoundary";
 import { getActiveRuns, getCompletedRuns, getProjects } from "@/data";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
+import { historyTag, runsTag } from "@/lib/history-tags";
 import type { Run } from "@/types/adw";
 
 // Project slugs contain a slash ("owner/repo"), so this is a catch-all
@@ -71,13 +72,15 @@ export async function generateMetadata({ params }: ProjectPageProps): Promise<Me
  * clock either (relative labels are removed pending issue #3).
  *
  * Tagged twice so a server side writer can refill one project
- * (`runs:${slug}`, which the revalidateHistory action drops after a
- * completion so a refresh does not re-serve an Active list that still holds
- * the finished run) or every project (`runs`).
+ * (`runs:${slug}`, which the revalidateHistory action and the /api/revalidate
+ * route handler drop after a completion so a refresh does not re-serve an
+ * Active list that still holds the finished run) or every project (`runs`).
+ * The per-project spelling comes from src/lib/history-tags.ts, shared with
+ * the two places that drop it.
  */
 async function getRunsState(slug: string) {
   "use cache";
-  cacheTag("runs", `runs:${slug}`);
+  cacheTag("runs", runsTag(slug));
 
   return prefetch(queryKeys.runs(slug), () => getActiveRuns(slug));
 }
@@ -90,11 +93,14 @@ async function getRunsState(slug: string) {
  * Realtime event touches them. A completed run is immutable, so the entry is
  * only wrong when a run completes (or a completed run is deleted), and that is
  * when the browser calls the revalidateHistory action (dropping this tag) and
- * then refreshes the route, which re-renders HistorySection from the database.
+ * then refreshes the route, which re-renders HistorySection from the database,
+ * or, for a completion no browser saw, when the database trigger posts to
+ * /api/revalidate, which drops the same tag. Its spelling comes from
+ * src/lib/history-tags.ts, shared with both.
  */
 async function getHistory(slug: string): Promise<Run[]> {
   "use cache";
-  cacheTag(`history:${slug}`);
+  cacheTag(historyTag(slug));
 
   return getCompletedRuns(slug);
 }
