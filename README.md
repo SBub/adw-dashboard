@@ -9,8 +9,8 @@ projects. One two-pane screen:
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
 - The right pane shows the selected project's runs: an Active section for
-  runs in progress (phase, branch, last update, a stale marker) and a History
-  section for finished runs (final phase, timings, duration) with an
+  runs in progress (phase, branch, the absolute time of the last update) and a
+  History section for finished runs (final phase, timings, duration) with an
   all/completed/failed toggle. `/` shows an empty "Select a project" panel;
   `/projects/<owner>/<repo>` selects a project and is the deep link.
 
@@ -42,8 +42,8 @@ select project_id, adw_id, issue_number, issue_class, branch_name, phase, status
 The function splits the rows into `active` (status `running`) and `history`
 (everything else), both newest first as returned, and stamps the result with
 `fetched_at`, the ISO time the rows were read. The rows are the raw `Run` type;
-no label is derived on the server (see "Derived labels" below). There are no
-fixtures any more; `src/data/fixtures.ts` is gone.
+no label is derived on the server (see "Labels" below). There are no fixtures
+any more; `src/data/fixtures.ts` is gone.
 
 `src/data/index.ts` is the single boundary the screens read through. It
 exports two functions and the shape the second one returns:
@@ -107,39 +107,25 @@ Each boundary function runs on the server during its prefetch (and at build
 time, through it) and in the browser only on a cache miss, which the hydration
 makes rare.
 
-### Derived labels: a clock seeded with `fetched_at`
+### Labels: no clock in the UI
 
-The three labels a run row shows that are not columns (`is_stale`,
-`duration_label`, `since_update_label`) depend on what time it is, and under
-`cacheComponents` the time is the one thing neither prerender pass may read
-(details in the sections below). So they are derived in the browser, from a
-ticking clock, by two small modules under `src/lib/`:
+Every value a run row shows is a stored column, rendered as is, plus one pure
+derivation: `durationLabel(startedAt, finishedAt)` in `src/lib/run-view.ts`
+formats a finished run's `started_at` to `finished_at` as `47m 26s` under an
+hour and `1h 03m` from an hour up (hours are not capped), and returns `null`
+while `finished_at` is `null`, so a running run shows no duration. It reads no
+clock and is unit-tested with fixed timestamps in `src/lib/run-view.test.ts`.
 
-- `src/lib/run-view.ts` exports `toRunView(run, now): RunView` and
-  `STALE_AFTER_MS`. It is pure (the caller passes `now` in epoch milliseconds)
-  and unit-tested with fixed timestamps in `src/lib/run-view.test.ts`. A running
-  run whose `updated_at` is more than `STALE_AFTER_MS` (30 minutes) before `now`
-  is stale; finished runs never are. `duration_label` is `started_at` to
-  `finished_at`, or to `now` while running, as `47m 26s` under an hour and
-  `1h 03m` from an hour up. `since_update_label` is `just now` under 30 seconds,
-  then `2m ago`, `3h ago`, `2d ago`.
-- `src/lib/use-now.ts` exports `useNow(serverNow)`, a `useSyncExternalStore`
-  hook over a module-level store: one `setInterval` of 30 seconds, started with
-  the first subscriber and stopped with the last, whose snapshot is the current
-  time. Its server snapshot is `Date.parse(serverNow)`.
-
-`ProjectRunsView` calls `useNow(data.fetched_at)` once and maps every run
-through `toRunView(run, now)` before handing `RunView`s to `RunRow` and
-`RunHistory`, which are unchanged and know nothing about the clock. The seed is
-what makes this safe under `cacheComponents`: during the server render and
-during hydration React uses the server snapshot, so no clock is read while
-prerendering and the first client render matches the server markup; right after
-hydration React notices the live snapshot differs and re-renders once with it,
-and the labels tick from there. The consequence to know: **the labels in the
-static HTML are relative to `fetched_at`**, the moment the cached rows were
-read (the build, or the last refill of the `runs:<slug>` cache entry), not the
-moment the page is viewed. A page served from the cache a day later says
-"updated 1d ago" in its HTML and corrects itself as soon as it hydrates.
+The labels that need the current time, "updated 2m ago", the stale badge for a
+running run with no progress for 30 minutes, and the elapsed time of a run
+still in progress, are removed for now and tracked in issue #3. An active row
+shows the absolute `updated_at` ("Updated 2026-10-03 11:52 UTC") through the
+`Timestamp` component instead. The reason they are not simply computed in
+render: under `cacheComponents` the time is the one thing neither prerender
+pass may read (details in the sections below), so a clock-dependent label needs
+a `useSyncExternalStore` hook with a data-derived server snapshot, and the
+first version of that re-rendered the whole pane on every tick. Issue #3
+describes the leaf-level replacement.
 
 `fetched_at` itself is `new Date().toISOString()` taken inside
 `getProjectRuns`, which only ever runs inside the page's `"use cache"` scope on
@@ -147,7 +133,9 @@ the server. A clock read inside a cache scope is allowed (the value is cached
 with the rows, so every visitor sees the same one until revalidation); the same
 read outside one fails the prerender. That is also why `generateMetadata` goes
 through the cached `getRunsState` rather than calling `getProjectRuns`
-directly.
+directly. Nothing in the UI reads `fetched_at` today; it stays in `ProjectRuns`
+because the realtime catch-up re-stamps it and issue #3 needs it as the
+clock-free server snapshot.
 
 ### Prefetch and hydration of the sidebar
 
@@ -206,9 +194,9 @@ The project page follows the same pattern, one cache entry per slug:
    required for the same reason as in the layout (React Query stamps the
    settled query with `Date.now()`), and `getProjectRuns` reads the clock once
    more for `fetched_at`, which is permitted for the same reason: inside the
-   scope, the value is cached with the rows. The rows carry no derived labels;
-   those are computed in the browser against a clock seeded with `fetched_at`
-   (see "Derived labels" above). The rejection is not caught, as in the layout.
+   scope, the value is cached with the rows. The rows carry no derived labels
+   and the UI reads no clock (see "Labels" above). The rejection is not caught,
+   as in the layout.
 2. The page decides not-found from the prefetched data: it destructures
    `{ data, state }` from `getRunsState`, and `data === null` means
    `notFound()` before any boundary renders, so the data layer is read once
@@ -227,10 +215,10 @@ The project page follows the same pattern, one cache entry per slug:
    entry and the project's entry sit side by side in the same cache.
 4. `src/components/ProjectRunsView.tsx` is a client component that reads
    `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"` and
-   `refetchOnMount: false` (same two reasons as the sidebar), seeds `useNow`
-   with the data's `fetched_at`, maps the rows through `toRunView` and renders
-   the header, the Active section (`RunRow`) and the History section
-   (`RunHistory`) from the result. It renders the not-found panel for `null`
+   `refetchOnMount: false` (same two reasons as the sidebar) and renders the
+   header, the Active section (`RunRow`) and the History section
+   (`RunHistory`) from the rows as stored; no view model is built and no clock
+   is read. It renders the not-found panel for `null`
    data as a guard only; the server has already excluded that case.
 
 One rendering detail to know when reading the served HTML of a pre-rendered
@@ -374,8 +362,8 @@ covered by `src/data/apply-run-change.test.ts`:
   `history`; one set back to `running` goes the other way); a run in neither
   list is added as an insert would, since the event carries the full row.
   DELETE removes the `adw_id` named in `ev.old` from both lists. `fetched_at`
-  is never touched: it only seeds the browser clock during hydration, and the
-  live clock has taken over by the time any event arrives.
+  is never touched: it records when the rows were read, which an event does
+  not change.
 - `applyRunChangeToSummaries(current: ProjectSummary[], ev, oldStatus)`
   returns the project list with the matching project's counts moved by status
   delta: INSERT is `+1` for the new status, UPDATE is `-1` for `oldStatus` and
@@ -421,8 +409,8 @@ It writes with `setQueryData`, not `invalidateQueries` or `refetchQueries`:
 both skip queries with `staleTime: "static"`, which every query here has, so
 they would be a silent no-op. The reads go through the boundary functions
 themselves, so the refreshed entries have exactly the shape the prefetch put
-there. `getProjectRuns` stamps a fresh `fetched_at`, which is harmless after
-hydration.
+there. `getProjectRuns` stamps a fresh `fetched_at`, which nothing in the UI
+reads today.
 
 Cost: one `project_summaries` read plus one `getProjectRuns` (two reads) per
 cached runs entry, per (re)connect. The cache holds the project list and the
@@ -460,12 +448,12 @@ live updates (above) go through the query cache, not this store.
 ## Types
 
 `src/types/adw.ts` has two sections. `Project` and `Run` mirror the database
-tables column for column. `ProjectSummary` and `RunView` are view models the
-screens need that the database does not store (counts, `is_stale`,
-`duration_label`, `since_update_label`). `ProjectSummary` comes from the data
-layer (the `project_summaries` view computes the counts); `RunView` comes from
-`toRunView` in `src/lib/run-view.ts`, applied in the browser to a `Run` and the
-current time.
+tables column for column. `ProjectSummary` is the one view model the screens
+need that the database does not store (the counts and `last_run_at`); it comes
+from the data layer (the `project_summaries` view computes them). Runs have no
+view model: the screens take `Run` rows as stored, and a finished run's
+duration is formatted at render time by `durationLabel` in
+`src/lib/run-view.ts`.
 
 ## Routing
 

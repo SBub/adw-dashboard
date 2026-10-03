@@ -50,9 +50,9 @@ function without(runs: Run[], adwId: string): Run[] {
  *   The runs primary key is (project_id, adw_id), so both are present in
  *   `old` under the default replica identity; nothing else is relied on.
  *
- * `fetched_at` is kept as is. It is the seed of the browser clock during
- * hydration only; after that the live clock drives the labels, so a change
- * event has no reason to touch it. The input is never mutated.
+ * `fetched_at` is kept as is: it records when the rows were read, which a
+ * change event does not alter (nothing in the UI reads it today, see
+ * ProjectRuns in src/data/index.ts). The input is never mutated.
  */
 export function applyRunChange(current: ProjectRuns, ev: RunChange): ProjectRuns {
   switch (ev.eventType) {

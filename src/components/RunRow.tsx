@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import type { RunView } from "@/types/adw";
+import { durationLabel } from "@/lib/run-view";
+import type { Run } from "@/types/adw";
 import { IssueClassBadge } from "./IssueClassBadge";
 import { StatusBadge } from "./StatusBadge";
 import { Timestamp } from "./Timestamp";
 
 interface RunRowProps {
-  run: RunView;
+  run: Run;
   /** "owner/repo", used to build the GitHub issue link. */
   projectSlug: string;
   variant: "active" | "history";
@@ -32,7 +33,16 @@ function Mono({ value }: { value: string | null }) {
   return <code className="font-mono text-sm">{value}</code>;
 }
 
+/**
+ * One run, as stored. Every value shown is a column or, for Duration, a pure
+ * function of two columns (durationLabel, which is null while finished_at is
+ * null, so a running run shows no duration). Nothing here reads the clock:
+ * "updated 2m ago", the stale badge and the elapsed time of a running run are
+ * removed pending issue #3.
+ */
 export function RunRow({ run, projectSlug, variant }: RunRowProps) {
+  const duration = durationLabel(run.started_at, run.finished_at);
+
   return (
     <li className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -53,17 +63,9 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
         <code className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
           {run.adw_id}
         </code>
-        {run.is_stale && (
-          <span
-            title="No progress reported for too long"
-            className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950 dark:text-amber-300"
-          >
-            stale
-          </span>
-        )}
         {variant === "active" && (
           <span className="ml-auto text-xs text-neutral-500 dark:text-neutral-400">
-            updated {run.since_update_label}
+            Updated <Timestamp value={run.updated_at} />
           </span>
         )}
       </div>
@@ -77,11 +79,7 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
         <Field label="Started">
           <Timestamp value={run.started_at} />
         </Field>
-        {variant === "active" ? (
-          <Field label="Updated">
-            <Timestamp value={run.updated_at} />
-          </Field>
-        ) : (
+        {variant === "history" && (
           <>
             <Field label="Finished">
               {run.finished_at ? (
@@ -90,11 +88,7 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
                 <span className="text-neutral-400 dark:text-neutral-600">none</span>
               )}
             </Field>
-            <Field label="Duration">
-              {run.duration_label ?? (
-                <span className="text-neutral-400 dark:text-neutral-600">none</span>
-              )}
-            </Field>
+            {duration !== null && <Field label="Duration">{duration}</Field>}
           </>
         )}
       </dl>

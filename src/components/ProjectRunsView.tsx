@@ -1,10 +1,8 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { getProjectRuns, type ProjectRuns } from "@/data";
+import { getProjectRuns } from "@/data";
 import { queryKeys } from "@/data/query-keys";
-import { toRunView } from "@/lib/run-view";
-import { useNow } from "@/lib/use-now";
 import { PageHeader } from "./PageHeader";
 import { RunHistory } from "./RunHistory";
 import { RunRow } from "./RunRow";
@@ -16,6 +14,11 @@ import { RunRow } from "./RunRow";
  * prefetched by the server page under the same key and arrive hydrated, so the
  * query below is a cache hit on the first render and the server HTML already
  * holds the rows.
+ *
+ * The rows are passed to RunRow and RunHistory as stored. No view model is
+ * built here and no clock is read: the labels that needed one ("updated 2m
+ * ago", the stale badge, a running run's elapsed time) are removed pending
+ * issue #3, and data.fetched_at is not read by the UI today.
  */
 export function ProjectRunsView({ slug }: { slug: string }) {
   const { data } = useSuspenseQuery({
@@ -52,26 +55,7 @@ export function ProjectRunsView({ slug }: { slug: string }) {
     );
   }
 
-  return <RunsPane data={data} />;
-}
-
-/**
- * The pane proper, split out so useNow runs unconditionally below the null
- * guard. It is the one place the rows become view models: useNow is read once
- * and every run goes through the pure toRunView with that value, so the labels
- * of all rows agree on what "now" is. RunRow and RunHistory keep taking
- * RunView and know nothing about the clock.
- *
- * useNow is seeded with the data's fetched_at, so on the server and during
- * hydration the labels are relative to the moment the cached rows were read
- * (no clock is touched in the prerender), and after hydration the live clock
- * takes over and the labels tick forward. See src/lib/use-now.ts.
- */
-function RunsPane({ data }: { data: ProjectRuns }) {
-  const now = useNow(data.fetched_at);
-  const { project } = data;
-  const active = data.active.map((run) => toRunView(run, now));
-  const history = data.history.map((run) => toRunView(run, now));
+  const { project, active, history } = data;
 
   return (
     <>

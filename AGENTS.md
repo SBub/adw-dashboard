@@ -23,30 +23,31 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 
 ## Architecture
 
-- Components take typed props only. They never fetch, compute, count or
-  format business values; they render what they are given. The one container
-  that turns rows into view models is `ProjectRunsView`, and it does so only
-  by calling the pure `toRunView`; `RunRow`, `RunHistory` and every other leaf
-  take a finished `RunView`.
-- No clock reads anywhere except two places: `useNow` in `src/lib/use-now.ts`
-  (the browser's ticking clock) and `getProjectRuns`'s `fetched_at` stamp,
-  which on the server only ever executes inside the page's `"use cache"` scope
-  (in the browser it runs as a `queryFn` on a cache miss and in the realtime
-  catch-up, where a clock read is fine). Never call
-  `Date.now()` or `new Date()` in a component, a hook body, a `queryFn` outside
-  a cache scope, `generateMetadata` or `generateStaticParams`; under
-  `cacheComponents` the server form fails the build and the client form
-  silently drops the component out of the static HTML.
-- `toRunView` in `src/lib/run-view.ts` is pure (takes `now` as an argument,
-  reads no clock) and unit-tested in `src/lib/run-view.test.ts` with fixed
-  timestamps. Every change to a label format or to `STALE_AFTER_MS` goes with
-  a test case; do not move label derivation into a component or into SQL.
-- `fetched_at` on `ProjectRuns` is the hydration seed: `useNow(data.fetched_at)`
-  returns it on the server and during hydration, and the live clock after.
-  Keep it in the boundary's return value, keep it an ISO string (it travels
-  through the dehydrated cache as JSON) and always pass it to `useNow`; a hook
-  seeded with anything else produces a hydration mismatch or a clock read in
-  the prerender.
+- Components take typed props only. They never fetch, compute or count
+  business values; they render what they are given. `RunRow` and `RunHistory`
+  take `Run` rows as stored. The one formatting a component may do is call a
+  pure helper from `src/lib/` on the row's own fields (`RunRow` calls
+  `durationLabel(run.started_at, run.finished_at)`); no view model is built
+  anywhere for runs.
+- No clock reads outside the cached boundary. The only `new Date()` /
+  `Date.now()` in the codebase is `getProjectRuns`'s `fetched_at` stamp, which
+  on the server only ever executes inside the page's `"use cache"` scope (in
+  the browser it runs as a `queryFn` on a cache miss and in the realtime
+  catch-up, where a clock read is fine). No clock read in client render at all:
+  never call `Date.now()` or `new Date()` in a component, a hook body, a
+  `queryFn` outside a cache scope, `generateMetadata` or `generateStaticParams`.
+  Under `cacheComponents` the server form fails the build and the client form
+  silently aborts the client prerender and drops the component out of the
+  static HTML (it ships as its Suspense fallback). Relative labels ("updated 2m
+  ago", the stale badge, a running run's elapsed time) were removed for this
+  reason and are tracked in issue #3; do not reintroduce them with a clock read
+  in render. Keep `fetched_at` in the boundary's return value, as an ISO
+  string (it travels through the dehydrated cache as JSON), even though nothing
+  in the UI reads it today; issue #3 needs it as the server snapshot.
+- `durationLabel` in `src/lib/run-view.ts` is pure (two timestamps in, reads no
+  clock, `null` while `finished_at` is `null`) and unit-tested in
+  `src/lib/run-view.test.ts` with fixed timestamps. Every change to the label
+  format goes with a test case; do not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects` and `getProjectRuns` from `@/data` and nothing else for data;
   those two functions are also the `queryFn`s, passed directly, with no
@@ -121,24 +122,25 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `staleTime: "static"`; keep it, and check the served HTML (not just the
   build) when adding client hooks to the prerendered shell: the run rows (an
   `adw_id` in a `<code>`) must be in the document. A `useSyncExternalStore`
-  hook with a data-derived `getServerSnapshot` (the pattern `useNow` uses) is
-  how a client component may depend on the time without that read. When you
+  hook with a data-derived `getServerSnapshot` (`fetched_at`) is how a client
+  component could depend on the time without that read; that is the shape
+  issue #3 proposes, at the leaf level. When you
   check, know that a pre-rendered project page may legitimately carry the runs
   pane either inline or as a streamed Suspense completion (fallback plus
   hidden segment plus `$RC` swap in the same document); the latter is the
   page's cold SSR client chunk, not a cache miss or a clock read. See README,
   "Prefetch and hydration of a project's runs".
-- `src/types/adw.ts` keeps database-row types (`Project`, `Run`) and view
-  models (`ProjectSummary`, `RunView`) in clearly separated sections. Row
-  types mirror the schema column for column; `ProjectSummary` is produced by
-  the data layer and `RunView` by `toRunView` in `src/lib/run-view.ts`.
+- `src/types/adw.ts` keeps database-row types (`Project`, `Run`) and the view
+  model (`ProjectSummary`) in clearly separated sections. Row types mirror the
+  schema column for column; `ProjectSummary` is produced by the data layer.
+  There is no run view model; do not add one for a label that a component can
+  format from the row's own fields.
 - Server components by default; `"use client"` only where the browser must
   hold state (the History filter in `RunHistory`, the React Query provider in
   `src/app/providers.tsx`, `ProjectNav`, which reads the pathname and the
-  query cache, `ProjectRunsView`, which reads the runs from the query cache
-  and the clock through `useNow`, and `ConnectionIndicator`, which subscribes
-  to its store). `src/lib/use-now.ts` is `"use client"` too; `src/lib/run-view.ts`
-  is plain and importable from anywhere.
+  query cache, `ProjectRunsView`, which reads the runs from the query cache,
+  and `ConnectionIndicator`, which subscribes to its store).
+  `src/lib/run-view.ts` is plain and importable from anywhere.
 - `Timestamp` renders ISO strings by substring on purpose so server and client
   markup agree. Do not introduce locale or timezone formatting in components.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written

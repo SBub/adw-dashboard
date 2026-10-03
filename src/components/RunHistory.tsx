@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { RunView } from "@/types/adw";
+import type { Run } from "@/types/adw";
 import { RunRow } from "./RunRow";
 
 type Filter = "all" | "completed" | "failed";
@@ -13,7 +13,7 @@ const FILTERS: { value: Filter; label: string }[] = [
 ];
 
 interface RunHistoryProps {
-  runs: RunView[];
+  runs: Run[];
   projectSlug: string;
 }
 
