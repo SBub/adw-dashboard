@@ -68,14 +68,17 @@ export async function getProjects(): Promise<ProjectSummary[]> {
  * toRunView (src/lib/run-view.ts) against a ticking clock, so they stay
  * correct however long the cached rows are served.
  *
- * fetched_at is the one clock read in the data layer. This function runs
- * inside the page's "use cache" scope (getRunsState), where Cache Components
- * permits reading the current time: the value is cached with the rows and
- * every visitor sees the same one until the entry is refilled. It is what the
- * server HTML's labels are relative to and what the browser's clock starts
- * from while hydrating, so the two renders agree. Reading it outside a cache
- * scope would fail the prerender (next-prerender-current-time), so this
- * function must only be called from inside one on the server.
+ * fetched_at is the one clock read in the data layer. On the server this
+ * function runs inside the page's "use cache" scope (getRunsState), where
+ * Cache Components permits reading the current time: the value is cached with
+ * the rows and every visitor sees the same one until the entry is refilled. It
+ * is what the server HTML's labels are relative to and what the browser's
+ * clock starts from while hydrating, so the two renders agree. Reading it
+ * outside a cache scope would fail the prerender (next-prerender-current-time),
+ * so on the server this function must only be called from inside one. In the
+ * browser (the queryFn on a cache miss, the realtime catch-up) the clock read
+ * is unconstrained, and the fresh fetched_at reseeds a clock the live one has
+ * already taken over from.
  */
 export async function getProjectRuns(slug: string): Promise<ProjectRuns | null> {
   const supabase = getSupabase();
