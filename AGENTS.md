@@ -30,7 +30,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   take a finished `RunView`.
 - No clock reads anywhere except two places: `useNow` in `src/lib/use-now.ts`
   (the browser's ticking clock) and `getProjectRuns`'s `fetched_at` stamp,
-  which only ever executes inside the page's `"use cache"` scope. Never call
+  which on the server only ever executes inside the page's `"use cache"` scope
+  (in the browser it runs as a `queryFn` on a cache miss and in the realtime
+  catch-up, where a clock read is fine). Never call
   `Date.now()` or `new Date()` in a component, a hook body, a `queryFn` outside
   a cache scope, `generateMetadata` or `generateStaticParams`; under
   `cacheComponents` the server form fails the build and the client form
@@ -156,10 +158,36 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   variable with a `NEXT_PUBLIC_` prefix. `.env.example` is tracked with
   placeholders; `.env.development` (dev) and `.env.local` (all modes,
   including build and start) hold the real values and are gitignored.
-- `applyProjectChange` in `src/data/apply-project-change.ts` is pure (no
-  cache, client, clock or mutation) and unit-tested. Keep it that way: new
-  event handling goes into the function and gets a test case; the realtime
-  module stays a thin wiring layer around it.
+- Every Realtime write to the query cache goes through a pure, unit-tested
+  reducer and `setQueryData`: `applyProjectChange` in
+  `src/data/apply-project-change.ts` for `adw.projects` events,
+  `applyRunChange` and `applyRunChangeToSummaries` in
+  `src/data/apply-run-change.ts` for `adw.runs` events. The reducers take no
+  cache, client or clock and never mutate their input; new event handling goes
+  into a reducer and gets a test case, and `src/data/realtime.ts` stays a thin
+  wiring layer around them. Never `invalidateQueries` or `refetchQueries` from
+  the realtime module: every query here is `staleTime: "static"` and both skip
+  static queries silently.
+- Every updater passed to `setQueryData` from the realtime module has the form
+  `current => current && reducer(current, ev)`. Never default an absent entry
+  (`current = []`, `current ?? {...}`): an entry that is not in the cache must
+  stay absent, or a single event seeds a one-row list that looks complete and
+  is not.
+- A runs event names its project by `project_id` only. Resolve the slug from
+  the cached project list (`queryClient.getQueryData(queryKeys.projects)`) and
+  drop the event when the project is not there; never fetch to resolve it.
+- `ev.old` carries only the primary key columns (`adw.runs`: `project_id`,
+  `adw_id`; `adw.projects`: `id`), because the tables use the default replica
+  identity. Never read another field off `ev.old`. The previous status a
+  counts delta needs is read from the runs cache with `runStatusIn` BEFORE the
+  runs entry is rewritten, and passed to `applyRunChangeToSummaries`
+  explicitly; keep that order when touching `applyRunEvent`.
+- The catch-up read runs on every `SUBSCRIBED` (first connect and every
+  reconnect, one path, no flag) and writes with `setQueryData` through the
+  boundary functions (`getProjects`, `getProjectRuns`). It must never throw
+  out of the socket callback: failures are `console.warn`ed and swallowed.
+  Enumerate the cached runs entries with `queryKeys.allRuns`, the prefix in
+  `query-keys.ts`, not an inline `["runs"]`.
 - One channel, named `adw`, opened by `startRealtime` and started only from
-  `Providers`. Add further listeners (runs) to that channel, do not open a
-  second one or start it from another component.
+  `Providers`. Both listeners (projects, runs) live on that channel; do not
+  open a second one or start it from another component.

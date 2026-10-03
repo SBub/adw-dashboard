@@ -32,7 +32,7 @@ export function ProjectRunsView({ slug }: { slug: string }) {
   });
 
   // Live updates do not live here. The runs listener in src/data/realtime.ts
-  // will write each change into this same cache entry with
+  // writes each change into this same cache entry with
   // queryClient.setQueryData(queryKeys.runs(slug), ...), and React Query re-renders
   // this component from the cache; nothing in this file knows about the socket.
 

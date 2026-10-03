@@ -272,7 +272,7 @@ re-renders from the cache and the layout, the boundary and the key do not
 change. Because the query is static, `setQueryData` is the update path (not
 `invalidateQueries`). A server side source can also refresh the prefetch with
 `revalidateTag("projects")`, so the next visitor's HTML starts from fresh data.
-The runs follow suit: the runs listener (not written yet) will write with
+The runs follow suit: the runs listener writes with
 `queryClient.setQueryData(queryKeys.runs(slug), ...)`, and `revalidateTag("runs")` or
 ``revalidateTag(`runs:${slug}`)`` refreshes the page prefetch for every project
 or for one.
@@ -314,15 +314,30 @@ on the server no channel is ever subscribed, so no socket is opened there.
 ### The channel
 
 `src/data/realtime.ts` exports `startRealtime(queryClient)`. It opens one
-channel named `adw` and listens to `postgres_changes` for every event on
-`adw.projects`. Each event goes through `applyProjectChange` (next section) and
-the result is written to the cache under `queryKeys.projects` with
-`setQueryData`.
+channel named `adw` with two `postgres_changes` listeners, every event on
+`adw.projects` and every event on `adw.runs`. A projects event goes through
+`applyProjectChange` (next section) and the result is written under
+`queryKeys.projects`. A runs event is resolved to a project first: the event
+names the project by `project_id` (on DELETE from `ev.old`, which carries the
+primary key `(project_id, adw_id)` and nothing else under the default replica
+identity), the slug is looked up in the cached project list, and an event for a
+project that list does not hold is dropped silently (a private project, or no
+list in the cache: nothing on screen could show it). The event then goes
+through two reducers from `src/data/apply-run-change.ts`, `applyRunChange` for
+the runs entry under `queryKeys.runs(slug)` and `applyRunChangeToSummaries` for
+the counts in the project list, in that order, because the second one needs the
+run's previous status and the event does not carry it (see "Event to cache").
+Every write is `setQueryData`, and every updater has the form
+`current => current && reducer(current, ev)`: **an entry that is not in the
+cache stays absent.** `setQueryData` ignores an `undefined` result, so a single
+event can never seed a one-row list that looks complete and is not (the earlier
+version defaulted a missing list to `[]`, which could do exactly that).
+
 The channel's subscribe callback is the one writer of the connection
 indicator: `SUBSCRIBED` sets `Live`, `CHANNEL_ERROR` and `TIMED_OUT` set
-`Reconnecting`, `CLOSED` sets `Connecting`. The function returns a closer that
-removes the channel and resets the indicator to `Connecting`. A runs listener
-will be added to the same channel later (there is a one-line comment where).
+`Reconnecting`, `CLOSED` sets `Connecting`. `SUBSCRIBED` also runs the
+catch-up read (below). The function returns a closer that removes the channel
+and resets the indicator to `Connecting`.
 
 `src/app/providers.tsx` starts it: `useEffect(() => startRealtime(queryClient),
 [queryClient])`. The returned closer is the effect's cleanup, so the channel is
@@ -345,6 +360,79 @@ It is covered by `src/data/apply-project-change.test.ts` (vitest): the three
 events, a duplicate insert and an update for an unknown id. Run with
 `yarn test`; `vitest.config.ts` maps the `@/` alias and picks up
 `src/**/*.test.ts`.
+
+`src/data/apply-run-change.ts` holds the two reducers for an `adw.runs` event
+(type `RunChange`, a `RealtimePostgresChangesPayload<Run>`), both pure and
+covered by `src/data/apply-run-change.test.ts`:
+
+- `applyRunChange(current: ProjectRuns, ev): ProjectRuns` returns the
+  project's runs after the event. INSERT prepends the row to `active` when its
+  status is `running`, otherwise to `history`, and is a no-op if a run with
+  that `adw_id` is already in either list. UPDATE replaces the row by `adw_id`
+  in place when its status stayed on the same side, and moves it between the
+  lists when it did not (a run that finishes goes from `active` to the top of
+  `history`; one set back to `running` goes the other way); a run in neither
+  list is added as an insert would, since the event carries the full row.
+  DELETE removes the `adw_id` named in `ev.old` from both lists. `fetched_at`
+  is never touched: it only seeds the browser clock during hydration, and the
+  live clock has taken over by the time any event arrives.
+- `applyRunChangeToSummaries(current: ProjectSummary[], ev, oldStatus)`
+  returns the project list with the matching project's counts moved by status
+  delta: INSERT is `+1` for the new status, UPDATE is `-1` for `oldStatus` and
+  `+1` for the new status, DELETE is `-1` for `oldStatus`. The counts come from
+  the `project_summaries` view, and the projects listener never sees them
+  change (a runs row does not touch `adw.projects`), so this is the only thing
+  keeping the sidebar's numbers moving between page loads. `last_run_at` is the
+  view's `max(runs.updated_at)`, so INSERT and UPDATE move it forward to
+  `ev.new.updated_at` when that is later (compared as instants, since the view
+  and the event may format the same moment differently); DELETE never moves it
+  back. The list keeps its order so projects do not jump under the pointer.
+
+  `oldStatus` is a parameter because the event does not have it: Supabase
+  sends `old` with the primary key columns only unless the table's replica
+  identity is FULL, and `adw.runs` uses the default. The realtime module reads
+  the run's current status out of the runs cache with `runStatusIn(current,
+adw_id)` (the third export) **before** applying `applyRunChange`, and passes
+  it in. When it is unknown (the project's runs were never loaded this session,
+  or the run is not among them), an UPDATE leaves the counts alone and only
+  moves `last_run_at`, and a DELETE is a no-op: without the previous status
+  there is no delta to apply, and guessing `+1` would inflate a count on every
+  phase heartbeat. Such counts are corrected by the next catch-up or page load.
+  Known gap: a run of a project whose page was not visited this session, that
+  started before the page loaded and finishes while it is open, does not move
+  that project's counts until then.
+
+### Catch-up on SUBSCRIBED
+
+Events that happen while the channel is down are never delivered, so after a
+reconnect the cache must be re-read. The first connect has the same gap: the
+page's entries come from a static shell whose cache may be up to 15 minutes old
+(the server-side `cacheLife`), and anything that changed between that fill and
+the moment the channel joined was never an event this browser saw. Both are
+handled by one path: on **every** `SUBSCRIBED`, `realtime.ts` calls
+`getProjects()` and writes the result under `queryKeys.projects`, then for
+every runs entry in the cache (`queryClient.getQueryCache().findAll({ queryKey:
+queryKeys.allRuns })`, the `["runs"]` prefix exported from `query-keys.ts`)
+calls `getProjectRuns(slug)` and writes the result under `queryKeys.runs(slug)`.
+There is no "was I disconnected" flag to keep in step; the first `SUBSCRIBED`
+and a reconnect are the same case.
+
+It writes with `setQueryData`, not `invalidateQueries` or `refetchQueries`:
+both skip queries with `staleTime: "static"`, which every query here has, so
+they would be a silent no-op. The reads go through the boundary functions
+themselves, so the refreshed entries have exactly the shape the prefetch put
+there. `getProjectRuns` stamps a fresh `fetched_at`, which is harmless after
+hydration.
+
+Cost: one `project_summaries` read plus one `getProjectRuns` (two reads) per
+cached runs entry, per (re)connect. The cache holds the project list and the
+runs of each project visited this session, so this is a handful of small reads;
+in development React's strict mode connects twice on mount, so it runs twice
+there. A failed catch-up is logged with `console.warn` and swallowed: the cache
+stays as it was and the next event or reconnect tries again. An event that
+arrives while a catch-up read is in flight is applied first and then
+overwritten by the read's result, which can predate it by the round-trip time;
+the next event for that row corrects it.
 
 ### The indicator
 

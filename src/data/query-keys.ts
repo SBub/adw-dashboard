@@ -8,6 +8,12 @@ export const queryKeys = {
   /** The project list: the layout's prefetch, ProjectNav, and realtime.ts. */
   projects: ["projects"] as const,
   /**
+   * The prefix every runs key starts with. Not a key anything is stored under;
+   * it is what realtime.ts hands queryCache.findAll to enumerate the runs
+   * entries present in the cache (React Query matches keys by prefix).
+   */
+  allRuns: ["runs"] as const,
+  /**
    * One project's runs, by slug. The slug is part of the hash, so both sides
    * must join it the same way (`parts.join("/")`, as the page does).
    */
