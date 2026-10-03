@@ -9,12 +9,15 @@ projects. One two-pane screen:
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
 - The right pane shows the selected project's runs: an Active section for
-  runs in progress (phase, branch, last update, a stale marker) and a History
-  section for finished runs (final phase, timings, duration) with an
-  all/completed/failed toggle. `/` shows an empty "Select a project" panel;
-  `/projects/<owner>/<repo>` selects a project and is the deep link.
+  live runs, status `running` or `failed` (a failed run can be resumed, so it
+  is still live), with phase, branch and the absolute time of the last update,
+  and a History section for `completed` runs (final phase, timings, duration).
+  Active is a React Query entry patched by Realtime; History is rendered on
+  the server from a cache scope and re-rendered when a run completes (see
+  "Runs: active and history" below). `/` shows an empty "Select a project"
+  panel; `/projects/<owner>/<repo>` selects a project and is the deep link.
 
-## Data: projects from the database, runs from fixtures
+## Data: projects and runs from the database
 
 The project list is live. `getProjects()` reads the `adw.project_summaries`
 view of the toolkit's Supabase project (one row per project with its
@@ -25,28 +28,58 @@ is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
 rows change.
 
-The runs are still hand-written fixtures in `src/data/fixtures.ts`.
-`getProjectRuns(slug)` resolves the project from the fixture project list and
-returns the fixture runs for it; a real project without a fixture entry gets
-`null`, which the page renders as not found. Wherever the real application
-would compute a run label (staleness, duration, "updated 2m ago") the fixture
-simply contains it, with a fixture "now" of 2026-10-02T12:00:00Z. Replacing
-the runs fetcher with a database read is the next step, and the fixture
-project list goes away with it.
+A project's runs are read in two halves, because they have two lifetimes:
+
+- `getActiveRuns(slug)` reads the project row from `adw.project_summaries`
+  where `slug` matches (the same shape the sidebar shows, so the header and
+  the sidebar agree; no row means `null`, which the page renders as not found),
+  then the rows of `adw.runs` where `project_id` is that project's id **and
+  `status` is `running` or `failed`**, ordered by `updated_at` descending. It
+  stamps the result with `fetched_at`, the ISO time the rows were read.
+- `getCompletedRuns(slug)` reads the same project row, then the rows of
+  `adw.runs` for that id where `status` is `completed`, `updated_at`
+  descending, and returns the plain rows (an empty list for an unknown slug,
+  which the page has already excluded). It reads no clock. Pagination, when it
+  comes, goes into this function alone: it is the one read that grows without
+  bound.
+
+In SQL terms:
+
+```sql
+select * from adw.project_summaries where slug = $1;
+select project_id, adw_id, issue_number, issue_class, branch_name, phase, status,
+       state, toolkit_version, started_at, updated_at, finished_at
+  from adw.runs where project_id = $2 and status in ('running', 'failed')
+ order by updated_at desc;
+select <same columns>
+  from adw.runs where project_id = $2 and status = 'completed'
+ order by updated_at desc;
+```
+
+The rows are the raw `Run` type; no label is derived on the server (see
+"Labels" below). There are no fixtures any more; `src/data/fixtures.ts` is
+gone.
 
 `src/data/index.ts` is the single boundary the screens read through. It
-exports two functions:
+exports three functions and the shape the second one returns:
 
 - `getProjects(): Promise<ProjectSummary[]>`
-- `getProjectRuns(slug): { project; active; history } | null`
+- `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
+  `{ project: ProjectSummary; active: Run[]; fetched_at: string }`
+- `getCompletedRuns(slug): Promise<Run[]>`
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
-data. The Supabase client is untyped (no generated `Database` type yet), so
-`getProjects` casts the view's rows to `ProjectSummary[]` at the boundary;
-generating types for the `adw` schema is a follow-up.
+data; the query keys and the `QueryClient` factory (next section) are cache
+plumbing, not data, and the server action in `src/app/actions/` touches no
+data at all (it drops cache tags). The Supabase client is untyped (no
+generated `Database` type yet), so the boundary casts rows once: the view's
+rows to `ProjectSummary` and the table's rows to `Run[]` (the shared
+`RUN_COLUMNS` select is exactly the fields of `Run`). Generating types for the
+`adw` schema is a follow-up.
 
 Because the layout prefetch and `generateStaticParams` both call
-`getProjects()`, the database is read at **build time** as well as at request
+`getProjects()`, and the page calls `getActiveRuns()` and `getCompletedRuns()`
+for every slug, the database is read at **build time** as well as at request
 time. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 must therefore be present for `yarn build`, which reads `.env.local` (not
 `.env.development`); without them `getSupabase()` throws and the build fails
@@ -57,21 +90,73 @@ to `notFound()` at request time.
 
 ### The query layer
 
-`src/data/projects-query.ts` sits beside the boundary and is the query layer
-over it: what the server and the browser share so the two sides of the React
-Query cache cannot drift apart. It exports three things:
+`src/data/query-keys.ts` and `src/data/query-client.ts` sit beside the boundary
+and are the query layer over it: what the server and the browser share so the
+two sides of the React Query cache cannot drift apart. There are no fetcher
+wrappers; the boundary functions `getProjects` and `getActiveRuns` are the
+`queryFn`s themselves, passed straight from `@/data` at every call site.
+`getCompletedRuns` is not a `queryFn`: history is server-rendered and never
+enters the query cache.
 
-- `projectsKey`, the one query key (`["projects"]`) for the project list. It is
-  imported wherever the list is prefetched or read; it is never built inline.
-- `fetchProjects()`, the fetcher, which calls `getProjects()` through the
-  boundary. It runs on the server during the prefetch, and in the browser only
-  on a cache miss.
-- `makeQueryClient()`, the one `QueryClient` factory for both sides. Its
-  `shouldDehydrateQuery` rule includes pending queries, so a prefetch that is
-  still in flight can be handed to the browser instead of fetched twice.
+- `queryKeys` in `query-keys.ts`, the single home of every query key:
+  `queryKeys.projects` (`["projects"]`) for the project list and
+  `queryKeys.runs(slug)` (`["runs", slug]`) for a project's active runs. A key is
+  imported from there wherever a resource is prefetched, read or written by the
+  Realtime listener; no key is ever built inline, and no key literal exists
+  anywhere else.
+- `makeQueryClient()` in `query-client.ts`, the one `QueryClient` factory for
+  both sides. Its `shouldDehydrateQuery` rule includes pending queries, so a
+  prefetch that is still in flight can be handed to the browser instead of
+  fetched twice.
+- `prefetch(queryKey, queryFn)` in the same file, the one server prefetch:
+  it builds a client from the factory, awaits `queryClient.query()` and
+  returns `{ data, state }`, the resolved value next to `dehydrate()` of the
+  client. Both `"use cache"` state functions (the layout's `getProjectsState`,
+  the page's `getRunsState`) are one-liners around it, so the two prefetches
+  cannot drift apart, and a caller that needs the value (the page's not-found
+  decision) reads `data` instead of searching the dehydrated queries by hash.
+  (`prefetchQuery` is deprecated in React Query 5.104; `query()` is its
+  replacement and, unlike `prefetchQuery`, it rejects when the fetcher throws.
+  `prefetch` does not catch that on purpose: a swallowed failure would
+  dehydrate an empty cache and ship the fallback silently, so the build or the
+  request fails instead.) The returned object is plain JSON, as a result of a
+  `"use cache"` function must be.
 
-The run detail pages do not use the query layer; they read `getProjectRuns`
-directly as server components.
+Each boundary function runs on the server during its prefetch (and at build
+time, through it) and in the browser only on a cache miss, which the hydration
+makes rare.
+
+### Labels: no clock in the UI
+
+Every value a run row shows is a stored column, rendered as is, plus one pure
+derivation: `durationLabel(startedAt, finishedAt)` in `src/lib/run-view.ts`
+formats a finished run's `started_at` to `finished_at` as `47m 26s` under an
+hour and `1h 03m` from an hour up (hours are not capped), and returns `null`
+while `finished_at` is `null`, so a running run shows no duration. It reads no
+clock and is unit-tested with fixed timestamps in `src/lib/run-view.test.ts`.
+
+The labels that need the current time, "updated 2m ago", the stale badge for a
+running run with no progress for 30 minutes, and the elapsed time of a run
+still in progress, are removed for now and tracked in issue #3. An active row
+shows the absolute `updated_at` ("Updated 2026-10-03 11:52 UTC") through the
+`Timestamp` component instead. The reason they are not simply computed in
+render: under `cacheComponents` the time is the one thing neither prerender
+pass may read (details in the sections below), so a clock-dependent label needs
+a `useSyncExternalStore` hook with a data-derived server snapshot, and the
+first version of that re-rendered the whole pane on every tick. Issue #3
+describes the leaf-level replacement.
+
+`fetched_at` itself is `new Date().toISOString()` taken inside
+`getActiveRuns`, which only ever runs inside the page's `"use cache"` scope on
+the server. A clock read inside a cache scope is allowed (the value is cached
+with the rows, so every visitor sees the same one until revalidation); the same
+read outside one fails the prerender. That is also why `generateMetadata` goes
+through the cached `getRunsState` rather than calling `getActiveRuns`
+directly. Nothing in the UI reads `fetched_at` today; it stays in `ActiveRuns`
+because the realtime catch-up re-stamps it and issue #3 needs it as the
+clock-free server snapshot. `getCompletedRuns` reads no clock at all: history
+needs no snapshot, and its cache scope exists for the tag, not for a
+clock-read permission.
 
 ### Prefetch and hydration of the sidebar
 
@@ -79,25 +164,24 @@ The sidebar follows the "server prefetch with hydration" pattern, so the
 project list is in the server HTML at first paint and the browser never
 fetches it again on mount:
 
-1. `src/app/(dashboard)/layout.tsx` (a server component) builds a client from
-   `makeQueryClient()`, awaits `queryClient.query()` under `projectsKey`, and
-   calls `dehydrate()` on it. (`prefetchQuery` is deprecated in React Query
-   5.104; `query()` is its replacement and, unlike `prefetchQuery`, it rejects
-   when the fetcher throws. The layout does not catch that on purpose: a
-   swallowed failure would dehydrate an empty cache and ship the sidebar's
-   fallback silently, so the build or the request fails instead.) This happens
-   inside a `"use cache"` function (`getProjectsState`, tagged `projects`). The
-   scope is required: React Query stamps the settled query with `Date.now()`,
+1. `src/app/(dashboard)/layout.tsx` (a server component) calls
+   `prefetch(queryKeys.projects, getProjects)` and keeps the `state` half of
+   the result (the sidebar reads the list from the cache, so the layout has no
+   use for `data`). This happens inside a `"use cache"` function
+   (`getProjectsState`, tagged `projects`). The scope is required: React Query
+   stamps the settled query with `Date.now()`,
    and with `cacheComponents` on, reading the current time outside a cache
    scope fails the prerender of `/` (`next-prerender-current-time`). Cached,
    the stamp is the cache fill time.
-2. The layout renders `<Providers><HydrationBoundary state={…}>` around the
-   sidebar and the page. `src/app/providers.tsx` is a client component holding
-   one `QueryClient` per browser session (lazy `useState` from the same
-   factory). It must sit above the boundary, because the boundary writes into
-   the client the provider holds.
+2. The layout renders `<Providers>` around the whole two-pane shell and
+   `<HydrationBoundary state={…}>` around the sidebar's `QueryBoundary` only,
+   since `ProjectNav` is the one consumer of that state; the page renders
+   outside it. `src/app/providers.tsx` is a client component holding one
+   `QueryClient` per browser session (lazy `useState` from the same factory).
+   It must sit above every boundary, because each boundary writes into the
+   client the provider holds.
 3. `src/components/ProjectNav.tsx` is a client component that reads the list
-   with `useSuspenseQuery` under the same imported `projectsKey`, with
+   with `useSuspenseQuery` under the same imported `queryKeys.projects`, with
    `refetchOnMount: false` and `staleTime: "static"`. On the first render the
    key is a cache hit, so nothing suspends and nothing fetches.
 
@@ -120,6 +204,357 @@ fetches it again on mount:
    request time behind the boundary. On `/` and the pre-rendered project pages
    the sidebar is in the static HTML.
 
+### Runs: active and history
+
+The project page splits a project's runs by lifetime, and the two halves take
+two different paths to the screen.
+
+**Active** (status `running` or `failed`) is live. It is one React Query entry
+per slug, `queryKeys.runs(slug)`, holding the `ActiveRuns` payload: prefetched
+on the server, hydrated, and patched in the browser by the Realtime listener.
+A failed run is still in it because the toolkit can resume a failed run; it
+leaves the list only by completing or being deleted.
+
+**History** (status `completed`) is immutable, so it is not in the query cache
+at all. The page renders it on the server inside a `"use cache"` scope tagged
+`history:<slug>`; no realtime event touches it and the catch-up never reads it.
+It changes only when the server is told to re-render it.
+
+The prefetch and hydration of Active follow the sidebar's pattern, one cache
+entry per slug:
+
+1. `src/app/(dashboard)/projects/[...slug]/page.tsx` has a `"use cache"`
+   function `getRunsState(slug)`, tagged `runs` and `runs:<slug>`, that returns
+   `prefetch(queryKeys.runs(slug), () => getActiveRuns(slug))`: the same
+   one-liner shape as the layout's `getProjectsState`. The cache scope is
+   required for the same reason as in the layout (React Query stamps the
+   settled query with `Date.now()`), and `getActiveRuns` reads the clock once
+   more for `fetched_at`, which is permitted for the same reason: inside the
+   scope, the value is cached with the rows. The rejection is not caught, as
+   in the layout.
+2. The page decides not-found from the prefetched data: it destructures
+   `{ data, state }` from `getRunsState`, and `data === null` means
+   `notFound()` before any boundary renders, so the data layer is read once
+   per slug, not twice, and nothing searches the dehydrated queries by hash.
+   `generateMetadata` reads the title through the same `getRunsState`, so the
+   slug costs one database round trip, not two, and the `fetched_at` clock read
+   stays inside the cache scope. `generateStaticParams` is unchanged. The
+   caveat from before stands: for a slug outside `generateStaticParams` the
+   static shell has already gone out with a 200 when `notFound()` runs, so the
+   not-found panel streams in as a soft 404.
+3. It renders `<HydrationBoundary state={state}>` around
+   `<QueryBoundary fallback="Loading runs..."><ActiveRunsView slug={slug} /></QueryBoundary>`.
+   That boundary does not nest inside the layout's, which is scoped to the
+   sidebar; the two are siblings in effect, and React Query hydrates both
+   dehydrated states into the one client `Providers` holds.
+4. `src/components/ActiveRunsView.tsx` is a client component that reads
+   `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"`
+   and `refetchOnMount: false` (same two reasons as the sidebar) and renders
+   the header and the Active section (`RunRow`, variant `active`) from the
+   rows as stored; no view model is built and no clock is read. It renders the
+   not-found panel for `null` data as a guard only; the server has already
+   excluded that case.
+
+History is rendered below that, by the same page:
+
+5. `getHistory(slug)` is a second `"use cache"` function in the page, tagged
+   `history:<slug>`, that returns `getCompletedRuns(slug)`: plain rows, no
+   clock read, no React Query. `HistorySection` is an async server component
+   that awaits `connection()` (from `next/server`) and then `getHistory`, and
+   renders `<RunHistory runs={...} projectSlug={slug} />`, wrapped in its own
+   `SectionBoundary` (fallback "Loading history...") so Active never waits on
+   it and never falls with it: if `getHistory` throws (database down, an RLS
+   change), the boundary shows its panel ("Could not load.", "This project's
+   history did not load.", Retry) in the History slot and the Active list
+   above stays on screen, instead of the segment's `error.tsx` replacing the
+   whole pane. Retry there refreshes the route (`router.refresh()`) and then
+   resets the boundary, so the section is re-rendered by the server rather
+   than replayed from the failed render; see "SectionBoundary" below. The
+   `connection()` call makes the section a request-time hole, which is what
+   lets the tag revalidation below reach it; see "What is prerendered and what
+   is not". `src/components/RunHistory.tsx` is a server component
+   with no state: the all/completed/failed toggle is gone because history is
+   completed-only now. `RunRow` in the `history` variant still shows Finished
+   and Duration.
+
+#### The move: how a completion crosses from Active to History
+
+When a run completes, three things happen in the browser, in this order:
+
+1. The Realtime listener folds the UPDATE into the Active entry through the
+   `applyRunChange` reducer, which **removes** a run whose new status is
+   `completed` (and the counts reducer moves one from `running` or `failed` to
+   `completed` in the sidebar). The run is gone from Active at once.
+2. The listener's `onHistoryChange(slug)` callback (wired in
+   `src/app/providers.tsx`) calls the server action
+   `revalidateHistory(slug)` in `src/app/actions/revalidate-history.ts`. The
+   action validates the slug with `isProjectSlug` (`src/lib/slug.ts`, the
+   pattern `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`) and returns early otherwise;
+   for a valid slug it calls `updateTag` on each tag of `historyTags(slug)`
+   (`src/lib/history-tags.ts`: `history:<slug>` and `runs:<slug>`, the same
+   helpers the page's `cacheTag` calls use), and nothing else. The second tag is
+   the Active prefetch scope: on a full regeneration of the page it keeps the
+   refresh (and the next visitor) from getting an Active list that still holds
+   the finished run. On a resumed prerender it does not reach that scope (see
+   "What is prerendered and what is not"); the browser covers Active anyway.
+3. Only after the action resolves, and only if the route in the address bar is
+   that project's page, `router.refresh()` re-renders the route on the server.
+   The history scope is a cache miss, so `HistorySection` reads
+   `getCompletedRuns` from the database and the new row appears. Step 2 runs
+   for every completion whatever is on screen (it drops the server cache for
+   that project, so its next render is fresh for whoever opens it); step 3 only
+   re-renders the current route, which is useful only when that route is the
+   changed project's page. On the overview or another project's page the
+   refresh would be a server round trip that changes nothing, so it is skipped.
+   The check is `isProjectPath(window.location.pathname, slug)` from
+   `src/lib/project-route.ts`, read inside the callback after the action has
+   resolved rather than through `usePathname()`, so `Providers` does not
+   subscribe to navigation and re-render on every route change. The pathname is
+   decoded first: Next decodes every route param, so a percent-encoded spelling
+   of the slug renders the same page while `window.location.pathname` keeps it
+   encoded; a malformed sequence answers false instead of throwing.
+
+`updateTag`, not `revalidateTag`. The installed Next docs
+(`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`
+and `revalidateTag.md`) make the distinction: `updateTag` is the Server
+Action form for read-your-own-writes, it expires the tag at once and the next
+read waits for fresh data; `revalidateTag(tag, "max")` is
+stale-while-revalidate, so the refresh that follows would be served the old
+History and the new row would show up on a later visit instead. The
+one-argument `revalidateTag(tag)` behaves like `updateTag` but is deprecated.
+Per `02-guides/server-actions.md` ("Revalidation"), an action that calls
+`updateTag` also ships a re-render of the current route in its own response;
+the explicit `router.refresh()` afterwards is the guarantee that the order is
+revalidate, then render, whatever the action response carried.
+
+#### Webhook revalidation: completions nobody is watching
+
+The move above is driven by a browser that received the Realtime event. If no
+browser had the channel open when a run completed (a dashboard nobody has on
+screen at the time), nothing calls the action, and the server's History for
+that project stays as the cache has it until the lifetime ends or until a
+completion someone does see. The route handler `src/app/api/revalidate/route.ts`
+closes that gap from the database side: the toolkit's database tells the
+dashboard about every history change, watched or not, and the handler drops
+the same two tags the action drops.
+
+**The trigger.** The toolkit owns the database, so the trigger lives in the
+toolkit repository (`adw-toolkit`, `supabase/migrations/*_history_webhook.sql`,
+documented in its `supabase/README.md`). The function
+`adw.notify_history_change()` is attached to `adw.runs` by three triggers,
+`runs_history_webhook_insert`, `runs_history_webhook_update` and
+`runs_history_webhook_delete` (one per event, because Postgres does not let a
+multi-event trigger's `WHEN` clause reference `OLD` when `INSERT` is among the
+events, `NEW` when `DELETE` is, or `TG_OP` at all). They fire only on a history
+change: a row inserted or updated to `completed`, a `completed` row updated to
+something else, or a `completed` row deleted. The function reads the dashboard
+URL and the secret from two database settings; while either is unset it returns
+without doing anything, so the migration is inert on a database whose dashboard
+is not deployed yet. Otherwise it enqueues, through `pg_net`, a POST of the
+Supabase database-webhook shape `{ type, schema: "adw", table: "runs", record,
+old_record }` (`record` is null on DELETE, `old_record` on INSERT) with the
+secret in the `x-adw-secret` header. The enqueue is wrapped so that no failure
+of it (extension missing, queue full) can fail the toolkit's own write of the
+row.
+
+**The handler.** `POST` only; any other method is 405 by Next's routing. In
+order:
+
+1. If `ADW_REVALIDATE_SECRET` is unset in the server's environment, every
+   request is answered 503 and the fact is logged once per process; nothing is
+   ever allowed through by default. Otherwise the `x-adw-secret` header is
+   compared with the configured value in constant time
+   (`crypto.timingSafeEqual` on equal-length buffers; a different length is a
+   mismatch) and anything else is 401.
+2. A body that is not JSON is 400. A JSON body that is not an `adw.runs` event
+   with a UUID `project_id` in `record` or `old_record` (another table, a
+   malformed payload) is answered `200 { "ignored": true }`.
+3. The slug is resolved with `getProjectSlug(projectId)` from `src/data`, a
+   read of `adw.projects` with the publishable key. RLS shows it only public
+   projects, and a private or unknown project has no page whose cache could be
+   stale, so a null result is `{ "ignored": true }`, as is a slug that fails
+   `isProjectSlug` (no page is served for it). A failed lookup is 502.
+4. `revalidateTag(tag, { expire: 0 })` for each tag of `historyTags(slug)`,
+   and the response `{ "revalidated": "<slug>" }`.
+
+The handler does nothing else: no write, no other read, no other side effect.
+It is reachable by anyone who has the secret, and the worst such a caller can do
+is make the next render of one project page read the database once.
+
+**Why `revalidateTag(tag, { expire: 0 })` and not `updateTag`.** The installed
+docs are explicit:
+`node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`
+says `updateTag` "can **only** be called from within Server Actions. It cannot
+be used in Route Handlers", and points to `revalidateTag` for them.
+`revalidateTag.md` ("Revalidation Behavior") lists the second argument's forms:
+`"max"` is stale-while-revalidate (the next visitor would be served the old
+History once), and `{ expire: 0 }` means "stale content is never served, so the
+next request is a blocking revalidate/cache miss", to be used "when the caller
+needs the data gone immediately and you cannot use `updateTag`"; its closing
+example is exactly a webhook Route Handler calling
+`revalidateTag(tag, { expire: 0 })`. The one-argument form behaves the same but
+is deprecated. So the handler reaches the same end state as the action. With
+`NEXT_PRIVATE_DEBUG_CACHE=1` on `yarn start`, a successful call logs one
+`FileSystemCache: revalidateTag` line per tag.
+
+**The secret.** `ADW_REVALIDATE_SECRET` is a server-only variable (no
+`NEXT_PUBLIC_` prefix, so Next never inlines it into the browser bundle) that
+exists in exactly two places: the dashboard host's environment (locally,
+`.env.local`) and the database setting the trigger reads. Generate it once with
+`openssl rand -hex 32`. `.env.example` carries a placeholder and a comment, no
+real value; no real value is committed anywhere, which is why the migration
+reads the URL and the secret from settings instead of containing them.
+
+**Wiring it after deployment.** The migration lands first and is inert. Once
+the dashboard is deployed with the variable set, run these two statements
+against the toolkit's hosted database (SQL editor, or
+`supabase db query --linked`), with the dashboard's public origin and the same
+secret:
+
+```sql
+alter database postgres set app.settings.dashboard_revalidate_url
+  = 'https://<dashboard-host>/api/revalidate';
+alter database postgres set app.settings.dashboard_revalidate_secret
+  = '<the value of ADW_REVALIDATE_SECRET>';
+```
+
+Database-level settings apply to new connections, so the first completion
+written over a connection opened before the statements ran still goes out
+silently; PostgREST's pool recycles on its own, and restarting the project's API
+forces it. From then on every completion revalidates the dashboard whether or
+not a browser is open, and the browser-side action and the conditional refresh
+keep doing their part for whoever is watching. The toolkit's `supabase/README.md`
+has the same statements and a way to test the trigger by hand.
+
+#### Two caches, one source
+
+The `"use cache"` scope is the only server cache in front of the database. On
+the server, the Supabase client's REST calls go through Next's patched `fetch`,
+and per the installed guide (`node_modules/next/dist/docs/01-app/02-guides/
+migrating-to-cache-components.md`, "`fetch` cache options") a fetch inside a
+`"use cache"` scope is cached automatically: Next stored each Supabase response
+in its own data cache (`.next/cache/fetch-cache`, `kind: "FETCH"`) with the
+scope's lifetime and no tags. `updateTag("history:<slug>")` expired the scope
+and `getHistory` re-executed, but the request inside it was answered from that
+untagged entry, so the regenerated History was built from the stale body. For
+that reason `getSupabase()` (`src/data/supabase.ts`) gives the server-side
+client a fetch that sets `cache: "no-store"` on every request (`fetch.md`,
+`options.cache`: fetched from the remote server on every request). Inside a
+`"use cache"` scope that is permitted: it stops the inner request from being
+stored separately and leaves the scope's own output cached and tagged, so
+dropping the tag is the whole story and the next render reads the database.
+The browser's fetch is not patched and keeps the default. After a build,
+`.next/cache/fetch-cache` holds no Supabase entry.
+
+#### What is prerendered and what is not
+
+A pre-rendered project page has two kinds of content. The sidebar (the
+layout's `projects` scope) and Active (the page's `runs:<slug>` scope) are in
+the **static shell**: their `"use cache"` results are resolved at build time
+and embedded in the shell as its Resume Data Cache. History is a
+**request-time hole**: `HistorySection` awaits `connection()` before
+`getHistory`, so the shell carries the "Loading history..." fallback and the
+section streams in on each request. The build's route table shows the project
+pages as "Partial Prerender" for this reason.
+
+The distinction matters because of how a prerendered route is served. Under
+`cacheComponents`, a request for a prerendered page resumes the shell, and a
+`"use cache"` scope that was part of the shell is read from the shell's
+embedded Resume Data Cache (debug log, `NEXT_PRIVATE_DEBUG_CACHE=1`:
+`use-cache: Resume Data Cache entry found`), frozen at build time. The live
+cache handler is never consulted for it. `updateTag("history:<slug>")` did
+expire the live entry and `getHistory` did re-execute with fresh rows, but
+every later request kept resuming the shell and reading the build-time rows;
+`revalidatePath` changes nothing about that. A hole is resolved from the
+live cache handler on every request, so a tag update reaches it, and the
+scope keeps its default lifetime, so `getHistory` still runs only on a miss
+(build, then once after each tag update), not per request. The documented
+alternative is a `cacheLife` with `expire` under 5 minutes, which also
+excludes the scope from prerenders (`node_modules/next/dist/docs/01-app/
+03-api-reference/04-functions/cacheLife.md`, "Prerendering behavior");
+`connection()` is used instead because it keeps the long lifetime.
+
+The same applies to Active: `runs:<slug>` is in the shell, so
+`updateTag("runs:<slug>")` does not refresh it on a resume. That is left as
+is. The browser patches Active through Realtime, hydration skips a dehydrated
+state older than the live entry (next paragraph), and the catch-up on every
+`SUBSCRIBED` re-reads it; the action keeps dropping the tag because it is
+correct on a full regeneration and on hosts whose handler behaves differently.
+
+How to prove any of this: make a database change **after** the build (a run
+completing, or a test row inserted), call the action, and look for the change
+in the next response's HTML. A row that already existed at build time proves
+nothing, because the shell carries it whether or not the tag worked; the
+earlier fix in this file was verified that way and looked correct until a
+post-build row showed it was not. With the debug log on, a fresh
+`use-cache: ... generated entry` line for the `getHistory` scope after the
+action, and none between two plain GETs, is the mechanical half of the proof.
+
+On that refresh the Active `HydrationBoundary` receives a dehydrated state
+again. React Query's `hydrate()` (`@tanstack/query-core`, `hydration.js`)
+overwrites an existing entry only when the incoming `state.dataUpdatedAt` is
+strictly newer than the entry's (the `hasNewerSyncData` branch applies only to
+a dehydrated pending promise, which the awaited `prefetch` never produces).
+Two cases, both without a visible flicker:
+
+- The `runs:<slug>` scope was dropped by the action, so the refresh refills it
+  and the dehydrated state is stamped at refill time, which is after the
+  completion event: it is newer than the browser's `setQueryData`, so it
+  **does** overwrite, with rows read after the completion, which agree with
+  what the reducer produced. (If the server clock lags the browser's, the
+  browser's write wins instead; the content is the same.)
+- Any cached scope that was not dropped (the layout's `projects` state, or
+  `runs:<slug>` if the action failed) carries its fill-time stamp, which is
+  older than every browser write since the catch-up, so it is skipped and the
+  live entry stays.
+
+This rule is pinned in `src/data/hydration.test.ts` against the installed
+version. The one edge: an event that lands between the server's database read
+and the hydration is overwritten by rows that predate it; the next event for
+that row corrects it, as with the catch-up.
+
+Two caveats of the design:
+
+- The server action is a public endpoint: anyone who can reach the site can
+  call it with any string. That is why it validates the slug strictly and does
+  nothing but drop two tags; the worst a caller can do is make the next render
+  of one project page read the database once.
+- A completion nobody is watching is not moved by the browser. The move is
+  triggered by a browser that received the event; if no browser had the
+  channel open when the run completed, nothing calls the action. The database
+  webhook ("Webhook revalidation" above) covers that case from the server
+  side, dropping the same two tags through the route handler. Until its two
+  database settings are set, History stays as it was until the cache lifetime
+  (15 minutes, the default `cacheLife`) or until the next completion anyone
+  sees. The Active half has no such gap: the catch-up re-reads it on every
+  `SUBSCRIBED`.
+
+A DELETE of a run that is not in the Active list is treated as a history
+change too (`isHistoryChange`), since under the default replica identity the
+event cannot say what the deleted run was, and a completed run that no longer
+exists should leave History on the next render rather than at cache expiry.
+
+One rendering detail to know when reading the served HTML of a pre-rendered
+project page. The Active pane is in the static shell; History streams in
+behind its Suspense boundary on every request (see "What is prerendered and
+what is not"), so in the served document the "Loading history..." fallback
+sits at the section's position, the rendered rows follow in a hidden segment,
+and React's inline `$RC` script swaps them in as the document parses. The
+Active pane is rendered inline in the current build (its "Loading runs..."
+fallback occurs only inside the RSC payload, as the boundary's `fallback`
+prop). An earlier build shipped the Active pane as a streamed completion too: the
+fallback at the pane's position, the rendered rows in a hidden segment a few
+kilobytes later, and React's inline `$RC` script swapping them in as the
+document parses, before any bundle loads and without a fetch. Both are
+legitimate. The streamed form is not the query cache (the view's query is a
+cache hit during the server render) and not a clock read; it is the SSR module
+for `ActiveRunsView` living in the page's own client chunk, which React may
+still be loading when the prerender first reaches the element, so it suspends
+on the lazy module reference and completes the boundary once the chunk is in.
+What would be a problem is the rows missing from the document altogether,
+which is what a clock read in a client component during the prerender
+produces.
+
 ### QueryBoundary
 
 `src/components/QueryBoundary.tsx` is how every suspended query is wrapped: a
@@ -132,17 +567,44 @@ errored query and throws again, so Retry would loop. `QueryBoundary` takes
 `onReset`, so Retry resets the query error state and the next render
 refetches. It renders a default panel ("Could not load.", an optional `detail`
 line, a Retry button) or whatever `errorFallback(retry)` returns. It renders
-inside `Providers`, where the query it guards has its client. The runs list can
-use it once it moves onto the query layer.
+inside `Providers`, where the query it guards has its client. The layout wraps
+`ProjectNav` in it and the project page wraps `ActiveRunsView` in it.
+
+### SectionBoundary
+
+`src/components/SectionBoundary.tsx` is the second boundary, for a
+server-rendered section that is not a query: the same shape (a `Suspense` for
+the streaming state inside a `react-error-boundary` `ErrorBoundary` for the
+failed one, the same default panel from `src/components/ErrorPanel.tsx`), but
+a different Retry. The section it wraps is an async server component whose
+render already happened on the server, so there is no query error to reset
+(`useQueryErrorResetBoundary` is not used) and a local boundary reset alone
+would only re-mount the same failed output. Retry calls `router.refresh()`
+first, which asks the server to render the route again (the section's cache
+scope is read again and, on a miss, the database), and then resets the
+boundary, so the re-mounted child is the fresh server result streaming in
+behind the fallback. The project page wraps `HistorySection` in it; the
+`connection()` hole semantics are unchanged, since a server component is a
+legitimate child of a client boundary and the Suspense inside is still the
+streaming boundary the shell carries the fallback for.
+
+Which one to use: a `useSuspenseQuery` goes in `QueryBoundary`; a
+server-rendered section that can fail independently goes in
+`SectionBoundary`; neither is ever rendered under a bare `Suspense`.
 
 ### Where live updates go
 
 Live updates write into the same cache entry. `src/data/realtime.ts` (below)
-calls `queryClient.setQueryData(projectsKey, ...)` on every change; the sidebar
+calls `queryClient.setQueryData(queryKeys.projects, ...)` on every change; the sidebar
 re-renders from the cache and the layout, the boundary and the key do not
 change. Because the query is static, `setQueryData` is the update path (not
 `invalidateQueries`). A server side source can also refresh the prefetch with
-`revalidateTag("projects")`, so the next visitor's HTML starts from fresh data.
+`revalidateTag("projects", ...)`, so the next visitor's HTML starts from fresh
+data. The active runs follow suit: the runs listener writes with
+`queryClient.setQueryData(queryKeys.runs(slug), ...)`, and the `runs` or
+`runs:<slug>` tag refreshes the page prefetch for every project or for one.
+History is not a cache entry: its one update path is the server action
+dropping `history:<slug>` followed by a route refresh (see "The move" above).
 
 ## Realtime
 
@@ -180,19 +642,42 @@ on the server no channel is ever subscribed, so no socket is opened there.
 
 ### The channel
 
-`src/data/realtime.ts` exports `startRealtime(queryClient)`. It opens one
-channel named `adw` and listens to `postgres_changes` for every event on
-`adw.projects`. Each event goes through `applyProjectChange` (next section) and
-the result is written to the cache under `projectsKey` with `setQueryData`.
+`src/data/realtime.ts` exports `startRealtime(queryClient, options)`, where
+`options.onHistoryChange?: (slug) => void` is the hook `Providers` uses to
+start the move (above). It opens one channel named `adw` with two
+`postgres_changes` listeners, every event on `adw.projects` and every event on
+`adw.runs`. A projects event goes through
+`applyProjectChange` (next section) and the result is written under
+`queryKeys.projects`. A runs event is resolved to a project first: the event
+names the project by `project_id` (on DELETE from `ev.old`, which carries the
+primary key `(project_id, adw_id)` and nothing else under the default replica
+identity), the slug is looked up in the cached project list, and an event for a
+project that list does not hold is dropped silently (a private project, or no
+list in the cache: nothing on screen could show it). The event then goes
+through two reducers from `src/data/apply-run-change.ts`, `applyRunChange` for
+the active entry under `queryKeys.runs(slug)` and `applyRunChangeToSummaries`
+for the counts in the project list, in that order, because the second one needs
+the run's previous status and the event does not carry it (see "Event to
+cache"); last, if `isHistoryChange` says the event touched the project's
+completed runs, `onHistoryChange(slug)` is called.
+Every write is `setQueryData`, and every updater has the form
+`current => current && reducer(current, ev)`: **an entry that is not in the
+cache stays absent.** `setQueryData` ignores an `undefined` result, so a single
+event can never seed a one-row list that looks complete and is not (the earlier
+version defaulted a missing list to `[]`, which could do exactly that).
+
 The channel's subscribe callback is the one writer of the connection
 indicator: `SUBSCRIBED` sets `Live`, `CHANNEL_ERROR` and `TIMED_OUT` set
-`Reconnecting`, `CLOSED` sets `Connecting`. The function returns a closer that
-removes the channel and resets the indicator to `Connecting`. A runs listener
-will be added to the same channel later (there is a one-line comment where).
+`Reconnecting`, `CLOSED` sets `Connecting`. `SUBSCRIBED` also runs the
+catch-up read (below). The function returns a closer that removes the channel
+and resets the indicator to `Connecting`.
 
-`src/app/providers.tsx` starts it: `useEffect(() => startRealtime(queryClient),
-[queryClient])`. The returned closer is the effect's cleanup, so the channel is
-removed when the provider unmounts. In development React's strict mode runs
+`src/app/providers.tsx` starts it from a `useEffect`, passing
+`onHistoryChange: (slug) => { void revalidateHistory(slug).then(() => { if (isProjectPath(window.location.pathname, slug)) router.refresh(); }).catch(() => {}) }`
+(revalidate first, refresh second and only when that project's page is the
+route on screen; a failed action is swallowed and leaves History stale until
+the cache lifetime). The returned closer is the effect's
+cleanup, so the channel is removed when the provider unmounts. In development React's strict mode runs
 mount, cleanup, mount, so the indicator shows one connect, close and reconnect;
 production connects once.
 
@@ -211,6 +696,90 @@ It is covered by `src/data/apply-project-change.test.ts` (vitest): the three
 events, a duplicate insert and an update for an unknown id. Run with
 `yarn test`; `vitest.config.ts` maps the `@/` alias and picks up
 `src/**/*.test.ts`.
+
+`src/data/apply-run-change.ts` holds the two reducers for an `adw.runs` event
+(type `RunChange`, a `RealtimePostgresChangesPayload<Run>`), both pure and
+covered by `src/data/apply-run-change.test.ts`:
+
+- `applyRunChange(current: ActiveRuns, ev): ActiveRuns` returns the project's
+  active runs after the event. INSERT prepends the row when its status is
+  `running` or `failed` and ignores a `completed` row (that is history); it is
+  a no-op if a run with that `adw_id` is already in the list. UPDATE replaces
+  the row by `adw_id` in place while its status is live (a `failed` run set
+  back to `running` stays where it was, now `running`) and **removes** it when
+  the new status is `completed`; a live run that is not in the list is added
+  as an insert would, since the event carries the full row. DELETE removes the
+  `adw_id` named in `ev.old`. `fetched_at` is never touched: it records when
+  the rows were read, which an event does not change. The input is returned
+  by identity when nothing changed.
+- `isHistoryChange(ev, previousStatus): boolean` says whether the event
+  changed the project's completed runs, which the cache does not hold: true
+  for an INSERT or UPDATE whose new status is `completed`, and for a DELETE of
+  a run the active list did not hold (`previousStatus` undefined; the event
+  cannot say what the deleted run was, and one that was not live was, as far
+  as the browser knows, completed). The realtime module calls
+  `onHistoryChange(slug)` when it is true.
+- `applyRunChangeToSummaries(current: ProjectSummary[], ev, oldStatus)`
+  returns the project list with the matching project's counts moved by status
+  delta: INSERT is `+1` for the new status, UPDATE is `-1` for `oldStatus` and
+  `+1` for the new status, DELETE is `-1` for `oldStatus`. The counts come from
+  the `project_summaries` view, and the projects listener never sees them
+  change (a runs row does not touch `adw.projects`), so this is the only thing
+  keeping the sidebar's numbers moving between page loads. `last_run_at` is the
+  view's `max(runs.updated_at)`, so INSERT and UPDATE move it forward to
+  `ev.new.updated_at` when that is later (compared as instants, since the view
+  and the event may format the same moment differently); DELETE never moves it
+  back. The list keeps its order so projects do not jump under the pointer.
+
+  `oldStatus` is a parameter because the event does not have it: Supabase
+  sends `old` with the primary key columns only unless the table's replica
+  identity is FULL, and `adw.runs` uses the default. The realtime module reads
+  the run's current status out of the active runs cache with
+  `runStatusIn(current, adw_id)` **before** applying `applyRunChange`, and
+  passes it in. When it is unknown (the project's runs were never loaded this
+  session, or the run is not among them, which includes every completed run
+  now that history is not cached), an UPDATE leaves the counts alone and only
+  moves `last_run_at`, and a DELETE is a no-op: without the previous status
+  there is no delta to apply, and guessing `+1` would inflate a count on every
+  phase heartbeat. Such counts are corrected by the next catch-up or page load.
+  Known gaps: a run of a project whose page was not visited this session, that
+  started before the page loaded and finishes while it is open, does not move
+  that project's counts until then; and the DELETE of a completed run does not
+  lower the `completed` count until the next catch-up.
+
+### Catch-up on SUBSCRIBED
+
+Events that happen while the channel is down are never delivered, so after a
+reconnect the cache must be re-read. The first connect has the same gap: the
+page's entries come from a static shell whose cache may be up to 15 minutes old
+(the server-side `cacheLife`), and anything that changed between that fill and
+the moment the channel joined was never an event this browser saw. Both are
+handled by one path: on **every** `SUBSCRIBED`, `realtime.ts` calls
+`getProjects()` and writes the result under `queryKeys.projects`, then for
+every runs entry in the cache (`queryClient.getQueryCache().findAll({ queryKey:
+queryKeys.allRuns })`, the `["runs"]` prefix exported from `query-keys.ts`)
+calls `getActiveRuns(slug)` and writes the result under `queryKeys.runs(slug)`.
+There is no "was I disconnected" flag to keep in step; the first `SUBSCRIBED`
+and a reconnect are the same case. History needs no catch-up: it is not in the
+cache, and a completion this browser missed is the "unwatched completion"
+caveat above.
+
+It writes with `setQueryData`, not `invalidateQueries` or `refetchQueries`:
+both skip queries with `staleTime: "static"`, which every query here has, so
+they would be a silent no-op. The reads go through the boundary functions
+themselves, so the refreshed entries have exactly the shape the prefetch put
+there. `getActiveRuns` stamps a fresh `fetched_at`, which nothing in the UI
+reads today.
+
+Cost: one `project_summaries` read plus one `getActiveRuns` (two reads) per
+cached runs entry, per (re)connect. The cache holds the project list and the
+active runs of each project visited this session, so this is a handful of small reads;
+in development React's strict mode connects twice on mount, so it runs twice
+there. A failed catch-up is logged with `console.warn` and swallowed: the cache
+stays as it was and the next event or reconnect tries again. An event that
+arrives while a catch-up read is in flight is applied first and then
+overwritten by the read's result, which can predate it by the round-trip time;
+the next event for that row corrects it.
 
 ### The indicator
 
@@ -238,10 +807,12 @@ live updates (above) go through the query cache, not this store.
 ## Types
 
 `src/types/adw.ts` has two sections. `Project` and `Run` mirror the database
-tables column for column. `ProjectSummary` and `RunView` are view models the
-screens need that the database does not store (counts, `is_stale`,
-`duration_label`, `since_update_label`); the data layer is responsible for
-producing them.
+tables column for column. `ProjectSummary` is the one view model the screens
+need that the database does not store (the counts and `last_run_at`); it comes
+from the data layer (the `project_summaries` view computes them). Runs have no
+view model: the screens take `Run` rows as stored, and a finished run's
+duration is formatted at render time by `durationLabel` in
+`src/lib/run-view.ts`.
 
 ## Routing
 
@@ -252,7 +823,10 @@ pages are pre-rendered at build time from the project list
 (`generateStaticParams` awaits `getProjects()`, so the database is read during
 the build); a slug that is not in that list still renders on demand. The segment's `loading.tsx` is the Suspense boundary
 that lets the shell prerender while the page streams in, and its `error.tsx` is
-the client error boundary (message, digest, Retry) for anything the page throws.
+the client error boundary (message, digest, Retry) for anything the page body
+throws. A failure inside one of the pane's own boundaries (`QueryBoundary`
+around Active, `SectionBoundary` around History) stays in that section and
+never reaches it.
 An unknown slug calls Next's `notFound()`, which renders
 `src/app/(dashboard)/not-found.tsx` inside the two-pane shell; URLs that match
 no route at all fall through to the root `src/app/not-found.tsx`.
@@ -292,7 +866,8 @@ by `yarn install`; there is no manual step.
 ## Stack
 
 Next.js 16 (App Router), React 19, TypeScript 5.9 strict, Tailwind CSS v4 via
-`@tailwindcss/postcss`, TanStack React Query 5 for the sidebar's query cache,
+`@tailwindcss/postcss`, TanStack React Query 5 for the query cache (sidebar and
+active runs; history is server-rendered),
 `@supabase/supabase-js` for Realtime, vitest for unit tests. No component or
 icon library. Light and dark themes follow the system
 preference through Tailwind's `dark:` variants.

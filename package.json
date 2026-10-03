@@ -2,8 +2,7 @@
   "name": "adw-dashboard",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
-  "packageManager": "yarn@4.6.0+sha512.5383cc12567a95f1d668fbe762dfe0075c595b4bfff433be478dbbe24e05251a8e8c3eb992a986667c1d53b6c3a9c85b8398c35a960587fbd9fa3a0915406728",
+  "packageManager": "yarn@4.18.1+sha512.b2e1e7524f654f2749d32b4ebcb4622473cb5bcbc485df2007e12a154e50162a4d795526768bc5f5b8f81717bfd79deb2472813d86fb5ae2eb551fa9c872b08f",
   "scripts": {
     "postinstall": "lefthook install",
     "dev": "next dev",
@@ -45,5 +44,9 @@
   },
   "engines": {
     "node": ">=24"
+  },
+  "volta": {
+    "node": "24.21.0",
+    "yarn": "4.18.1"
   }
 }

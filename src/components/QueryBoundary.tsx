@@ -3,6 +3,7 @@
 import { useQueryErrorResetBoundary } from "@tanstack/react-query";
 import { type ReactNode, Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
+import { ErrorPanel } from "./ErrorPanel";
 
 type QueryBoundaryProps = {
   children: ReactNode;
@@ -13,27 +14,6 @@ type QueryBoundaryProps = {
   /** Replaces the default panel. Call `retry` to reset the boundary and refetch. */
   errorFallback?: (retry: () => void) => ReactNode;
 };
-
-function DefaultErrorPanel({ detail, retry }: { detail?: string; retry: () => void }) {
-  return (
-    <div
-      role="alert"
-      className="rounded-lg border border-dashed border-neutral-300 p-4 text-center dark:border-neutral-700"
-    >
-      <p className="text-sm font-semibold tracking-tight">Could not load.</p>
-      {detail ? (
-        <p className="mt-1 text-xs text-neutral-500 dark:text-neutral-400">{detail}</p>
-      ) : null}
-      <button
-        type="button"
-        onClick={retry}
-        className="mt-3 rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800"
-      >
-        Retry
-      </button>
-    </div>
-  );
-}
 
 /**
  * The boundary every suspended query is rendered inside: a Suspense boundary
@@ -48,6 +28,10 @@ function DefaultErrorPanel({ detail, retry }: { detail?: string; retry: () => vo
  *
  * Renders inside Providers: the queries it guards read the client the
  * provider holds, and that is the client whose error state the reset clears.
+ *
+ * For a server-rendered section that is not a query (the page's History), use
+ * SectionBoundary instead: there is no query error to reset there, and its
+ * Retry has to re-request the server segment.
  */
 export function QueryBoundary({ children, fallback, detail, errorFallback }: QueryBoundaryProps) {
   const { reset } = useQueryErrorResetBoundary();
@@ -59,7 +43,7 @@ export function QueryBoundary({ children, fallback, detail, errorFallback }: Que
         errorFallback ? (
           errorFallback(resetErrorBoundary)
         ) : (
-          <DefaultErrorPanel detail={detail} retry={resetErrorBoundary} />
+          <ErrorPanel detail={detail} retry={resetErrorBoundary} />
         )
       }
     >
