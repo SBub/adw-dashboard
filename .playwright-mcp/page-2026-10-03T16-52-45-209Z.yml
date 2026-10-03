@@ -1,0 +1,130 @@
+- generic [active] [ref=e1]:
+    - banner [ref=e2]:
+        - generic [ref=e3]:
+            - link "ADW Dashboard" [ref=e4] [cursor=pointer]:
+                - /url: /
+            - generic [ref=e5]:
+                - generic [ref=e6]: AI Developer Workflow runs
+                - status [ref=e7]: live
+    - main [ref=e11]:
+        - generic [ref=e12]:
+            - complementary [ref=e13]:
+                - heading "Projects" [level=2] [ref=e14]
+                - navigation "Projects" [ref=e15]:
+                    - list [ref=e16]:
+                        - listitem [ref=e17]:
+                            - link "ADW Dashboard SBub/adw-dashboard 1 running 0 completed 0 failed Last run 2026-10-03 16:36 UTC" [ref=e18] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-dashboard
+                                - generic [ref=e19]: ADW Dashboard
+                                - generic [ref=e20]: SBub/adw-dashboard
+                                - generic [ref=e21]:
+                                    - generic "1 running" [ref=e22]:
+                                        - text: "1"
+                                        - generic [ref=e24]: running
+                                    - generic "0 completed" [ref=e25]:
+                                        - text: "0"
+                                        - generic [ref=e26]: completed
+                                    - generic "0 failed" [ref=e27]:
+                                        - text: "0"
+                                        - generic [ref=e28]: failed
+                                - generic [ref=e29]:
+                                    - text: Last run
+                                    - time [ref=e30]: 2026-10-03 16:36 UTC
+                        - listitem [ref=e31]:
+                            - link "issebya-homes-ai-system SBub/issebya-homes-ai-system 0 running 1 completed 1 failed Last run 2026-10-03 15:29 UTC" [ref=e32] [cursor=pointer]:
+                                - /url: /projects/SBub/issebya-homes-ai-system
+                                - generic [ref=e33]: issebya-homes-ai-system
+                                - generic [ref=e34]: SBub/issebya-homes-ai-system
+                                - generic [ref=e35]:
+                                    - generic "0 running" [ref=e36]:
+                                        - text: "0"
+                                        - generic [ref=e37]: running
+                                    - generic "1 completed" [ref=e38]:
+                                        - text: "1"
+                                        - generic [ref=e39]: completed
+                                    - generic "1 failed" [ref=e40]:
+                                        - text: "1"
+                                        - generic [ref=e41]: failed
+                                - generic [ref=e42]:
+                                    - text: Last run
+                                    - time [ref=e43]: 2026-10-03 15:29 UTC
+                        - listitem [ref=e44]:
+                            - link "ADW Toolkit SBub/adw-toolkit 0 running 0 completed 0 failed No runs yet" [ref=e45] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-toolkit
+                                - generic [ref=e46]: ADW Toolkit
+                                - generic [ref=e47]: SBub/adw-toolkit
+                                - generic [ref=e48]:
+                                    - generic "0 running" [ref=e49]:
+                                        - text: "0"
+                                        - generic [ref=e50]: running
+                                    - generic "0 completed" [ref=e51]:
+                                        - text: "0"
+                                        - generic [ref=e52]: completed
+                                    - generic "0 failed" [ref=e53]:
+                                        - text: "0"
+                                        - generic [ref=e54]: failed
+                                - generic [ref=e55]: No runs yet
+            - generic [ref=e56]:
+                - generic [ref=e57]:
+                    - heading "issebya-homes-ai-system" [level=1] [ref=e58]
+                    - paragraph [ref=e59]:
+                        - link "SBub/issebya-homes-ai-system" [ref=e60] [cursor=pointer]:
+                            - /url: https://github.com/SBub/issebya-homes-ai-system
+                - generic [ref=e65]:
+                    - heading "Active" [level=2] [ref=e66]
+                    - list [ref=e67]:
+                        - listitem [ref=e68]:
+                            - generic [ref=e69]:
+                                - generic [ref=e70]: failed
+                                - link "#212" [ref=e71] [cursor=pointer]:
+                                    - /url: https://github.com/SBub/issebya-homes-ai-system/issues/212
+                                - generic [ref=e72]: /feature
+                                - code [ref=e73]: 423b11e9
+                                - generic [ref=e74]:
+                                    - text: Updated
+                                    - time [ref=e75]: 2026-10-03 15:12 UTC
+                            - generic [ref=e76]:
+                                - generic [ref=e77]:
+                                    - term [ref=e78]: Phase
+                                    - definition [ref=e79]:
+                                        - code [ref=e80]: adw_document_iso:failed
+                                - generic [ref=e81]:
+                                    - term [ref=e82]: Branch
+                                    - definition [ref=e83]:
+                                        - code [ref=e84]: feat/issue-212-adw-423b11e9-pin-blog-post-to-top
+                                - generic [ref=e85]:
+                                    - term [ref=e86]: Started
+                                    - definition [ref=e87]:
+                                        - time [ref=e88]: 2026-10-02 09:53 UTC
+                - generic [ref=e89]:
+                    - heading "History" [level=2] [ref=e90]
+                    - list [ref=e91]:
+                        - listitem [ref=e92]:
+                            - generic [ref=e93]:
+                                - generic [ref=e94]: completed
+                                - link "#217" [ref=e95] [cursor=pointer]:
+                                    - /url: https://github.com/SBub/issebya-homes-ai-system/issues/217
+                                - generic [ref=e96]: /feature
+                                - code [ref=e97]: bf15ab13
+                            - generic [ref=e98]:
+                                - generic [ref=e99]:
+                                    - term [ref=e100]: Final phase
+                                    - definition [ref=e101]:
+                                        - code [ref=e102]: adw_sdlc_iso:complete
+                                - generic [ref=e103]:
+                                    - term [ref=e104]: Branch
+                                    - definition [ref=e105]:
+                                        - code [ref=e106]: feat/issue-217-adw-bf15ab13-add-forest-bathing-blog-post
+                                - generic [ref=e107]:
+                                    - term [ref=e108]: Started
+                                    - definition [ref=e109]:
+                                        - time [ref=e110]: 2026-10-03 15:13 UTC
+                                - generic [ref=e111]:
+                                    - term [ref=e112]: Finished
+                                    - definition [ref=e113]:
+                                        - time [ref=e114]: 2026-10-03 15:29 UTC
+                                - generic [ref=e115]:
+                                    - term [ref=e116]: Duration
+                                    - definition [ref=e117]: 16m 07s
+    - button "Open Next.js Dev Tools" [ref=e124] [cursor=pointer]
+    - alert [ref=e118]
