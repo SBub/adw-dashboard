@@ -1,30 +1,30 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
-import { getProjectRuns } from "@/data";
+import { getActiveRuns } from "@/data";
 import { queryKeys } from "@/data/query-keys";
 import { PageHeader } from "./PageHeader";
-import { RunHistory } from "./RunHistory";
 import { RunRow } from "./RunRow";
 
 /**
- * The detail pane for one project: header, Active runs, History. A client
- * component so its data lives in the React Query cache, where the runs
- * Realtime listener can update it in place later. The runs themselves are
- * prefetched by the server page under the same key and arrive hydrated, so the
- * query below is a cache hit on the first render and the server HTML already
- * holds the rows.
+ * The live half of the detail pane for one project: header and Active runs
+ * (status running or failed). A client component so its data lives in the
+ * React Query cache, where the runs Realtime listener can update it in place.
+ * The runs themselves are prefetched by the server page under the same key and
+ * arrive hydrated, so the query below is a cache hit on the first render and
+ * the server HTML already holds the rows. History (completed runs) is not
+ * here: the page renders it on the server, below this component.
  *
- * The rows are passed to RunRow and RunHistory as stored. No view model is
- * built here and no clock is read: the labels that needed one ("updated 2m
- * ago", the stale badge, a running run's elapsed time) are removed pending
- * issue #3, and data.fetched_at is not read by the UI today.
+ * The rows are passed to RunRow as stored. No view model is built here and no
+ * clock is read: the labels that needed one ("updated 2m ago", the stale
+ * badge, a running run's elapsed time) are removed pending issue #3, and
+ * data.fetched_at is not read by the UI today.
  */
-export function ProjectRunsView({ slug }: { slug: string }) {
+export function ActiveRunsView({ slug }: { slug: string }) {
   const { data } = useSuspenseQuery({
     // The same key builder the page prefetched under. Never build it inline.
     queryKey: queryKeys.runs(slug),
-    queryFn: () => getProjectRuns(slug),
+    queryFn: () => getActiveRuns(slug),
     // Same two reasons as ProjectNav: "static" keeps React Query from reading
     // the clock during the client prerender (which would ship this pane as its
     // Suspense fallback), and the data only changes when something writes it
@@ -55,7 +55,7 @@ export function ProjectRunsView({ slug }: { slug: string }) {
     );
   }
 
-  const { project, active, history } = data;
+  const { project, active } = data;
 
   return (
     <>
@@ -75,8 +75,6 @@ export function ProjectRunsView({ slug }: { slug: string }) {
           </ul>
         )}
       </section>
-
-      <RunHistory runs={history} projectSlug={project.slug} />
     </>
   );
 }

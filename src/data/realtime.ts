@@ -11,12 +11,24 @@ import { applyProjectChange } from "./apply-project-change";
 import {
   applyRunChange,
   applyRunChangeToSummaries,
+  isHistoryChange,
   type RunChange,
   runStatusIn,
 } from "./apply-run-change";
-import { getProjectRuns, getProjects, type ProjectRuns } from "./index";
+import { type ActiveRuns, getActiveRuns, getProjects } from "./index";
 import { queryKeys } from "./query-keys";
 import { getSupabase } from "./supabase";
+
+export interface RealtimeOptions {
+  /**
+   * Called with the project's slug when an event changed that project's
+   * completed runs (a run completed, or a completed run was deleted). History
+   * is server-rendered and not in the query cache, so nothing in here can
+   * update it; the caller (Providers) asks the server to drop its cache tag
+   * and then refreshes the route. Called after the cache writes for the event.
+   */
+  onHistoryChange?: (slug: string) => void;
+}
 
 /**
  * Opens the "adw" channel and subscribes to every change on adw.projects and
@@ -32,7 +44,7 @@ import { getSupabase } from "./supabase";
  * Returns the closer: it removes the channel and puts the indicator back to
  * Connecting, so the next start begins from the same state as a fresh page.
  */
-export function startRealtime(queryClient: QueryClient): () => void {
+export function startRealtime(queryClient: QueryClient, options: RealtimeOptions = {}): () => void {
   const supabase = getSupabase();
 
   const channel: RealtimeChannel = supabase
@@ -44,7 +56,7 @@ export function startRealtime(queryClient: QueryClient): () => void {
       );
     })
     .on<Run>("postgres_changes", { event: "*", schema: "adw", table: "runs" }, (ev) => {
-      applyRunEvent(queryClient, ev);
+      applyRunEvent(queryClient, ev, options);
     })
     .subscribe((state) => {
       switch (state) {
@@ -69,20 +81,28 @@ export function startRealtime(queryClient: QueryClient): () => void {
 }
 
 /**
- * One adw.runs event into the two entries it touches. The event names the
- * project by id; the slug the runs key is built from comes from the cached
- * project list, so an event for a project that list does not hold (a private
- * project, or a list that is not in the cache at all) is dropped. That is the
- * correct outcome, not an error: nothing on screen could show it.
+ * One adw.runs event into the two entries it touches, plus the history
+ * callback. The event names the project by id; the slug the runs key is built
+ * from comes from the cached project list, so an event for a project that list
+ * does not hold (a private project, or a list that is not in the cache at all)
+ * is dropped. That is the correct outcome, not an error: nothing on screen
+ * could show it.
  *
- * Order matters. The previous status of the run is read from the runs cache
- * BEFORE the runs entry is rewritten: Supabase sends `old` with only the
+ * Order matters. The previous status of the run is read from the active runs
+ * cache BEFORE that entry is rewritten: Supabase sends `old` with only the
  * primary key columns under the default replica identity, so an UPDATE or
- * DELETE event does not say what status the run had, and the counts reducer
- * needs it to know which count to decrement. Then the runs entry, then the
- * project list, each through its reducer and `current && ...`.
+ * DELETE event does not say what status the run had, and both the counts
+ * reducer and the history test need it. Then the active entry, then the
+ * project list, each through its reducer and `current && ...`, and last the
+ * history callback, so by the time the server re-renders the completed run is
+ * already out of the Active entry (step one of the move; see Providers for
+ * steps two and three).
+ *
+ * The history callback does not depend on the active entry being cached: a
+ * completion for a project whose page is not open still drops that project's
+ * server cache, so its next visit is fresh.
  */
-function applyRunEvent(queryClient: QueryClient, ev: RunChange) {
+function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: RealtimeOptions) {
   const key = ev.eventType === "DELETE" ? ev.old : ev.new;
   const { project_id: projectId, adw_id: adwId } = key;
   if (projectId === undefined || adwId === undefined) return;
@@ -96,10 +116,9 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange) {
   const oldStatus =
     ev.eventType === "INSERT"
       ? undefined
-      : (ev.old.status ??
-        runStatusIn(queryClient.getQueryData<ProjectRuns | null>(runsKey), adwId));
+      : (ev.old.status ?? runStatusIn(queryClient.getQueryData<ActiveRuns | null>(runsKey), adwId));
 
-  queryClient.setQueryData<ProjectRuns | null>(
+  queryClient.setQueryData<ActiveRuns | null>(
     runsKey,
     (current) => current && applyRunChange(current, ev),
   );
@@ -107,6 +126,8 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange) {
     queryKeys.projects,
     (current) => current && applyRunChangeToSummaries(current, ev, oldStatus),
   );
+
+  if (isHistoryChange(ev, oldStatus)) options.onHistoryChange?.(project.slug);
 }
 
 /**
@@ -125,14 +146,19 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange) {
  * ProjectNav for why), so they would be a silent no-op. The data is read
  * through the boundary functions themselves and written under the same keys
  * the reads use, which is also what keeps the hydration-era prefetch and this
- * refresh identical in shape. getProjectRuns stamps a fresh fetched_at, which
+ * refresh identical in shape. getActiveRuns stamps a fresh fetched_at, which
  * nothing in the UI reads today.
  *
- * Cost: one project_summaries read plus one getProjectRuns (two reads) per
+ * History needs no catch-up: it is server-rendered from a cache scope that a
+ * completion drops through the server action, and a completion this browser
+ * missed while disconnected leaves that page's History as the server has it,
+ * which is refilled on the cache lifetime or the next completion anyone sees.
+ *
+ * Cost: one project_summaries read plus one getActiveRuns (two reads) per
  * runs entry in the cache, per (re)connect. The cache holds the project list
- * and the runs of each project visited this session, so this is a handful of
- * small reads. In development React's strict mode connects twice on mount, so
- * it runs twice there.
+ * and the active runs of each project visited this session, so this is a
+ * handful of small reads. In development React's strict mode connects twice on
+ * mount, so it runs twice there.
  *
  * Failures are logged and swallowed: a failed refresh leaves the cache as it
  * was, which is the state before the refresh, and the next event or
@@ -153,8 +179,8 @@ async function catchUp(queryClient: QueryClient) {
       .filter((slug): slug is string => typeof slug === "string");
     await Promise.all(
       slugs.map(async (slug) => {
-        const runs = await getProjectRuns(slug);
-        queryClient.setQueryData<ProjectRuns | null>(queryKeys.runs(slug), runs);
+        const runs = await getActiveRuns(slug);
+        queryClient.setQueryData<ActiveRuns | null>(queryKeys.runs(slug), runs);
       }),
     );
   } catch (error) {

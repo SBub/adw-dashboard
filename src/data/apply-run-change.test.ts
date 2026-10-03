@@ -3,10 +3,11 @@ import type { ProjectSummary, Run } from "@/types/adw";
 import {
   applyRunChange,
   applyRunChangeToSummaries,
+  isHistoryChange,
   type RunChange,
   runStatusIn,
 } from "./apply-run-change";
-import type { ProjectRuns } from "./index";
+import type { ActiveRuns } from "./index";
 
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const OTHER_PROJECT = "22222222-2222-2222-2222-222222222222";
@@ -55,8 +56,8 @@ function summary(id: string, overrides: Partial<ProjectSummary> = {}): ProjectSu
   };
 }
 
-function runs(active: Run[], history: Run[]): ProjectRuns {
-  return { project: summary(PROJECT), active, history, fetched_at: "2026-10-02T11:00:00Z" };
+function active(runs: Run[]): ActiveRuns {
+  return { project: summary(PROJECT), active: runs, fetched_at: "2026-10-02T11:00:00Z" };
 }
 
 const base = {
@@ -87,9 +88,9 @@ function remove(adwId: string, projectId = PROJECT): RunChange {
 const ids = (list: Run[]) => list.map((r) => r.adw_id);
 
 describe("runStatusIn", () => {
-  const current = runs([run("aaaa")], [finished("bbbb", "failed", "2026-10-02T09:00:00Z")]);
+  const current = active([run("aaaa"), finished("bbbb", "failed", "2026-10-02T09:00:00Z")]);
 
-  it("finds a run in either list", () => {
+  it("finds a running and a failed run in the active list", () => {
     expect(runStatusIn(current, "aaaa")).toBe("running");
     expect(runStatusIn(current, "bbbb")).toBe("failed");
   });
@@ -103,35 +104,42 @@ describe("runStatusIn", () => {
 
 describe("applyRunChange", () => {
   describe("INSERT", () => {
-    it("prepends a running run to active and leaves history alone", () => {
-      const current = runs([run("aaaa")], [finished("bbbb", "completed", "2026-10-02T09:00:00Z")]);
+    it("prepends a running run", () => {
+      const current = active([run("aaaa")]);
       const next = applyRunChange(current, insert(run("cccc")));
 
       expect(ids(next.active)).toEqual(["cccc", "aaaa"]);
-      expect(next.history).toBe(current.history);
       expect(ids(current.active)).toEqual(["aaaa"]);
     });
 
-    it("prepends a finished run to history", () => {
-      const current = runs([run("aaaa")], [finished("bbbb", "completed", "2026-10-02T09:00:00Z")]);
+    it("prepends a failed run, which is still live", () => {
+      const current = active([run("aaaa")]);
       const next = applyRunChange(
         current,
         insert(finished("cccc", "failed", "2026-10-02T12:00:00Z")),
       );
 
-      expect(ids(next.history)).toEqual(["cccc", "bbbb"]);
-      expect(next.active).toBe(current.active);
+      expect(ids(next.active)).toEqual(["cccc", "aaaa"]);
     });
 
-    it("ignores an insert whose adw_id is already in active or history", () => {
-      const current = runs([run("aaaa")], [finished("bbbb", "completed", "2026-10-02T09:00:00Z")]);
+    it("ignores a completed run: that is history, not in this entry", () => {
+      const current = active([run("aaaa")]);
+      const next = applyRunChange(
+        current,
+        insert(finished("cccc", "completed", "2026-10-02T12:00:00Z")),
+      );
+
+      expect(next).toBe(current);
+    });
+
+    it("ignores an insert whose adw_id is already in the list", () => {
+      const current = active([run("aaaa")]);
 
       expect(applyRunChange(current, insert(run("aaaa")))).toBe(current);
-      expect(applyRunChange(current, insert(run("bbbb")))).toBe(current);
     });
 
     it("keeps project and fetched_at untouched", () => {
-      const current = runs([], []);
+      const current = active([]);
       const next = applyRunChange(current, insert(run("aaaa")));
 
       expect(next.project).toBe(current.project);
@@ -141,7 +149,7 @@ describe("applyRunChange", () => {
 
   describe("UPDATE", () => {
     it("replaces a running run in place when its status did not change", () => {
-      const current = runs([run("aaaa"), run("bbbb"), run("cccc")], []);
+      const current = active([run("aaaa"), run("bbbb"), run("cccc")]);
       const next = applyRunChange(
         current,
         update(run("bbbb", { phase: "adw_test_iso", updated_at: "2026-10-02T10:45:00Z" })),
@@ -152,107 +160,116 @@ describe("applyRunChange", () => {
         phase: "adw_test_iso",
         updated_at: "2026-10-02T10:45:00Z",
       });
-      expect(next.history).toBe(current.history);
     });
 
-    it("moves a run from active to the top of history when it finishes", () => {
-      const current = runs(
-        [run("aaaa"), run("bbbb")],
-        [finished("cccc", "completed", "2026-10-02T09:00:00Z")],
+    it("removes a run that completes", () => {
+      const current = active([run("aaaa"), run("bbbb")]);
+      const next = applyRunChange(
+        current,
+        update(finished("aaaa", "completed", "2026-10-02T10:50:00Z")),
       );
-      const done = finished("aaaa", "completed", "2026-10-02T10:50:00Z");
-      const next = applyRunChange(current, update(done));
 
       expect(ids(next.active)).toEqual(["bbbb"]);
-      expect(ids(next.history)).toEqual(["aaaa", "cccc"]);
-      expect(next.history[0]).toEqual(done);
     });
 
-    it("moves a run from active to history when it fails", () => {
-      const current = runs([run("aaaa")], []);
+    it("keeps a run that fails in place, now marked failed", () => {
+      const current = active([run("aaaa"), run("bbbb")]);
       const next = applyRunChange(
         current,
         update(finished("aaaa", "failed", "2026-10-02T10:50:00Z")),
       );
 
-      expect(next.active).toEqual([]);
-      expect(ids(next.history)).toEqual(["aaaa"]);
+      expect(ids(next.active)).toEqual(["aaaa", "bbbb"]);
+      expect(next.active[0]?.status).toBe("failed");
     });
 
-    it("moves a run back to active when it is set to running again", () => {
-      const current = runs(
-        [run("bbbb")],
-        [
-          finished("aaaa", "failed", "2026-10-02T09:00:00Z"),
-          finished("cccc", "completed", "2026-10-02T08:00:00Z"),
-        ],
-      );
+    it("keeps a failed run in place when it is set back to running (resumed)", () => {
+      const current = active([
+        run("bbbb"),
+        finished("aaaa", "failed", "2026-10-02T09:00:00Z"),
+        run("cccc"),
+      ]);
       const next = applyRunChange(
         current,
         update(run("aaaa", { updated_at: "2026-10-02T11:00:00Z" })),
       );
 
-      expect(ids(next.active)).toEqual(["aaaa", "bbbb"]);
-      expect(ids(next.history)).toEqual(["cccc"]);
+      expect(ids(next.active)).toEqual(["bbbb", "aaaa", "cccc"]);
+      expect(next.active[1]?.status).toBe("running");
     });
 
-    it("replaces a finished run in place when it changes within history", () => {
-      const current = runs(
-        [],
-        [
-          finished("aaaa", "failed", "2026-10-02T09:00:00Z"),
-          finished("bbbb", "completed", "2026-10-02T08:00:00Z"),
-        ],
-      );
-      const next = applyRunChange(
-        current,
-        update(finished("bbbb", "failed", "2026-10-02T08:05:00Z")),
-      );
-
-      expect(ids(next.history)).toEqual(["aaaa", "bbbb"]);
-      expect(next.history[1]?.status).toBe("failed");
-    });
-
-    it("adds a run that is in neither list, as an insert would", () => {
-      const current = runs([run("aaaa")], []);
+    it("adds a live run that is not in the list, as an insert would", () => {
+      const current = active([run("aaaa")]);
       const next = applyRunChange(current, update(run("zzzz")));
 
       expect(ids(next.active)).toEqual(["zzzz", "aaaa"]);
     });
 
+    it("returns the input for a completed run that was not in the list", () => {
+      const current = active([run("aaaa")]);
+      const next = applyRunChange(
+        current,
+        update(finished("zzzz", "completed", "2026-10-02T10:50:00Z")),
+      );
+
+      expect(next).toBe(current);
+    });
+
     it("does not mutate the input", () => {
-      const current = runs([run("aaaa")], []);
+      const current = active([run("aaaa")]);
       applyRunChange(current, update(finished("aaaa", "completed", "2026-10-02T10:50:00Z")));
 
       expect(ids(current.active)).toEqual(["aaaa"]);
-      expect(current.history).toEqual([]);
     });
   });
 
   describe("DELETE", () => {
-    it("removes the run from active by the adw_id in old", () => {
-      const current = runs([run("aaaa"), run("bbbb")], []);
+    it("removes the run by the adw_id in old", () => {
+      const current = active([run("aaaa"), run("bbbb")]);
       const next = applyRunChange(current, remove("aaaa"));
 
       expect(ids(next.active)).toEqual(["bbbb"]);
-    });
-
-    it("removes the run from history by the adw_id in old", () => {
-      const current = runs([], [finished("aaaa", "completed", "2026-10-02T09:00:00Z")]);
-      const next = applyRunChange(current, remove("aaaa"));
-
-      expect(next.history).toEqual([]);
       expect(next.fetched_at).toBe(current.fetched_at);
     });
 
     it("returns the input for an unknown adw_id or a delete without one", () => {
-      const current = runs([run("aaaa")], []);
+      const current = active([run("aaaa")]);
 
       expect(applyRunChange(current, remove("zzzz"))).toBe(current);
       expect(applyRunChange(current, { ...base, eventType: "DELETE", new: {}, old: {} })).toBe(
         current,
       );
     });
+  });
+});
+
+describe("isHistoryChange", () => {
+  it("is true for an update that completes a run, whatever it was before", () => {
+    const done = finished("aaaa", "completed", "2026-10-02T10:50:00Z");
+    expect(isHistoryChange(update(done), "running")).toBe(true);
+    expect(isHistoryChange(update(done), "failed")).toBe(true);
+    expect(isHistoryChange(update(done), undefined)).toBe(true);
+  });
+
+  it("is true for an inserted completed run", () => {
+    expect(
+      isHistoryChange(insert(finished("aaaa", "completed", "2026-10-02T10:50:00Z")), undefined),
+    ).toBe(true);
+  });
+
+  it("is false for an insert or update that leaves the run live", () => {
+    expect(isHistoryChange(insert(run("aaaa")), undefined)).toBe(false);
+    expect(isHistoryChange(update(run("aaaa", { phase: "adw_test_iso" })), "running")).toBe(false);
+    expect(
+      isHistoryChange(update(finished("aaaa", "failed", "2026-10-02T10:50:00Z")), "running"),
+    ).toBe(false);
+    expect(isHistoryChange(update(run("aaaa")), "failed")).toBe(false);
+  });
+
+  it("is true for a delete of a run the active list did not hold, false for a live one", () => {
+    expect(isHistoryChange(remove("aaaa"), undefined)).toBe(true);
+    expect(isHistoryChange(remove("aaaa"), "running")).toBe(false);
+    expect(isHistoryChange(remove("aaaa"), "failed")).toBe(false);
   });
 });
 

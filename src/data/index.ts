@@ -1,17 +1,25 @@
 // The single boundary between the screens and wherever the data comes from.
 // The pages and components only ever import from "@/data", so wiring a data
-// source is a change to this file alone. Both reads are live: the project list
+// source is a change to this file alone. Every read is live: the project list
 // comes from the adw.project_summaries view and a project's runs from the
 // adw.runs table, through the one Supabase client.
+//
+// A project's runs are read in two halves with two different lifetimes:
+//
+// - Active (status running or failed; a failed run can be resumed, so it is
+//   still live) is a React Query entry, prefetched on the server, hydrated,
+//   and patched in the browser by the Realtime listener. getActiveRuns.
+// - History (status completed) is immutable. It is rendered on the server
+//   inside a "use cache" scope tagged per project and never enters the query
+//   cache; a completion in the browser asks the server to drop that tag and
+//   re-render. getCompletedRuns.
 import type { ProjectSummary, Run } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
-export interface ProjectRuns {
+export interface ActiveRuns {
   project: ProjectSummary;
-  /** Runs with status "running", most recently updated first. */
+  /** Runs with status "running" or "failed", most recently updated first. */
   active: Run[];
-  /** Completed and failed runs, most recently updated first. */
-  history: Run[];
   /**
    * ISO timestamp of the moment the rows were read. Nothing in the UI reads it
    * today: it is kept because the realtime catch-up re-stamps it on every
@@ -20,6 +28,10 @@ export interface ProjectRuns {
    */
   fetched_at: string;
 }
+
+/** The columns of adw.runs the screens read, which are exactly the fields of Run. */
+const RUN_COLUMNS =
+  "project_id, adw_id, issue_number, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -50,7 +62,26 @@ export async function getProjects(): Promise<ProjectSummary[]> {
 }
 
 /**
- * One project with its runs split into active and history, or null for an
+ * The project row for a slug (the same shape getProjects returns, so the header
+ * and the sidebar agree), or null for an unknown slug. RLS limits it to public
+ * projects. Shared by the two runs reads below.
+ */
+async function getProjectBySlug(slug: string): Promise<ProjectSummary | null> {
+  const { data, error } = await getSupabase()
+    .from("project_summaries")
+    .select("*")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) {
+    throw new Error(`project_summaries: ${error.message}`);
+  }
+  // Same untyped client, same reasoning as in getProjects: the view's columns
+  // are exactly the fields of ProjectSummary, asserted once at the boundary.
+  return (data as ProjectSummary | null) ?? null;
+}
+
+/**
+ * One project with its live runs (status running or failed), or null for an
  * unknown slug.
  *
  * Also the queryFn for queryKeys.runs(slug): it runs on the server during the
@@ -58,14 +89,13 @@ export async function getProjects(): Promise<ProjectSummary[]> {
  * generateStaticParams), and in the browser only when the cache has nothing
  * under that key, which the hydration makes rare.
  *
- * Two reads. The project comes from adw.project_summaries by slug (the same
- * row shape getProjects returns, so the header and the sidebar agree), and a
+ * Two reads. The project comes from adw.project_summaries by slug, and a
  * missing row is the not-found case. The runs come from adw.runs by
- * project_id, most recently updated first; RLS limits both to public projects.
- * The split into active and history is the only derivation here. No label is
- * derived from the current time anywhere (removed pending issue #3); the
- * screens render the rows as stored, plus a finished run's duration from its
- * own two timestamps.
+ * project_id, filtered to the two live statuses in SQL, most recently updated
+ * first. Completed runs are not read here: they are history, served by
+ * getCompletedRuns from a server-rendered cache scope. No label is derived
+ * from the current time anywhere (removed pending issue #3); the screens
+ * render the rows as stored.
  *
  * fetched_at is the one clock read in the data layer. On the server this
  * function runs inside the page's "use cache" scope (getRunsState), where
@@ -76,40 +106,58 @@ export async function getProjects(): Promise<ProjectSummary[]> {
  * called from inside one. In the browser (the queryFn on a cache miss, the
  * realtime catch-up) the clock read is unconstrained.
  */
-export async function getProjectRuns(slug: string): Promise<ProjectRuns | null> {
-  const supabase = getSupabase();
+export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
+  const project = await getProjectBySlug(slug);
+  if (project === null) return null;
 
-  const projectResult = await supabase
-    .from("project_summaries")
-    .select("*")
-    .eq("slug", slug)
-    .maybeSingle();
-  if (projectResult.error) {
-    throw new Error(`project_summaries: ${projectResult.error.message}`);
-  }
-  if (projectResult.data === null) return null;
-  // Same untyped client, same reasoning as in getProjects: the view's columns
-  // are exactly the fields of ProjectSummary, asserted once at the boundary.
-  const project = projectResult.data as ProjectSummary;
-
-  const runsResult = await supabase
+  const { data, error } = await getSupabase()
     .from("runs")
-    .select(
-      "project_id, adw_id, issue_number, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at",
-    )
+    .select(RUN_COLUMNS)
     .eq("project_id", project.id)
+    .in("status", ["running", "failed"])
     .order("updated_at", { ascending: false });
-  if (runsResult.error) {
-    throw new Error(`runs: ${runsResult.error.message}`);
+  if (error) {
+    throw new Error(`runs: ${error.message}`);
   }
-  // The selected columns are exactly the fields of Run, so this cast is the
-  // one place the table's shape is asserted.
-  const runs = (runsResult.data ?? []) as Run[];
 
   return {
     project,
-    active: runs.filter((run) => run.status === "running"),
-    history: runs.filter((run) => run.status !== "running"),
+    // The selected columns are exactly the fields of Run, so this cast is the
+    // one place the table's shape is asserted (getCompletedRuns casts the same
+    // select).
+    active: (data ?? []) as Run[],
     fetched_at: new Date().toISOString(),
   };
+}
+
+/**
+ * A project's completed runs, most recently updated first; an empty list for
+ * an unknown slug (the page has already decided not-found from getActiveRuns
+ * by the time this is called).
+ *
+ * Server only, and only from inside the page's "use cache" scope for history
+ * (tagged history:<slug>). It never enters the React Query cache and reads no
+ * clock: there is no fetched_at here, and nothing in it needs the current
+ * time, so the result is the plain rows. A completed run never changes, so the
+ * cached list is only refilled when the browser asks the server to drop the
+ * tag after a completion (revalidateHistory), or when the cache lifetime ends.
+ *
+ * Pagination goes here later: this is the one read that grows without bound
+ * (the active list is a handful of rows), so a range on the query and a cursor
+ * in the signature would be the change, with nothing elsewhere.
+ */
+export async function getCompletedRuns(slug: string): Promise<Run[]> {
+  const project = await getProjectBySlug(slug);
+  if (project === null) return [];
+
+  const { data, error } = await getSupabase()
+    .from("runs")
+    .select(RUN_COLUMNS)
+    .eq("project_id", project.id)
+    .eq("status", "completed")
+    .order("updated_at", { ascending: false });
+  if (error) {
+    throw new Error(`runs: ${error.message}`);
+  }
+  return (data ?? []) as Run[];
 }
