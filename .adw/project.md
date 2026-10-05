@@ -66,7 +66,7 @@ format `yarn format:check` (write `yarn format`); unit `yarn test` (vitest, `src
 only, see `vitest.config.ts`); build `yarn build`.
 
 The one test layer is `src/**/*.test.ts`: pure reducers in `src/data/`, helpers in `src/lib/`, the
-pinned hydration rule. There is no component test layer and no Playwright suite; a user-visible
+pinned hydration rule, and the check of every `skills/*/SKILL.md` in `src/skills/`. There is no component test layer and no Playwright suite; a user-visible
 change gets its browser evidence from the review phase's screenshots, not from a test.
 
 E2E: `none`. No `e2e/` directory exists; the test phase treats that as nothing to run.
@@ -119,7 +119,8 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 - Open at `http://localhost:$PORT`: `/` (project sidebar plus the "Select a project" panel) and
   `/projects/SBub/issebya-homes-ai-system` (header, Queue section, Active section, History section), or the first
-  project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
+  project the sidebar lists if that slug is 404, plus `/skills` (list of skills) and
+  `/skills/server-prefetch-with-hydration` (rendered skill). Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
 - The header's connection indicator moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report
