@@ -240,7 +240,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
   ``cacheTag(`history:${slug}`)``) and rendered by the page's two async
   islands, `HistoryPagination` and `CompletedRuns`, each under its own
-  `SectionBoundary`. No `queryKeys` entry, no `useSuspenseQuery`, no
+  `SectionBoundary` (the third island, `HistorySearchBox`, reads only `?q`
+  and no history rows). No `queryKeys` entry, no `useSuspenseQuery`, no
   `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
