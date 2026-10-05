@@ -4,6 +4,8 @@ import { cacheLife, cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
 import { ActiveRunsView } from "@/components/ActiveRunsView";
 import { HistoryLinks } from "@/components/HistoryLinks";
+import { HistorySearch, HistorySearchFallback } from "@/components/HistorySearch";
+import { HistoryResults, HistoryTransition } from "@/components/HistoryTransition";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { QueueView } from "@/components/QueueView";
 import { RunHistoryList } from "@/components/RunHistoryList";
@@ -17,6 +19,7 @@ import {
   historyHref,
   readHistoryBookmark,
 } from "@/lib/history-bookmark";
+import { readHistoryQuery } from "@/lib/history-search";
 import { historyTag, runsTag } from "@/lib/history-tags";
 
 // A project slug is exactly "owner/repo", so the route has two named
@@ -135,7 +138,9 @@ async function getQueueState(slug: string) {
  * one: a completion adds a row at the head and so changes what page one
  * holds and whether a later page has an Older link, and one tag drop must
  * reach all of them. The bookmark is a plain serialisable argument, so it is
- * part of the cache key: one entry per page, all under that tag. The lifetime
+ * part of the cache key: one entry per page, all under that tag. The search
+ * text q is a plain string (or null), normalised outside the scope, so each
+ * search is its own entry too, under the same tag, never a per-query one. The lifetime
  * is explicit (stale 5 minutes, background refresh after a day, expiry after
  * 30 days); a completion drops the tag long before that. The rows never enter the React Query cache and no
  * Realtime event touches them. A completed run is immutable, so the entry is
@@ -146,20 +151,28 @@ async function getQueueState(slug: string) {
  * /api/revalidate, which drops the same tag. Its spelling comes from
  * src/lib/history-tags.ts, shared with both.
  */
-async function getHistory(slug: string, bookmark: HistoryBookmark | null): Promise<HistoryPage> {
+async function getHistory(
+  slug: string,
+  bookmark: HistoryBookmark | null,
+  q: string | null,
+): Promise<HistoryPage> {
   "use cache";
   cacheTag(historyTag(slug));
   cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 });
 
-  return getCompletedRuns(slug, bookmark);
+  return getCompletedRuns(slug, bookmark, q);
 }
 
-// The History half of the pane: two async server components, the Newer/Older
-// links (HistoryPagination) and the list (CompletedRuns), each under its own
-// SectionBoundary (Suspense plus an error boundary) so the Active half above
-// never waits on them and never falls with them. The History heading is not
-// part of either: it sits in the page, above both boundaries, in the static
-// shell.
+// The History half of the pane: three async server components, the search box
+// (HistorySearchBox), the Newer/Older links (HistoryPagination) and the list
+// (CompletedRuns), each under its own SectionBoundary (Suspense plus an error
+// boundary) so the Active half above never waits on them and never falls with
+// them. The History heading is not part of any: it sits in the page, above
+// the boundaries, in the static shell.
+//
+// The search box island is a hole only for its initial text (the normalised
+// `?q`); it calls no cache scope. The box itself rewrites the URL, and the two
+// other islands read `q` next to `after`.
 //
 // Each island awaits the page's searchParams first. That is a request-time
 // read, so under cacheComponents prerendering stops there and the hole is cut
@@ -195,15 +208,17 @@ async function getHistory(slug: string, bookmark: HistoryBookmark | null): Promi
 // is correct on a full regeneration of the page and on hosts whose cache
 // handler behaves differently.
 //
-// `?after` is decoded here, outside the cache scope (an error thrown inside
-// "use cache" loses its class); an invalid or foreign bookmark is page one,
-// never an error. readHistory is neither cached nor a boundary function; it
-// only keeps the two islands from repeating the same three lines.
+// `?after` and `?q` are decoded here, outside the cache scope (an error thrown
+// inside "use cache" loses its class); an invalid or foreign bookmark is page
+// one and an empty or repeated `q` is no search, never an error. readHistory is
+// neither cached nor a boundary function; it only keeps the two islands from
+// repeating the same lines.
 async function readHistory(slug: string, searchParams: Promise<SearchParams>) {
-  const { after } = await searchParams;
+  const { after, q: rawQuery } = await searchParams;
   const bookmark = readHistoryBookmark(after, slug);
-  const page = await getHistory(slug, bookmark);
-  return { bookmark, ...page };
+  const q = readHistoryQuery(rawQuery);
+  const page = await getHistory(slug, bookmark, q);
+  return { bookmark, q, ...page };
 }
 
 interface HistoryIslandProps {
@@ -211,26 +226,37 @@ interface HistoryIslandProps {
   searchParams: Promise<SearchParams>;
 }
 
+async function HistorySearchBox({ slug, searchParams }: HistoryIslandProps) {
+  const { q } = await searchParams;
+  return <HistorySearch slug={slug} initial={readHistoryQuery(q) ?? ""} />;
+}
+
 async function HistoryPagination({ slug, searchParams }: HistoryIslandProps) {
-  const { bookmark, nextCursor } = await readHistory(slug, searchParams);
+  const { bookmark, q, nextCursor } = await readHistory(slug, searchParams);
   return (
     <HistoryLinks
-      newerHref={bookmark ? historyHref(slug, null) : null}
-      olderHref={nextCursor ? historyHref(slug, nextCursor) : null}
+      newerHref={bookmark ? historyHref(slug, null, q) : null}
+      olderHref={nextCursor ? historyHref(slug, nextCursor, q) : null}
     />
   );
 }
 
 async function CompletedRuns({ slug, searchParams }: HistoryIslandProps) {
-  const { items } = await readHistory(slug, searchParams);
-  return <RunHistoryList runs={items} projectSlug={slug} />;
+  const { q, items } = await readHistory(slug, searchParams);
+  return (
+    <RunHistoryList
+      runs={items}
+      projectSlug={slug}
+      emptyMessage={q ? `No completed runs match "${q}".` : "No completed runs yet."}
+    />
+  );
 }
 
 // Awaiting params makes this page request-time for slugs outside
 // generateStaticParams. The sibling loading.tsx is the Suspense boundary for
 // the segment, so the layout and sidebar above it still prerender.
-// searchParams is handed to HistoryPagination and CompletedRuns unawaited:
-// only those request-time holes read it.
+// searchParams is handed to HistorySearchBox, HistoryPagination and
+// CompletedRuns unawaited: only those request-time holes read it.
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const slug = projectSlug(await params);
 
@@ -299,23 +325,34 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           slot, and the Active list above and the other island stay on screen,
           instead of the segment's error.tsx replacing the pane. A server
           component is a fine child of this client boundary; the hole
-          semantics are unchanged. */}
-      <section>
-        <div className="mb-3 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold">History</h2>
-          <SectionBoundary fallback={null} detail="Pagination did not load.">
-            <HistoryPagination slug={slug} searchParams={searchParams} />
-          </SectionBoundary>
-        </div>
-        <SectionBoundary
-          fallback={
-            <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading history...</p>
-          }
-          detail="This project's history did not load."
-        >
-          <CompletedRuns slug={slug} searchParams={searchParams} />
-        </SectionBoundary>
-      </section>
+          semantics are unchanged. HistoryTransition holds the one transition
+          the search box navigates in; HistoryResults dims the list while it is
+          pending. A search-param-only navigation keeps the segment and a
+          transition never re-hides revealed content, so the list dims instead
+          of falling back to its loading line. */}
+      <HistoryTransition>
+        <section>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
+            <h2 className="text-lg font-semibold">History</h2>
+            <SectionBoundary fallback={<HistorySearchFallback />} detail="Search did not load.">
+              <HistorySearchBox slug={slug} searchParams={searchParams} />
+            </SectionBoundary>
+            <SectionBoundary fallback={null} detail="Pagination did not load.">
+              <HistoryPagination slug={slug} searchParams={searchParams} />
+            </SectionBoundary>
+          </div>
+          <HistoryResults>
+            <SectionBoundary
+              fallback={
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading history...</p>
+              }
+              detail="This project's history did not load."
+            >
+              <CompletedRuns slug={slug} searchParams={searchParams} />
+            </SectionBoundary>
+          </HistoryResults>
+        </section>
+      </HistoryTransition>
     </>
   );
 }

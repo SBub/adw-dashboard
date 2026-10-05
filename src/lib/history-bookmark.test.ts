@@ -165,4 +165,26 @@ describe("historyHref", () => {
     const cursor = encodeHistoryBookmark(bookmark);
     expect(historyHref(SLUG, cursor)).toBe(`/projects/SBub/adw-toolkit?after=${cursor}`);
   });
+
+  it("links a search with ?q=<text>", () => {
+    expect(historyHref(SLUG, null, "forest")).toBe("/projects/SBub/adw-toolkit?q=forest");
+  });
+
+  it("keeps the search on another page, q first", () => {
+    const cursor = encodeHistoryBookmark(bookmark);
+    expect(historyHref(SLUG, cursor, "forest")).toBe(
+      `/projects/SBub/adw-toolkit?q=forest&after=${cursor}`,
+    );
+  });
+
+  it("percent-encodes the search text", () => {
+    const path = "/projects/SBub/adw-toolkit";
+    expect(historyHref(SLUG, null, "a b&c")).toBe(`${path}?q=a%20b%26c`);
+    expect(historyHref(SLUG, null, "#1/x")).toBe(`${path}?q=%231%2Fx`);
+  });
+
+  it("equals the two-argument call when q is null", () => {
+    const cursor = encodeHistoryBookmark(bookmark);
+    expect(historyHref(SLUG, cursor, null)).toBe(historyHref(SLUG, cursor));
+  });
 });

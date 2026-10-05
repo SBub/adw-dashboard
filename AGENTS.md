@@ -70,7 +70,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   a `queryFn`. All four are async database reads: `getProjects` reads the
   `project_summaries` view, `getActiveRuns` reads the same view by slug and
   then the `runs` table by `project_id` with `status in (running, failed)`,
-  `getCompletedRuns(slug, bookmark)` the same with `status = completed`, one
+  `getCompletedRuns(slug, bookmark, q)` the same with `status = completed`
+  (narrowed by `historySearchFilter(q)` when `q` is not `null`), one
   keyset page at a time (rows strictly older than the decoded bookmark, order
   `updated_at desc, adw_id desc`, `HISTORY_PAGE_SIZE + 1` rows split by
   `toHistoryPage` into `{ items, nextCursor }`; never an offset), `getQueue(slug)`
@@ -197,13 +198,22 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   hold state (the React Query provider in `src/app/providers.tsx`,
   `ProjectNav`, which reads the pathname and the query cache,
   `ActiveRunsView`, which reads the active runs from the query cache,
-  `QueueView`, which reads the queued items from the query cache, and
-  `ConnectionIndicator`, which subscribes to its store). `HistoryLinks` and
+  `QueueView`, which reads the queued items from the query cache,
+  `ConnectionIndicator`, which subscribes to its store, `HistorySearch`, which
+  holds the search box's local text and calls the router, and
+  `HistoryTransition`, which holds the one `useTransition` the box and
+  `HistoryResults` share). `HistoryLinks` and
   `RunHistoryList` are server components with no state; do not put
   `"use client"` on them or give them a filter that needs one. The `Newer`
   and `Older` links of `HistoryLinks` are plain `next/link` hrefs that
   `HistoryPagination` builds with `historyHref` and passes in (`null` hides
-  the link); do not decode a bookmark or build a URL in the component. `src/lib/run-view.ts` is plain and
+  the link); do not decode a bookmark or build a URL in the component.
+  `HistorySearch` builds its URL only through `historyHref(slug, null, q)`
+  (page one, so `?after` is dropped), never by hand, from `usePathname` or
+  with `useSearchParams` (its initial text comes from the `HistorySearchBox`
+  island); it debounces with `useDebouncedCallback` in
+  `src/hooks/use-debounced-callback.ts` and navigates with
+  `router.replace` inside the shared transition. `src/lib/run-view.ts` is plain and
   importable from anywhere. `QueueRow` has no `"use client"` (it is rendered
   by `QueueView`, like `RunRow`); the one parse of `queue_items.source` is
   `queueSource` in `src/lib/queue-source.ts`, pure and tested in
@@ -230,7 +240,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
   ``cacheTag(`history:${slug}`)``) and rendered by the page's two async
   islands, `HistoryPagination` and `CompletedRuns`, each under its own
-  `SectionBoundary`. No `queryKeys` entry, no `useSuspenseQuery`, no
+  `SectionBoundary` (the third island, `HistorySearchBox`, reads only `?q`
+  and no history rows). No `queryKeys` entry, no `useSuspenseQuery`, no
   `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
@@ -239,7 +250,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Any `"use cache"` scope that must reflect on-demand revalidation on a
   prerendered route is called only after a request-time read, under a
   `SectionBoundary`: here the islands' `await searchParams` (through
-  `readHistory`), the first thing each does before `getHistory`. A scope that
+  `readHistory`), the first thing each does before `getHistory`
+  (`HistorySearchBox` reads it too, for its initial text, and calls no cache
+  scope). A scope that
   is prerendered into the static shell is read from the shell's embedded
   Resume Data Cache on every resumed request, frozen at build time, and no
   `updateTag`, `revalidateTag` or `revalidatePath` reaches it; a request-time
@@ -258,19 +271,28 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   nowhere else), the base64url codec, `readHistoryBookmark`,
   `historyKeysetFilter`, `toHistoryPage` and `historyHref`. Every change to the
   bookmark, the filter or the page split goes with a test case.
+- History is searched through `?q`. It is normalised by `readHistoryQuery` in
+  `src/lib/history-search.ts` (trim, `*` removed, cut at
+  `HISTORY_QUERY_MAX_LENGTH`, empty or repeated is `null`) in the islands,
+  outside the cache scope, and turned into the PostgREST filter only by
+  `historySearchFilter` (LIKE and PostgREST escaping, `issue_number` only for
+  an integer that fits `int4`), both pure and tested in
+  `src/lib/history-search.test.ts`. Every change to either goes with a test
+  case. The search never touches Active, and never filters on the client.
 - A static heading sits outside the boundary of the hole it labels: the
-  `History` `<h2>` is rendered by the page, above both islands, never inside a
+  `History` `<h2>` is rendered by the page, beside and above the islands, never inside a
   `SectionBoundary` or its fallback, so it is in the static shell.
-- `HistoryPagination` and `CompletedRuns` are the only readers of
-  `searchParams`, and each awaits it itself. The page passes the promise down
+- `HistorySearchBox`, `HistoryPagination` and `CompletedRuns` are the only
+  readers of `searchParams`, and each awaits it itself. The page passes the promise down
   unawaited and never awaits it, nor do `getRunsState` or `generateMetadata`,
   or the whole page turns request-time. `?after` is decoded by
-  `readHistoryBookmark` in the islands,
+  `readHistoryBookmark` and `?q` by `readHistoryQuery` in the islands,
   outside the cache scope (an error thrown inside `"use cache"` loses its
   class), and never surfaces an error: anything invalid or foreign is page one.
-- Every page of a project shares `historyTag(slug)`; never add a per-page tag.
-  The bookmark is a `getHistory` argument, so it is already part of the cache
-  key, and one tag drop must expire every page a completion changes.
+- Every page of a project shares `historyTag(slug)`; never add a per-page or
+  per-query tag. The bookmark and the search text are `getHistory` arguments,
+  so they are already part of the cache key, and one tag drop must expire
+  every page and every search a completion changes.
 - Two islands calling `getHistory` with the same arguments are one cache read
   per request: Next joins an identical `"use cache"` invocation within the
   request (debug line `joining intra-request invocation`). Do not add a React
