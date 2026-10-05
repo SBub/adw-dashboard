@@ -232,7 +232,7 @@ It changes only when the server is told to re-render it.
 The prefetch and hydration of Active follow the sidebar's pattern, one cache
 entry per slug:
 
-1. `src/app/(dashboard)/projects/[...slug]/page.tsx` has a `"use cache"`
+1. `src/app/(dashboard)/projects/[owner]/[repo]/page.tsx` has a `"use cache"`
    function `getRunsState(slug)`, tagged `runs` and `runs:<slug>`, that returns
    `prefetch(queryKeys.runs(slug), () => getActiveRuns(slug))`: the same
    one-liner shape as the layout's `getProjectsState`. The cache scope is
@@ -349,8 +349,8 @@ When a run completes, three things happen in the browser, in this order:
    `src/lib/project-route.ts`, read inside the callback after the action has
    resolved rather than through `usePathname()`, so `Providers` does not
    subscribe to navigation and re-render on every route change. The pathname is
-   decoded first: Next decodes every route param, so a percent-encoded spelling
-   of the slug renders the same page while `window.location.pathname` keeps it
+   decoded first: Next decodes every route param, so a percent-encoded character
+   in a segment renders the same page while `window.location.pathname` keeps it
    encoded; a malformed sequence answers false instead of throwing.
 
 `updateTag`, not `revalidateTag`. The installed Next docs
@@ -872,12 +872,23 @@ duration is formatted at render time by `durationLabel` in
 
 ## Routing
 
-Project slugs are `owner/repo`, so the detail page is a catch-all segment,
-`src/app/(dashboard)/projects/[...slug]/page.tsx`. `/projects/SBub/adw-toolkit`
-arrives as `["SBub", "adw-toolkit"]` and is joined back into the slug. Project
-pages are pre-rendered at build time from the project list
+A project slug is exactly `owner/repo`, so the detail page has two named
+segments, `src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`.
+`/projects/SBub/adw-dashboard` arrives as
+`{ owner: "SBub", repo: "adw-dashboard" }`; the page assembles the slug once,
+and everything below it (the data boundary, the query key, the cache tags, the
+History bookmark, the `revalidateHistory` action) takes the slug as is.
+
+URLs never carry the project id: it is a UUID and an internal key. The slug
+stays the key because it is what the toolkit derives from the git remote, it is
+the tenant key in the database, and it mirrors the GitHub URL.
+
+Project pages are pre-rendered at build time from the project list
 (`generateStaticParams` awaits `getProjects()`, so the database is read during
-the build); a slug that is not in that list still renders on demand. The segment's `loading.tsx` is the Suspense boundary
+the build, and splits each slug into an `{ owner, repo }` pair; an empty list
+yields the placeholder pair `_` / `none`, because an empty result fails the
+build under `cacheComponents`); a slug that is not in that list still renders
+on demand. The segment's `loading.tsx` is the Suspense boundary
 that lets the shell prerender while the page streams in, and its `error.tsx` is
 the client error boundary (message, digest, Retry) for anything the page body
 throws. A failure inside one of the pane's own boundaries (`QueryBoundary`
@@ -885,7 +896,11 @@ around Active, `SectionBoundary` around History) stays in that section and
 never reaches it.
 An unknown slug calls Next's `notFound()`, which renders
 `src/app/(dashboard)/not-found.tsx` inside the two-pane shell; URLs that match
-no route at all fall through to the root `src/app/not-found.tsx`.
+no route at all fall through to the root `src/app/not-found.tsx`, with a 404
+status. That includes a path with one or three segments under `/projects`
+(`/projects/SBub`, `/projects/SBub/adw-dashboard/extra`) and an encoded slash
+(`/projects/SBub%2Fadw-dashboard`, one segment): the router answers them, no
+slug lookup happens.
 
 ## Running it
 

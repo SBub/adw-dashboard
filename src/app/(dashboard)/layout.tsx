@@ -38,7 +38,7 @@ async function getProjectsState() {
   return prefetch(queryKeys.projects, getProjects);
 }
 
-// Master-detail shell shared by "/" and "/projects/[...slug]". The project
+// Master-detail shell shared by "/" and "/projects/[owner]/[repo]". The project
 // list is prefetched once here, in a server layout, into a React Query cache
 // that is dehydrated into the HTML and hydrated in the browser, so the sidebar
 // renders with its data on the first paint and never fetches it again on

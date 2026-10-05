@@ -1,5 +1,5 @@
 // Answers "is this pathname that project's page?" for the route
-// /projects/[...slug]. Pure (a string in, a boolean out), so it is testable
+// /projects/[owner]/[repo]. Pure (a string in, a boolean out), so it is testable
 // without a router and safe to call from anywhere.
 
 /**
@@ -8,8 +8,9 @@
  *
  * The pathname is decoded before the comparison. Next decodes every route
  * param (route-matcher.js runs decodeURIComponent on each one), so a
- * percent-encoded spelling (`/projects/owner%2Frepo`) and the plain one
- * (`/projects/owner/repo`) both render the page for `owner/repo`, while
+ * percent-encoded spelling within a segment (`/projects/owner/re%2Dpo`) and
+ * the plain one (`/projects/owner/re-po`) both render the page for
+ * `owner/re-po`, while
  * `window.location.pathname` keeps the spelling the address bar holds. The
  * test file has the concrete cases. Comparing the decoded form is what agrees
  * with the page. A valid slug (`[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+`) never needs
