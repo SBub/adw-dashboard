@@ -1,6 +1,7 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { getActiveRuns } from "@/data";
 import { queryKeys } from "@/data/query-keys";
 import { PageHeader } from "./PageHeader";
@@ -15,12 +16,18 @@ import { RunRow } from "./RunRow";
  * the server HTML already holds the rows. History (completed runs) is not
  * here: the page renders it on the server, below this component.
  *
+ * The Queue section is not read here either. It is a separate cache entry
+ * under its own HydrationBoundary and QueryBoundary, built by the page and
+ * passed in as the `queue` slot, which is rendered between the header and
+ * Active so the queue sits above Active while its loading and error states
+ * stay independent of this entry's.
+ *
  * The rows are passed to RunRow as stored. No view model is built here and no
  * clock is read: the labels that needed one ("updated 2m ago", the stale
  * badge, a running run's elapsed time) are removed pending issue #3, and
  * data.fetched_at is not read by the UI today.
  */
-export function ActiveRunsView({ slug }: { slug: string }) {
+export function ActiveRunsView({ slug, queue }: { slug: string; queue: ReactNode }) {
   const { data } = useSuspenseQuery({
     // The same key builder the page prefetched under. Never build it inline.
     queryKey: queryKeys.runs(slug),
@@ -60,6 +67,8 @@ export function ActiveRunsView({ slug }: { slug: string }) {
   return (
     <>
       <PageHeader title={project.display_name} subtitle={project.slug} repoUrl={project.repo_url} />
+
+      {queue}
 
       <section className="mb-10">
         <h2 className="mb-3 text-lg font-semibold">Active</h2>

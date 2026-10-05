@@ -1,10 +1,10 @@
-// Domain types. The two interfaces in the first section mirror the database
+// Domain types. The three interfaces in the first section mirror the database
 // tables column for column; keep them in lockstep with the schema. The second
 // section holds the one view model the screens need but the database does not
 // store: ProjectSummary, produced by the data layer in src/data/ (the
-// project_summaries view), never by a leaf component. Runs have no view model;
-// the screens render Run rows as stored (the clock-dependent labels are
-// removed pending issue #3).
+// project_summaries view), never by a leaf component. Runs and queue items have
+// no view model; the screens render Run and QueueItem rows as stored (the
+// clock-dependent labels are removed pending issue #3).
 
 // ---------------------------------------------------------------------------
 // Database rows
@@ -36,6 +36,31 @@ export interface Run {
   started_at: string;
   updated_at: string;
   finished_at: string | null;
+}
+
+/** The queue_items state check constraint (the toolkit's queue_ops STATE_* values). */
+export type QueueState =
+  | "queued"
+  | "running"
+  | "merged"
+  | "declined"
+  | "conflict"
+  | "held"
+  | "failed"
+  | "skipped"
+  | "gated";
+
+export interface QueueItem {
+  project_id: string;
+  issue_number: number;
+  state: QueueState;
+  source: string | null;
+  position: number;
+  issue_title: string | null;
+  queued_at: string | null;
+  adw_id: string | null;
+  note: string | null;
+  updated_at: string;
 }
 
 // ---------------------------------------------------------------------------

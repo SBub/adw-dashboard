@@ -1,8 +1,9 @@
 // The single boundary between the screens and wherever the data comes from.
 // The pages and components only ever import from "@/data", so wiring a data
 // source is a change to this file alone. Every read is live: the project list
-// comes from the adw.project_summaries view and a project's runs from the
-// adw.runs table, through the one Supabase client.
+// comes from the adw.project_summaries view, a project's runs from the
+// adw.runs table and its queue from the adw.queue_items table, through the one
+// Supabase client.
 //
 // A project's runs are read in two halves with two different lifetimes:
 //
@@ -21,7 +22,7 @@ import {
   historyKeysetFilter,
   toHistoryPage,
 } from "@/lib/history-bookmark";
-import type { ProjectSummary, Run } from "@/types/adw";
+import type { ProjectSummary, QueueItem, Run } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
 export interface ActiveRuns {
@@ -40,6 +41,10 @@ export interface ActiveRuns {
 /** The columns of adw.runs the screens read, which are exactly the fields of Run. */
 const RUN_COLUMNS =
   "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+
+/** The columns of adw.queue_items the screens read, which are exactly the fields of QueueItem. */
+const QUEUE_COLUMNS =
+  "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, note, updated_at";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -72,7 +77,7 @@ export async function getProjects(): Promise<ProjectSummary[]> {
 /**
  * The project row for a slug (the same shape getProjects returns, so the header
  * and the sidebar agree), or null for an unknown slug. RLS limits it to public
- * projects. Shared by the two runs reads below.
+ * projects. Shared by the runs and queue reads below.
  */
 async function getProjectBySlug(slug: string): Promise<ProjectSummary | null> {
   const { data, error } = await getSupabase()
@@ -210,4 +215,35 @@ export async function getCompletedRuns(
   // The selected columns are exactly the fields of Run, the same cast as in
   // getActiveRuns: the one place the table's shape is asserted.
   return toHistoryPage((data ?? []) as Run[], slug);
+}
+
+/**
+ * One project's queued items (state queued), in ledger order: position, then
+ * issue_number so equal positions (a move in progress) still sort the same
+ * way every time. An empty list for an unknown slug: the page has already
+ * decided not-found from getActiveRuns by the time this is read.
+ *
+ * Also the queryFn for queryKeys.queue(slug). On the server it runs only
+ * inside the page's "use cache" scope (getQueueState); in the browser on a
+ * cache miss and in the realtime catch-up. Only state queued is read: every
+ * other state is a run, shown in Active or History. It reads no clock and has
+ * no fetched_at (nothing needs one; issue #3 is about run labels).
+ */
+export async function getQueue(slug: string): Promise<QueueItem[]> {
+  const project = await getProjectBySlug(slug);
+  if (project === null) return [];
+
+  const { data, error } = await getSupabase()
+    .from("queue_items")
+    .select(QUEUE_COLUMNS)
+    .eq("project_id", project.id)
+    .eq("state", "queued")
+    .order("position", { ascending: true })
+    .order("issue_number", { ascending: true });
+  if (error) {
+    throw new Error(`queue_items: ${error.message}`);
+  }
+  // The selected columns are exactly the fields of QueueItem, so this cast is
+  // the one place the table's shape is asserted.
+  return (data ?? []) as QueueItem[];
 }
