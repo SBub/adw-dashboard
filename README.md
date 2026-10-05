@@ -16,7 +16,8 @@ projects. One two-pane screen:
   section for live runs, status `running` or `failed` (a failed run can be
   resumed, so it is still live), with phase, branch and the absolute time of
   the last update, then a Queue section for the issues waiting in the
-  project's queue ledger, in the order they will run, and a History section for `completed` runs (final phase, timings, duration).
+  project's queue ledger, in the order they will run, and a History section
+  for `completed` runs (final phase, timings, duration).
   Active is a React Query entry patched by Realtime; History is rendered on
   the server from a cache scope and re-rendered when a run completes (see
   "Runs: active and history" below). `/` shows an empty "Select a project"
