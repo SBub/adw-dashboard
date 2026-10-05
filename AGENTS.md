@@ -72,9 +72,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   then the `runs` table by `project_id` with `status in (running, failed)`,
   `getCompletedRuns(slug, bookmark, q)` the same with `status = completed`
   (narrowed by `historySearchFilter(q)` when `q` is not `null`), one
-  keyset page at a time (rows strictly older than the decoded bookmark, order
-  `updated_at desc, adw_id desc`, `HISTORY_PAGE_SIZE + 1` rows split by
-  `toHistoryPage` into `{ items, nextCursor }`; never an offset), `getQueue(slug)`
+  keyset page at a time in either direction (rows strictly older than an
+  `after` bookmark, or strictly newer than a `before` bookmark read ascending
+  and reversed by `historyItems`; shown `updated_at desc, adw_id desc`;
+  `HISTORY_PAGE_SIZE` rows plus two counts on the same filter, the total and
+  the rows newer than the first shown row, assembled by `toHistoryPage` into
+  `{ items, page, pageCount, hasNewer, newerCursor, olderCursor }`; never an
+  offset), `getQueue(slug)`
   the same view by slug (unknown slug: `[]`) and then `queue_items` by
   `project_id` with `state = queued`, ordered `position asc, issue_number asc`.
   Changing what is read
@@ -204,12 +208,14 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks` and
   `RunHistoryList` are server components with no state; do not put
-  `"use client"` on them or give them a filter that needs one. The `Newer`
-  and `Older` links of `HistoryLinks` are plain `next/link` hrefs that
-  `HistoryPagination` builds with `historyHref` and passes in (`null` hides
-  the link); do not decode a bookmark or build a URL in the component.
+  `"use client"` on them or give them a filter that needs one. The left and
+  right arrows of `HistoryLinks` are plain `next/link` hrefs that
+  `HistoryPagination` builds with `historyHref` and passes in with `page` and
+  `pageCount` (`null` hides an arrow); do not decode a bookmark, build a URL
+  or compute a page number in the component. The page number is derived from
+  the counts in the cached page and never carried in the URL.
   `HistorySearch` builds its URL only through `historyHref(slug, null, q)`
-  (page one, so `?after` is dropped), never by hand, from `usePathname` or
+  (page one, so `?after` and `?before` are dropped), never by hand, from `usePathname` or
   with `useSearchParams` (its initial text comes from the `HistorySearchBox`
   island); it debounces with `useDebouncedCallback` in
   `src/hooks/use-debounced-callback.ts` and navigates with
@@ -268,9 +274,11 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - History is paged by a keyset bookmark. Everything that decides a page lives
   in `src/lib/history-bookmark.ts` (pure, tested in
   `src/lib/history-bookmark.test.ts`): `HISTORY_PAGE_SIZE` (defined there and
-  nowhere else), the base64url codec, `readHistoryBookmark`,
-  `historyKeysetFilter`, `toHistoryPage` and `historyHref`. Every change to the
-  bookmark, the filter or the page split goes with a test case.
+  nowhere else), the base64url codec (the payload carries its `direction`),
+  `readHistoryBookmark`, `historyKeysetFilter`, `historyNewerFilter`,
+  `historyOrderAscending`, `historyItems`, `toHistoryPage` and `historyHref`.
+  Every change to the bookmark, the filters, the order or the page split goes
+  with a test case.
 - History is searched through `?q`. It is normalised by `readHistoryQuery` in
   `src/lib/history-search.ts` (trim, `*` removed, cut at
   `HISTORY_QUERY_MAX_LENGTH`, empty or repeated is `null`) in the islands,
@@ -285,10 +293,11 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - `HistorySearchBox`, `HistoryPagination` and `CompletedRuns` are the only
   readers of `searchParams`, and each awaits it itself. The page passes the promise down
   unawaited and never awaits it, nor do `getRunsState` or `generateMetadata`,
-  or the whole page turns request-time. `?after` is decoded by
+  or the whole page turns request-time. `?after` and `?before` are decoded by
   `readHistoryBookmark` and `?q` by `readHistoryQuery` in the islands,
   outside the cache scope (an error thrown inside `"use cache"` loses its
-  class), and never surfaces an error: anything invalid or foreign is page one.
+  class), and never surface an error: anything invalid or foreign, a cursor
+  of the other direction, or both parameters at once is page one.
 - Every page of a project shares `historyTag(slug)`; never add a per-page or
   per-query tag. The bookmark and the search text are `getHistory` arguments,
   so they are already part of the cache key, and one tag drop must expire

@@ -57,13 +57,19 @@ A project's runs are read in two halves, because they have two lifetimes:
 - `getCompletedRuns(slug, bookmark, q)` reads the same project row, then one
   page of the rows of `adw.runs` for that id where `status` is `completed`
   (and, when the search text `q` is not `null`, that match it),
-  ordered `updated_at desc, adw_id desc`, and returns
-  `{ items, nextCursor }` (an empty page for an unknown slug, which the page
-  has already excluded). It is keyset-paginated, three runs per page
-  (`HISTORY_PAGE_SIZE` in `src/lib/history-bookmark.ts`): `bookmark` is the
-  last row the previous page showed, or `null` for page one, and the read
-  returns only rows strictly older than it, fetching one row more than a page
-  to know whether an older page exists. It reads no clock.
+  shown `updated_at desc, adw_id desc`, and returns
+  `{ items, page, pageCount, hasNewer, newerCursor, olderCursor }` (page 1 of
+  1 with no rows for an unknown slug, which the page has already excluded).
+  It is keyset-paginated in either direction, three runs per page
+  (`HISTORY_PAGE_SIZE` in `src/lib/history-bookmark.ts`): `bookmark` is
+  `null` for page one, an `after` bookmark (the last row the previous page
+  showed) reads the rows strictly older than it, and a `before` bookmark (the
+  first row the next page showed) reads the rows strictly newer than it,
+  oldest first, reversed for display. Beside the rows it reads two counts on
+  the same filter, the total and the rows strictly newer than the first shown
+  row (than the bookmark itself when a bookmarked page comes back empty, so
+  the left arrow still leads back), which give the page number and the page
+  count. It reads no clock.
 
 In SQL terms:
 
@@ -75,11 +81,17 @@ select project_id, adw_id, issue_number, issue_title, issue_class, branch_name,
  order by updated_at desc;
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
-   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- after page one
+   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- ?after
+   -- ?before: (updated_at > $3 or (updated_at = $3 and adw_id > $4)), order asc
    and (issue_title ilike $5 or branch_name ilike $5 or adw_id ilike $5
         or issue_number = $6)                                -- a search; $6 if an integer
  order by updated_at desc, adw_id desc
- limit 4;
+ limit 3;
+select count(*) from adw.runs where project_id = $2 and status = 'completed'
+   and <the same search>;                                    -- total
+select count(*) from adw.runs where project_id = $2 and status = 'completed'
+   and <the same search>
+   and (updated_at > $7 or (updated_at = $7 and adw_id > $8)); -- newer than the first row
 ```
 
 The rows are the raw `Run` type; no label is derived on the server (see
@@ -94,8 +106,10 @@ returns):
 - `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
   `{ project: ProjectSummary; active: Run[]; fetched_at: string }`
 - `getCompletedRuns(slug, bookmark, q): Promise<HistoryPage>`, where
-  `HistoryPage` is `{ items: Run[]; nextCursor: string | null }` (from
-  `src/lib/history-bookmark.ts`)
+  `HistoryPage` is `{ items: Run[]; page: number; pageCount: number;
+hasNewer: boolean; newerCursor: HistoryCursor | null; olderCursor:
+HistoryCursor | null }` and `HistoryCursor` is `{ direction: "after" |
+"before"; cursor: string }` (from `src/lib/history-bookmark.ts`)
 - `getQueue(slug): Promise<QueueItem[]>`
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
@@ -341,10 +355,11 @@ History is rendered below that, by the same page:
    The islands are async server components in the page file; each awaits the
    page's `searchParams`. `HistorySearchBox` normalises `?q` and hands it to
    the client `HistorySearch` as its initial text; the other two decode
-   `?after` with `readHistoryBookmark` and `?q` with `readHistoryQuery`, and
-   call `getHistory`. `HistoryPagination` renders `HistoryLinks` with the two
-   page links (`newerHref`, `olderHref`, built with `historyHref`, `null` when
-   that page does not exist); `CompletedRuns` renders `RunHistoryList` with
+   `?after` and `?before` with `readHistoryBookmark` and `?q` with
+   `readHistoryQuery`, and call `getHistory`. `HistoryPagination` renders
+   `HistoryLinks` with the two arrow links (`newerHref`, `olderHref`, built
+   with `historyHref`, `null` when there is nothing in that direction) and
+   the page's `page` and `pageCount`; `CompletedRuns` renders `RunHistoryList` with
    the page's `items`, the slug and the empty-state text ("No completed runs
    yet.", or "No completed runs match ..." during a search). Each boundary keeps Active and the other
    island on screen when its island fails: if `getHistory` throws (database
@@ -362,21 +377,33 @@ History is rendered below that, by the same page:
    and Duration.
 
    History is paged three runs at a time. The URL of a later page carries
-   `?after=<bookmark>`, an opaque base64url JSON of the last row the previous
-   page showed, `{ slug, updated_at, adw_id }` (`updated_at` kept verbatim,
-   microseconds included). The next page is the rows strictly older than that
-   tuple in the order `updated_at desc, adw_id desc` (`adw_id` is unique
-   within a project, so the order is total), so a run completing while a
-   visitor is on page two adds a row to page one and never shifts page two.
-   The bookmark is decoded in each island, outside the cache scope; a
-   missing, malformed or repeated `?after`, or one handed out for another
-   project, is page one, never an error. The History header is one row:
-   the title on the left, `Newer` (back to page one) and `Older` links on the
-   right, each only when that page exists. Every page of a project shares the
-   one `history:<slug>` tag on purpose: the bookmark argument is part of the
-   cache key (one entry per page), and one tag drop after a completion
-   expires all of them, since a new row changes page one and can change
-   whether a later page has an `Older` link. There is no per-page tag. The
+   `?after=<bookmark>` or `?before=<bookmark>`, an opaque base64url JSON
+   `{ slug, direction, updated_at, adw_id }` (`updated_at` kept verbatim,
+   microseconds included). An `after` bookmark is the last row the previous
+   page showed, and the page is the rows strictly older than that tuple in the
+   order `updated_at desc, adw_id desc` (`adw_id` is unique within a project,
+   so the order is total); a `before` bookmark is the first row the following
+   page showed, and the page is the rows strictly newer than it, read oldest
+   first and reversed for display. A run completing while a visitor is on page
+   two adds a row to page one and never shifts page two. The bookmark is
+   decoded in each island, outside the cache scope; a missing, malformed or
+   repeated parameter, one handed out for another project, one in the
+   parameter of the other direction (the direction is checked), or `?after`
+   and `?before` together, is page one, never an error. The History header is
+   one row: the title on the left, then a left arrow, the indicator `N of M`
+   and a right arrow. The right arrow is `?after=` of the last shown row; the
+   left arrow is `?before=` of the first shown row, or page one itself when
+   the newer rows fit on one page, so the head of the list is always the full
+   page one. A missing arrow keeps its slot, and the whole row is absent when
+   there is a single page. `N of M` is never in the URL: `N` is one plus the
+   count of newer completed runs divided by the page size (rounded up), `M`
+   is the total divided by the page size (rounded up, never less than `N`),
+   both counted in the same cached `getHistory` entry as the rows. Every page
+   of a project shares the one `history:<slug>` tag on purpose: the bookmark
+   argument is part of the cache key (one entry per page), and one tag drop
+   after a completion expires all of them, since a new row changes page one
+   and every page's `N of M`, which is recomputed with the rows. There is no
+   per-page tag. The
    lifetime is explicit: stale after 5 minutes, refreshed in the background
    after a day, expired after 30 days; a completion drops the tag long before
    that.
@@ -386,15 +413,15 @@ History is rendered below that, by the same page:
    writes `?q=<text>` 300 ms after the last keystroke (a small `setTimeout`
    hook, `src/hooks/use-debounced-callback.ts`) with `router.replace` inside a
    transition, always to page one (`historyHref(slug, null, q)`, so `?after`
-   is dropped), and its Clear button removes `q`. The islands read `q` beside
-   `after`; `readHistoryQuery` in `src/lib/history-search.ts` trims it, cuts
+   and `?before` are dropped), and its Clear button removes `q`. The islands read `q` beside
+   the bookmark; `readHistoryQuery` in `src/lib/history-search.ts` trims it, cuts
    it at 60 characters and removes `*`, and `historySearchFilter` turns it
    into a PostgREST `or` of `ilike` on the issue title, the branch name and
    the run id (with `%`, `_` and `\` matched literally) plus the issue number
    when the text is an integer, ANDed with the keyset filter. Each search is
    its own cache entry under the same `history:<slug>` tag, so a completion
-   still expires every one, and `Newer`/`Older` carry `q`, so paging stays
-   inside the search. `HistoryTransition` shares the box's transition with
+   still expires every one, and both arrows carry `q`, so paging stays
+   inside the search, and `N of M` counts only the matching runs. `HistoryTransition` shares the box's transition with
    `HistoryResults`, which dims the list while the new page streams in
    instead of falling back to "Loading history...".
 
@@ -583,7 +610,7 @@ search slot, nothing in the pagination slot and "Loading history..." for the
 list, and all three stream in on each server request (a client navigation back to a page seen
 within the last five minutes makes no request; see "Client router cache"
 below). They are the only readers of `searchParams` (for
-`?after` and `?q`), and there is no `connection()` call (it would be a redundant second
+`?after`, `?before` and `?q`), and there is no `connection()` call (it would be a redundant second
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
@@ -594,7 +621,7 @@ within one request instead of running it again
 (`node_modules/next/dist/server/use-cache/use-cache-wrapper.js`,
 "Intra-request deduplication"). With `NEXT_PRIVATE_DEBUG_CACHE=1`, one GET
 shows one `generated entry` (on a miss) or one hit for the history scope.
-On a `?after` page the second island adds a `joining intra-request
+On a `?after` or `?before` page the second island adds a `joining intra-request
 invocation` line; on page one (bookmark `null`) the second call is answered
 before that point and logs nothing, still without a second read.
 
