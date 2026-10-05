@@ -57,8 +57,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   in the UI reads it today; issue #3 needs it as the server snapshot.
 - `durationLabel` in `src/lib/run-view.ts` is pure (two timestamps in, reads no
   clock, `null` while `finished_at` is `null`) and unit-tested in
-  `src/lib/run-view.test.ts` with fixed timestamps. Every change to the label
-  format goes with a test case; do not move label derivation into SQL.
+  `src/lib/run-view.test.ts` with fixed timestamps; `secondsLabel` in the same
+  file formats the summary's `median_duration_s` in the same format through
+  the same helper. Every change to the label format goes with a test case; do
+  not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects`, `getActiveRuns`, `getCompletedRuns` and `getQueue` from
   `@/data` and nothing else for data. Skill content is not data: the skills
@@ -252,7 +254,10 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
   the input, unit-tested in `src/lib/format-date.test.ts`), called only by
   `Timestamp`, whose `<time>` keeps the ISO value in `dateTime`. The output
-  depends on the input string alone, so server and client markup agree. Do not
+  depends on the input string alone, so server and client markup agree. The
+  summary's calendar days (`YYYY-MM-DD`, no time) are the one other case:
+  `formatDay` in the same file (`DD.MM.YYYY`, same parse and UTC getters,
+  same test file). Do not
   introduce `toLocaleString`, `Intl` or runtime-time-zone formatting, and every
   change to the format goes with a test case.
 - Status colours come only from `STATUS_COLORS` in `src/lib/status-colors.ts`

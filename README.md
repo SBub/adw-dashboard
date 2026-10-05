@@ -1129,7 +1129,10 @@ newest `day` in the view and the rows of the window, casts them to
 `DailySummary` (`src/types/adw.ts`), and hands them to `toSummaryReport` in
 `src/lib/daily-summary.ts`, which groups and adds them. Everything that shapes
 the report (the parameters, the window, the totals, the bar's segments, the
-labels) lives in that file, pure and unit-tested.
+labels) lives in that file, pure and unit-tested. A day is shown as
+`DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and a median duration
+by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
+`durationLabel`); both are pure and read no clock.
 
 **The window.** "Last 30 days" needs a reference day, and reading the clock
 would be a second clock read in the data layer (the one permitted is
