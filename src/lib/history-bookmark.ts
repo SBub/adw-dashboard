@@ -162,9 +162,14 @@ export function toHistoryPage(rows: readonly Run[], slug: string): HistoryPage {
 
 /**
  * The project page's URL for a History page: page one without a query, any
- * other with `?after=<cursor>` (base64url needs no further encoding).
+ * other with `?after=<cursor>` (base64url needs no further encoding). A search
+ * text (already normalised by readHistoryQuery) comes first as a
+ * percent-encoded `?q=`, so paging inside a search keeps the filter.
  */
-export function historyHref(slug: string, cursor: string | null): string {
+export function historyHref(slug: string, cursor: string | null, q: string | null = null): string {
+  const params = [];
+  if (q !== null) params.push(`q=${encodeURIComponent(q)}`);
+  if (cursor !== null) params.push(`after=${cursor}`);
   const path = `/projects/${slug}`;
-  return cursor === null ? path : `${path}?after=${cursor}`;
+  return params.length === 0 ? path : `${path}?${params.join("&")}`;
 }

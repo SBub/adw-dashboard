@@ -5,6 +5,8 @@ interface RunHistoryListProps {
   /** One page of completed runs, as stored, most recently updated first. */
   runs: Run[];
   projectSlug: string;
+  /** The empty state's text; the page words it for a search with no match. */
+  emptyMessage: string;
 }
 
 /**
@@ -14,11 +16,11 @@ interface RunHistoryListProps {
  * renders it from a "use cache" scope tagged per project; it is not in the
  * query cache and no Realtime event touches it.
  */
-export function RunHistoryList({ runs, projectSlug }: RunHistoryListProps) {
+export function RunHistoryList({ runs, projectSlug, emptyMessage }: RunHistoryListProps) {
   if (runs.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
-        No completed runs yet.
+        {emptyMessage}
       </p>
     );
   }

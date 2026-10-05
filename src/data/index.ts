@@ -22,6 +22,7 @@ import {
   historyKeysetFilter,
   toHistoryPage,
 } from "@/lib/history-bookmark";
+import { historySearchFilter } from "@/lib/history-search";
 import type { ProjectSummary, QueueItem, Run } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
@@ -184,6 +185,12 @@ export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
  * so the order is total. One row more than a page is fetched so toHistoryPage
  * can tell whether a next page exists.
  *
+ * `q` is the search text, already normalised by the caller outside the cache
+ * scope (readHistoryQuery in src/lib/history-search.ts), or null for no
+ * search. It narrows the page through historySearchFilter, never the order,
+ * so a search page's cursor is the same keyset bookmark. Its `or` is a second
+ * filter parameter next to the keyset's, and PostgREST ANDs the two.
+ *
  * Server only, and only from inside the page's "use cache" scope for history
  * (tagged history:<slug>, shared by every page). It never enters the React
  * Query cache and reads no clock: there is no fetched_at here, and nothing in
@@ -195,6 +202,7 @@ export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
 export async function getCompletedRuns(
   slug: string,
   bookmark: HistoryBookmark | null,
+  q: string | null,
 ): Promise<HistoryPage> {
   const project = await getProjectBySlug(slug);
   if (project === null) return { items: [], nextCursor: null };
@@ -205,6 +213,7 @@ export async function getCompletedRuns(
     .eq("project_id", project.id)
     .eq("status", "completed");
   if (bookmark) query = query.or(historyKeysetFilter(bookmark));
+  if (q) query = query.or(historySearchFilter(q));
   const { data, error } = await query
     .order("updated_at", { ascending: false })
     .order("adw_id", { ascending: false })

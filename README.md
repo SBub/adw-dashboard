@@ -54,8 +54,9 @@ A project's runs are read in two halves, because they have two lifetimes:
   then the rows of `adw.runs` where `project_id` is that project's id **and
   `status` is `running` or `failed`**, ordered by `updated_at` descending. It
   stamps the result with `fetched_at`, the ISO time the rows were read.
-- `getCompletedRuns(slug, bookmark)` reads the same project row, then one
-  page of the rows of `adw.runs` for that id where `status` is `completed`,
+- `getCompletedRuns(slug, bookmark, q)` reads the same project row, then one
+  page of the rows of `adw.runs` for that id where `status` is `completed`
+  (and, when the search text `q` is not `null`, that match it),
   ordered `updated_at desc, adw_id desc`, and returns
   `{ items, nextCursor }` (an empty page for an unknown slug, which the page
   has already excluded). It is keyset-paginated, three runs per page
@@ -75,6 +76,8 @@ select project_id, adw_id, issue_number, issue_title, issue_class, branch_name,
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
    and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- after page one
+   and (issue_title ilike $5 or branch_name ilike $5 or adw_id ilike $5
+        or issue_number = $6)                                -- a search; $6 if an integer
  order by updated_at desc, adw_id desc
  limit 4;
 ```
@@ -90,7 +93,7 @@ returns):
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
   `{ project: ProjectSummary; active: Run[]; fetched_at: string }`
-- `getCompletedRuns(slug, bookmark): Promise<HistoryPage>`, where
+- `getCompletedRuns(slug, bookmark, q): Promise<HistoryPage>`, where
   `HistoryPage` is `{ items: Run[]; nextCursor: string | null }` (from
   `src/lib/history-bookmark.ts`)
 - `getQueue(slug): Promise<QueueItem[]>`
@@ -324,22 +327,26 @@ entry per slug:
 
 History is rendered below that, by the same page:
 
-5. `getHistory(slug, bookmark)` is a second `"use cache"` function in the
+5. `getHistory(slug, bookmark, q)` is a second `"use cache"` function in the
    page, tagged `history:<slug>`, with an explicit
    `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
-   returns `getCompletedRuns(slug, bookmark)`: one page of plain rows, no
+   returns `getCompletedRuns(slug, bookmark, q)`: one page of plain rows, no
    clock read, no React Query. The page renders the History heading row
-   itself, statically: the `<h2>History</h2>` on the left and, on the right,
-   the `HistoryPagination` island in a `SectionBoundary` (fallback `null`,
-   detail "Pagination did not load."). Below the row, the `CompletedRuns`
-   island sits in a second `SectionBoundary` (fallback "Loading history...",
-   detail "This project's history did not load."). Both islands are async
-   server components in the page file; each awaits the page's
-   `searchParams`, decodes `?after` with `readHistoryBookmark`, and calls
-   `getHistory`. `HistoryPagination` renders `HistoryLinks` with the two page
-   links (`newerHref`, `olderHref`, built with `historyHref`, `null` when that
-   page does not exist); `CompletedRuns` renders `RunHistoryList` with the
-   page's `items` and the slug. Each boundary keeps Active and the other
+   itself, statically: the `<h2>History</h2>`, then the `HistorySearchBox`
+   island in a `SectionBoundary` (fallback the same box, disabled; detail
+   "Search did not load.") and the `HistoryPagination` island in another
+   (fallback `null`, detail "Pagination did not load."). Below the row, the
+   `CompletedRuns` island sits in a third `SectionBoundary` (fallback
+   "Loading history...", detail "This project's history did not load.").
+   The islands are async server components in the page file; each awaits the
+   page's `searchParams`. `HistorySearchBox` normalises `?q` and hands it to
+   the client `HistorySearch` as its initial text; the other two decode
+   `?after` with `readHistoryBookmark` and `?q` with `readHistoryQuery`, and
+   call `getHistory`. `HistoryPagination` renders `HistoryLinks` with the two
+   page links (`newerHref`, `olderHref`, built with `historyHref`, `null` when
+   that page does not exist); `CompletedRuns` renders `RunHistoryList` with
+   the page's `items`, the slug and the empty-state text ("No completed runs
+   yet.", or "No completed runs match ..." during a search). Each boundary keeps Active and the other
    island on screen when its island fails: if `getHistory` throws (database
    down, an RLS change), the boundary shows its panel ("Could not load.", its
    detail, Retry) in its own slot, instead of the segment's `error.tsx`
@@ -373,6 +380,23 @@ History is rendered below that, by the same page:
    lifetime is explicit: stale after 5 minutes, refreshed in the background
    after a day, expired after 30 days; a completion drops the tag long before
    that.
+
+   History is searchable through the URL: the box next to the title
+   (`src/components/HistorySearch.tsx`, a client component with local text)
+   writes `?q=<text>` 300 ms after the last keystroke (a small `setTimeout`
+   hook, `src/hooks/use-debounced-callback.ts`) with `router.replace` inside a
+   transition, always to page one (`historyHref(slug, null, q)`, so `?after`
+   is dropped), and its Clear button removes `q`. The islands read `q` beside
+   `after`; `readHistoryQuery` in `src/lib/history-search.ts` trims it, cuts
+   it at 60 characters and removes `*`, and `historySearchFilter` turns it
+   into a PostgREST `or` of `ilike` on the issue title, the branch name and
+   the run id (with `%`, `_` and `\` matched literally) plus the issue number
+   when the text is an integer, ANDed with the keyset filter. Each search is
+   its own cache entry under the same `history:<slug>` tag, so a completion
+   still expires every one, and `Newer`/`Older` carry `q`, so paging stays
+   inside the search. `HistoryTransition` shares the box's transition with
+   `HistoryResults`, which dims the list while the new page streams in
+   instead of falling back to "Loading history...".
 
 #### The move: how a completion crosses from Active to History
 
@@ -549,20 +573,22 @@ A pre-rendered project page has two kinds of content. The sidebar (the
 layout's `projects` scope) and Active (the page's `runs:<slug>` scope) are in
 the **static shell**: their `"use cache"` results are resolved at build time
 and embedded in the shell as its Resume Data Cache. So is the History
-heading, which the page renders outside any boundary. The two History islands
-(`HistoryPagination` and `CompletedRuns`) are **request-time holes**: each
-awaits `searchParams` before `getHistory`, a request-time read that stops
-prerendering at the island's own `SectionBoundary`, so the shell carries
-nothing in the pagination slot and "Loading history..." for the list, and both
-stream in on each server request (a client navigation back to a page seen
+heading, which the page renders outside any boundary. The three History
+islands (`HistorySearchBox`, `HistoryPagination` and `CompletedRuns`) are
+**request-time holes**: each awaits `searchParams` (the latter two before
+`getHistory`; the search island calls no cache scope and only needs `?q` for
+its initial text), a request-time read that stops prerendering at the
+island's own `SectionBoundary`, so the shell carries a disabled box in the
+search slot, nothing in the pagination slot and "Loading history..." for the
+list, and all three stream in on each server request (a client navigation back to a page seen
 within the last five minutes makes no request; see "Client router cache"
 below). They are the only readers of `searchParams` (for
-`?after`), and there is no `connection()` call (it would be a redundant second
+`?after` and `?q`), and there is no `connection()` call (it would be a redundant second
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
 Two islands do not mean two reads. `getHistory` is a `"use cache"` function
-keyed by its arguments, the slug and a plain bookmark object with the same
+keyed by its arguments, the slug, a plain bookmark object and the search text, with the same
 values in both islands, and the installed Next joins an identical invocation
 within one request instead of running it again
 (`node_modules/next/dist/server/use-cache/use-cache-wrapper.js`,
@@ -718,8 +744,8 @@ would only re-mount the same failed output. Retry calls `router.refresh()`
 first, which asks the server to render the route again (the section's cache
 scope is read again and, on a miss, the database), and then resets the
 boundary, so the re-mounted child is the fresh server result streaming in
-behind the fallback. The project page wraps `HistoryPagination` and
-`CompletedRuns` each in one; the hole semantics come from their `searchParams`
+behind the fallback. The project page wraps `HistorySearchBox`,
+`HistoryPagination` and `CompletedRuns` each in one; the hole semantics come from their `searchParams`
 read and are unchanged by the boundary, since a server component is a
 legitimate child of a client boundary and the Suspense inside is still the
 streaming boundary the shell carries the fallback for.
