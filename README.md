@@ -4,7 +4,7 @@ A public dashboard for runs of the AI Developer Workflow (ADW) toolkit across
 projects. One two-pane screen:
 
 - The left pane is a persistent sidebar listing every project with its
-  running, completed and failed counts and the time its last run started. It
+  queued, running, completed and failed counts and the time its last run started. It
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
@@ -26,7 +26,10 @@ database, see the toolkit's `supabase/README.md`). The view runs with
 `security_invoker`, so the publishable key sees only public projects. The list
 is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
-rows change.
+rows change. The view also carries `queued`, the number of issues waiting in
+the project's queue ledger (the toolkit's), shown in the sidebar as the first
+count and emphasised when above zero; it is refreshed by a page load or the
+realtime catch-up, not live.
 
 A project's runs are read in two halves, because they have two lifetimes:
 

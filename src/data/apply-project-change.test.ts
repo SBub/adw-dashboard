@@ -19,6 +19,7 @@ function row(id: string, overrides: Partial<Project> = {}): Project {
 function summary(id: string, overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {
     ...row(id),
+    queued: 4,
     running: 1,
     completed: 2,
     failed: 3,
@@ -54,6 +55,7 @@ describe("applyProjectChange", () => {
     expect(next.map((project) => project.id)).toEqual(["b", "a"]);
     expect(next[0]).toEqual({
       ...row("b"),
+      queued: 0,
       running: 0,
       completed: 0,
       failed: 0,
@@ -80,6 +82,13 @@ describe("applyProjectChange", () => {
       summary("b", { display_name: "Renamed", updated_at: "2026-10-03T00:00:00Z" }),
     );
     expect(next[0]).toBe(current[0]);
+  });
+
+  it("keeps the queued count through an update", () => {
+    const current = [summary("a", { queued: 7 })];
+    const next = applyProjectChange(current, update(row("a", { display_name: "Renamed" })));
+
+    expect(next[0]).toMatchObject({ queued: 7, display_name: "Renamed" });
   });
 
   it("leaves the list unchanged for an update to an unknown id", () => {

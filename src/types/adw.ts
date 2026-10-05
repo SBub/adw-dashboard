@@ -42,8 +42,9 @@ export interface Run {
 // View models: provided by the data layer, not stored in the database
 // ---------------------------------------------------------------------------
 
-/** A project plus the per-status counts and last-run time the landing page shows. */
+/** A project plus the per-status counts, the queued count and last-run time the landing page shows. */
 export interface ProjectSummary extends Project {
+  queued: number;
   running: number;
   completed: number;
   failed: number;
