@@ -1,8 +1,8 @@
 const KNOWN: Record<string, string> = {
   "/feature": "border-violet-300 text-violet-800 dark:border-violet-700 dark:text-violet-300",
-  "/bug": "border-rose-300 text-rose-800 dark:border-rose-700 dark:text-rose-300",
+  "/bug": "border-fuchsia-300 text-fuchsia-800 dark:border-fuchsia-700 dark:text-fuchsia-300",
   "/chore": "border-neutral-300 text-neutral-700 dark:border-neutral-600 dark:text-neutral-300",
-  "/patch": "border-amber-300 text-amber-800 dark:border-amber-700 dark:text-amber-300",
+  "/patch": "border-lime-300 text-lime-800 dark:border-lime-700 dark:text-lime-300",
 };
 
 const FALLBACK =

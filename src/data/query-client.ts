@@ -1,7 +1,7 @@
 // The one QueryClient factory, and the one server prefetch built on it. The
-// server prefetches (the layout's project list, a project page's runs) and the
-// browser provider all build from the factory, so every side of the React
-// Query cache agrees on the dehydrate rule. With query-keys.ts it is the whole
+// server prefetches (the layout's project list, a project page's runs and its
+// queue) and the browser provider all build from the factory, so every side of
+// the React Query cache agrees on the dehydrate rule. With query-keys.ts it is the whole
 // query layer: the fetchers are the data boundary functions in index.ts
 // themselves.
 import {

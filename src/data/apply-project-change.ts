@@ -9,11 +9,11 @@ import type { Project, ProjectSummary } from "@/types/adw";
  * Returns the project list after applying `ev`:
  *
  * - INSERT prepends the new row as a summary with zero counts and no last run
- *   (a project that was just created has no runs yet). If an entry with that
+ *   (a project that was just created has no runs and nothing queued yet). If an entry with that
  *   id already exists the list is returned unchanged, so a replayed or
  *   duplicated event cannot create a second entry.
- * - UPDATE merges the new row into the matching entry, keeping its counts and
- *   last_run_at, which are not columns on the table and so are not in the
+ * - UPDATE merges the new row into the matching entry, keeping its counts (queued
+ *   included) and last_run_at, which are not columns on the table and so are not in the
  *   event. An update for an id that is not in the list is ignored.
  * - DELETE removes the entry whose id matches `ev.old.id`. Supabase sends
  *   `old` with only the primary key unless the table's replica identity is
@@ -30,6 +30,7 @@ export function applyProjectChange(
       if (current.some((project) => project.id === ev.new.id)) return current;
       const inserted: ProjectSummary = {
         ...ev.new,
+        queued: 0,
         running: 0,
         completed: 0,
         failed: 0,

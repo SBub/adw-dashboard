@@ -14,6 +14,33 @@ const nextConfig: NextConfig = {
   // Next 16 otherwise writes its own AGENTS.md and CLAUDE.md on every `next
   // dev`. This repo keeps those files by hand; see AGENTS.md.
   agentRules: false,
+  // Ship skills/ with the server output. The skills reader builds its paths
+  // from process.cwd(), which file tracing cannot follow, and a name outside
+  // generateStaticParams is read at request time.
+  outputFileTracingIncludes: {
+    "/skills": ["./skills/**/*"],
+    "/skills/[name]": ["./skills/**/*"],
+  },
+  // Keep a visited project page's dynamic part in the client router cache
+  // for five minutes. The History islands are request-time holes (they await
+  // searchParams), holes are not prefetched, and the router cache keeps
+  // dynamic content for 0 seconds by default, so without this every sidebar
+  // navigation, even back to a project seen seconds ago, is a server round
+  // trip and a "Loading history..." flash. `static` stays at its default (it
+  // also sets the `default` cacheLife profile's stale).
+  //
+  // Correctness within the window: when a run completes on the project on
+  // screen, Providers calls revalidateHistory and then router.refresh(), which
+  // re-renders that route from the server; the action's updateTag also clears
+  // the whole client cache. A project not on screen is refetched on its next
+  // visit once the window has passed, and its history tag has been dropped on
+  // the server (action or webhook), so that refetch sees fresh rows. Keep this
+  // at or under getHistory's cacheLife stale (300 s); see AGENTS.md.
+  experimental: {
+    staleTimes: {
+      dynamic: 300,
+    },
+  },
 };
 
 export default nextConfig;

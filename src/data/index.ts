@@ -1,8 +1,9 @@
 // The single boundary between the screens and wherever the data comes from.
 // The pages and components only ever import from "@/data", so wiring a data
 // source is a change to this file alone. Every read is live: the project list
-// comes from the adw.project_summaries view and a project's runs from the
-// adw.runs table, through the one Supabase client.
+// comes from the adw.project_summaries view, a project's runs from the
+// adw.runs table and its queue from the adw.queue_items table, through the one
+// Supabase client.
 //
 // A project's runs are read in two halves with two different lifetimes:
 //
@@ -18,10 +19,14 @@ import {
   HISTORY_PAGE_SIZE,
   type HistoryBookmark,
   type HistoryPage,
+  historyItems,
   historyKeysetFilter,
+  historyNewerFilter,
+  historyOrderAscending,
   toHistoryPage,
 } from "@/lib/history-bookmark";
-import type { ProjectSummary, Run } from "@/types/adw";
+import { historySearchFilter } from "@/lib/history-search";
+import type { ProjectSummary, QueueItem, Run } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
 export interface ActiveRuns {
@@ -39,7 +44,11 @@ export interface ActiveRuns {
 
 /** The columns of adw.runs the screens read, which are exactly the fields of Run. */
 const RUN_COLUMNS =
-  "project_id, adw_id, issue_number, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+
+/** The columns of adw.queue_items the screens read, which are exactly the fields of QueueItem. */
+const QUEUE_COLUMNS =
+  "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, note, updated_at";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -72,7 +81,7 @@ export async function getProjects(): Promise<ProjectSummary[]> {
 /**
  * The project row for a slug (the same shape getProjects returns, so the header
  * and the sidebar agree), or null for an unknown slug. RLS limits it to public
- * projects. Shared by the two runs reads below.
+ * projects. Shared by the runs and queue reads below.
  */
 async function getProjectBySlug(slug: string): Promise<ProjectSummary | null> {
   const { data, error } = await getSupabase()
@@ -166,48 +175,134 @@ export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
 }
 
 /**
- * One page of a project's completed runs, `HISTORY_PAGE_SIZE` at a time in the
- * order `updated_at desc, adw_id desc`, with the cursor of the next (older)
- * page; an empty page for an unknown slug (the page has already decided
- * not-found from getActiveRuns by the time this is called).
+ * A project's completed runs, narrowed by the search text when there is one:
+ * the one filter the History rows read and both of its counts share, so the
+ * page and its "N of M" can never disagree on what is counted.
+ */
+function completedRuns<Columns extends string>(
+  projectId: string,
+  q: string | null,
+  columns: Columns,
+  options?: { count: "exact"; head: true },
+) {
+  const query = getSupabase()
+    .from("runs")
+    .select(columns, options)
+    .eq("project_id", projectId)
+    .eq("status", "completed");
+  return q ? query.or(historySearchFilter(q)) : query;
+}
+
+/** The number of rows a count read reports, or its error thrown as `runs: <message>`. */
+function countOf({ count, error }: { count: number | null; error: { message: string } | null }) {
+  if (error) {
+    throw new Error(`runs: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
+/**
+ * One page of a project's completed runs, at most `HISTORY_PAGE_SIZE` in the
+ * display order `updated_at desc, adw_id desc`, with its position (page N of
+ * M) and the cursors of its two arrows; page 1 of 1 with no rows for an
+ * unknown slug (the page has already decided not-found from getActiveRuns by
+ * the time this is called).
  *
- * Keyset, not offset: `bookmark` is the last row the previous page showed
- * (null for page one), already decoded and validated by the caller outside
- * the cache scope (readHistoryBookmark in src/lib/history-bookmark.ts), and
- * the read returns only rows strictly older than it. A run completing at the
- * head therefore never shifts a later page. adw_id is unique within a project,
- * so the order is total. One row more than a page is fetched so toHistoryPage
- * can tell whether a next page exists.
+ * Keyset in either direction, never an offset: `bookmark` (null for page one)
+ * is already decoded and validated by the caller outside the cache scope
+ * (readHistoryBookmark in src/lib/history-bookmark.ts). An `after` bookmark
+ * reads the rows strictly older than it, newest first; a `before` bookmark the
+ * rows strictly newer, oldest first (historyOrderAscending), which
+ * historyItems reverses for display. A run completing at the head therefore
+ * never shifts a bookmarked page. adw_id is unique within a project, so the
+ * order is total.
+ *
+ * Two counts on the same filter number the page: the total, read alongside
+ * the rows, and the rows strictly newer than the first shown row (or than the
+ * bookmark itself when a bookmarked page is empty), read after them.
+ * toHistoryPage turns the two into the page number, the page count and both
+ * arrows, so no N + 1 row is fetched.
+ *
+ * `q` is the search text, already normalised by the caller outside the cache
+ * scope (readHistoryQuery in src/lib/history-search.ts), or null for no
+ * search. It narrows the rows and both counts through historySearchFilter,
+ * never the order, so a search page's cursor is the same keyset bookmark. Its
+ * `or` is a second filter parameter next to the keyset's, and PostgREST ANDs
+ * the two.
  *
  * Server only, and only from inside the page's "use cache" scope for history
- * (tagged history:<slug>, shared by every page). It never enters the React
- * Query cache and reads no clock: there is no fetched_at here, and nothing in
- * it needs the current time. A completed run never changes, so the cached
- * pages are only refilled when the browser asks the server to drop the tag
- * after a completion (revalidateHistory), when the database webhook does, or
- * when the cache lifetime ends.
+ * (tagged history:<slug>, shared by every page), so the counts drop with the
+ * tag together with the rows. It never enters the React Query cache and reads
+ * no clock: there is no fetched_at here, and nothing in it needs the current
+ * time. A completed run never changes, so the cached pages are only refilled
+ * when the browser asks the server to drop the tag after a completion
+ * (revalidateHistory), when the database webhook does, or when the cache
+ * lifetime ends.
  */
 export async function getCompletedRuns(
   slug: string,
   bookmark: HistoryBookmark | null,
+  q: string | null,
 ): Promise<HistoryPage> {
   const project = await getProjectBySlug(slug);
-  if (project === null) return { items: [], nextCursor: null };
+  if (project === null) return toHistoryPage([], { slug, newer: 0, total: 0 });
 
-  let query = getSupabase()
-    .from("runs")
-    .select(RUN_COLUMNS)
-    .eq("project_id", project.id)
-    .eq("status", "completed");
-  if (bookmark) query = query.or(historyKeysetFilter(bookmark));
-  const { data, error } = await query
-    .order("updated_at", { ascending: false })
-    .order("adw_id", { ascending: false })
-    .limit(HISTORY_PAGE_SIZE + 1);
-  if (error) {
-    throw new Error(`runs: ${error.message}`);
+  let rowsQuery = completedRuns(project.id, q, RUN_COLUMNS);
+  if (bookmark) rowsQuery = rowsQuery.or(historyKeysetFilter(bookmark));
+  const ascending = historyOrderAscending(bookmark);
+  const [rows, totalCount] = await Promise.all([
+    rowsQuery
+      .order("updated_at", { ascending })
+      .order("adw_id", { ascending })
+      .limit(HISTORY_PAGE_SIZE),
+    completedRuns(project.id, q, "adw_id", { count: "exact", head: true }),
+  ]);
+  if (rows.error) {
+    throw new Error(`runs: ${rows.error.message}`);
   }
+  const total = countOf(totalCount);
   // The selected columns are exactly the fields of Run, the same cast as in
   // getActiveRuns: the one place the table's shape is asserted.
-  return toHistoryPage((data ?? []) as Run[], slug);
+  const items = historyItems((rows.data ?? []) as Run[], bookmark);
+
+  const anchor = items[0] ?? bookmark;
+  const newer = anchor
+    ? countOf(
+        await completedRuns(project.id, q, "adw_id", { count: "exact", head: true }).or(
+          historyNewerFilter(anchor),
+        ),
+      )
+    : 0;
+  return toHistoryPage(items, { slug, newer, total });
+}
+
+/**
+ * One project's queued items (state queued), in ledger order: position, then
+ * issue_number so equal positions (a move in progress) still sort the same
+ * way every time. An empty list for an unknown slug: the page has already
+ * decided not-found from getActiveRuns by the time this is read.
+ *
+ * Also the queryFn for queryKeys.queue(slug). On the server it runs only
+ * inside the page's "use cache" scope (getQueueState); in the browser on a
+ * cache miss and in the realtime catch-up. Only state queued is read: every
+ * other state is a run, shown in Active or History. It reads no clock and has
+ * no fetched_at (nothing needs one; issue #3 is about run labels).
+ */
+export async function getQueue(slug: string): Promise<QueueItem[]> {
+  const project = await getProjectBySlug(slug);
+  if (project === null) return [];
+
+  const { data, error } = await getSupabase()
+    .from("queue_items")
+    .select(QUEUE_COLUMNS)
+    .eq("project_id", project.id)
+    .eq("state", "queued")
+    .order("position", { ascending: true })
+    .order("issue_number", { ascending: true });
+  if (error) {
+    throw new Error(`queue_items: ${error.message}`);
+  }
+  // The selected columns are exactly the fields of QueueItem, so this cast is
+  // the one place the table's shape is asserted.
+  return (data ?? []) as QueueItem[];
 }

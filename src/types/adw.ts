@@ -1,10 +1,10 @@
-// Domain types. The two interfaces in the first section mirror the database
+// Domain types. The three interfaces in the first section mirror the database
 // tables column for column; keep them in lockstep with the schema. The second
 // section holds the one view model the screens need but the database does not
 // store: ProjectSummary, produced by the data layer in src/data/ (the
-// project_summaries view), never by a leaf component. Runs have no view model;
-// the screens render Run rows as stored (the clock-dependent labels are
-// removed pending issue #3).
+// project_summaries view), never by a leaf component. Runs and queue items have
+// no view model; the screens render Run and QueueItem rows as stored (the
+// clock-dependent labels are removed pending issue #3).
 
 // ---------------------------------------------------------------------------
 // Database rows
@@ -26,6 +26,7 @@ export interface Run {
   project_id: string;
   adw_id: string;
   issue_number: number | null;
+  issue_title: string | null;
   issue_class: string | null;
   branch_name: string | null;
   phase: string | null;
@@ -37,12 +38,38 @@ export interface Run {
   finished_at: string | null;
 }
 
+/** The queue_items state check constraint (the toolkit's queue_ops STATE_* values). */
+export type QueueState =
+  | "queued"
+  | "running"
+  | "merged"
+  | "declined"
+  | "conflict"
+  | "held"
+  | "failed"
+  | "skipped"
+  | "gated";
+
+export interface QueueItem {
+  project_id: string;
+  issue_number: number;
+  state: QueueState;
+  source: string | null;
+  position: number;
+  issue_title: string | null;
+  queued_at: string | null;
+  adw_id: string | null;
+  note: string | null;
+  updated_at: string;
+}
+
 // ---------------------------------------------------------------------------
 // View models: provided by the data layer, not stored in the database
 // ---------------------------------------------------------------------------
 
-/** A project plus the per-status counts and last-run time the landing page shows. */
+/** A project plus the per-status counts, the queued count and last-run time the landing page shows. */
 export interface ProjectSummary extends Project {
+  queued: number;
   running: number;
   completed: number;
   failed: number;

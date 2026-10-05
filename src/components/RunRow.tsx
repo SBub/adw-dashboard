@@ -38,36 +38,46 @@ function Mono({ value }: { value: string | null }) {
  * function of two columns (durationLabel, which is null while finished_at is
  * null, so a running run shows no duration). Nothing here reads the clock:
  * "updated 2m ago", the stale badge and the elapsed time of a running run are
- * removed pending issue #3.
+ * removed pending issue #3. The issue title is a column shown as stored; runs
+ * published before the toolkit started writing it have none and show no title.
  */
 export function RunRow({ run, projectSlug, variant }: RunRowProps) {
   const duration = durationLabel(run.started_at, run.finished_at);
 
   return (
     <li className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <StatusBadge status={run.status} />
-        {run.issue_number !== null ? (
-          <a
-            href={`https://github.com/${projectSlug}/issues/${run.issue_number}`}
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium underline underline-offset-4 hover:text-neutral-600 dark:hover:text-neutral-300"
-          >
-            #{run.issue_number}
-          </a>
-        ) : (
-          <span className="text-sm text-neutral-400 dark:text-neutral-600">no issue</span>
-        )}
-        <IssueClassBadge issueClass={run.issue_class} />
-        <code className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
-          {run.adw_id}
-        </code>
-        {variant === "active" && (
-          <span className="ml-auto text-xs text-neutral-500 dark:text-neutral-400">
-            Updated <Timestamp value={run.updated_at} />
-          </span>
-        )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+          {run.issue_number !== null ? (
+            <a
+              href={`https://github.com/${projectSlug}/issues/${run.issue_number}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline underline-offset-4 hover:text-neutral-600 dark:hover:text-neutral-300"
+            >
+              #{run.issue_number}
+            </a>
+          ) : (
+            <span className="text-sm text-neutral-400 dark:text-neutral-600">no issue</span>
+          )}
+          {run.issue_title !== null && (
+            <span className="min-w-0 flex-1 basis-40 truncate text-sm" title={run.issue_title}>
+              {run.issue_title}
+            </span>
+          )}
+          <IssueClassBadge issueClass={run.issue_class} />
+          <code className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+            {run.adw_id}
+          </code>
+          {variant === "active" && (
+            <span className="ml-auto text-xs text-neutral-500 dark:text-neutral-400">
+              Updated <Timestamp value={run.updated_at} />
+            </span>
+          )}
+        </div>
+        <div className="flex h-6 shrink-0 items-center">
+          <StatusBadge status={run.status} />
+        </div>
       </div>
       <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
         <Field label={variant === "history" ? "Final phase" : "Phase"}>

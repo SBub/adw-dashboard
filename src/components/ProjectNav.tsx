@@ -5,33 +5,24 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getProjects } from "@/data";
 import { queryKeys } from "@/data/query-keys";
+import { STATUS_COLORS, type StatusKey } from "@/lib/status-colors";
 import type { ProjectSummary } from "@/types/adw";
 import { Timestamp } from "./Timestamp";
 
-function Count({
-  label,
-  value,
-  emphasised,
-}: {
-  label: string;
-  value: number;
-  emphasised: boolean;
-}) {
+function Count({ status, value }: { status: StatusKey; value: number }) {
   return (
     <span
       className={`inline-flex items-center gap-1 tabular-nums ${
-        emphasised
-          ? "font-semibold text-emerald-700 dark:text-emerald-400"
-          : value === 0
-            ? "text-neutral-400 dark:text-neutral-600"
-            : "text-neutral-700 dark:text-neutral-300"
+        value === 0 ? STATUS_COLORS.neutral.text : `font-semibold ${STATUS_COLORS[status].text}`
       }`}
-      title={`${value} ${label}`}
+      title={`${value} ${status}`}
     >
-      {emphasised && (
-        <span className="inline-block size-1.5 animate-pulse rounded-full bg-emerald-500" />
+      {status === "running" && value > 0 && (
+        <span
+          className={`inline-block size-1.5 animate-pulse rounded-full ${STATUS_COLORS.running.dot}`}
+        />
       )}
-      {value} <span className="font-normal text-neutral-500 dark:text-neutral-400">{label}</span>
+      {value} <span className="font-normal text-neutral-500 dark:text-neutral-400">{status}</span>
     </span>
   );
 }
@@ -53,9 +44,10 @@ function ProjectNavItem({ project, selected }: { project: ProjectSummary; select
           {project.slug}
         </span>
         <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
-          <Count label="running" value={project.running} emphasised={project.running > 0} />
-          <Count label="completed" value={project.completed} emphasised={false} />
-          <Count label="failed" value={project.failed} emphasised={false} />
+          <Count status="queued" value={project.queued} />
+          <Count status="running" value={project.running} />
+          <Count status="completed" value={project.completed} />
+          <Count status="failed" value={project.failed} />
         </span>
         <span className="mt-1.5 block text-xs text-neutral-500 dark:text-neutral-400">
           {project.last_run_at ? (

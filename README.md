@@ -4,18 +4,29 @@ A public dashboard for runs of the AI Developer Workflow (ADW) toolkit across
 projects. One two-pane screen:
 
 - The left pane is a persistent sidebar listing every project with its
-  running, completed and failed counts and the time its last run started. It
+  queued, running, completed and failed counts and the time its last run started. It
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
-- The right pane shows the selected project's runs: an Active section for
-  live runs, status `running` or `failed` (a failed run can be resumed, so it
-  is still live), with phase, branch and the absolute time of the last update,
-  and a History section for `completed` runs (final phase, timings, duration).
+  Every run and queue state has one colour wherever it appears (queued
+  amber, running emerald with a pulsing dot, completed sky, failed rose, a
+  zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
+  the header's connection pill keeps its own colours.
+- The right pane shows the selected project's runs and queue: an Active
+  section for live runs, status `running` or `failed` (a failed run can be
+  resumed, so it is still live), with phase, branch and the absolute time of
+  the last update, then a Queue section for the issues waiting in the
+  project's queue ledger, in the order they will run, and a History section
+  for `completed` runs (final phase, timings, duration).
   Active is a React Query entry patched by Realtime; History is rendered on
   the server from a cache scope and re-rendered when a run completes (see
   "Runs: active and history" below). `/` shows an empty "Select a project"
   panel; `/projects/<owner>/<repo>` selects a project and is the deep link.
+
+Beside it, a read-only Skills section: `/skills` lists the owner's Claude Code
+skills (kept in `skills/<name>/SKILL.md` in this repository) and
+`/skills/<name>` renders one. The header's "Projects" and "Skills" links switch
+between the two (see "Skills" below).
 
 ## Data: projects and runs from the database
 
@@ -26,7 +37,23 @@ database, see the toolkit's `supabase/README.md`). The view runs with
 `security_invoker`, so the publishable key sees only public projects. The list
 is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
-rows change.
+rows change. The view also carries `queued`, the number of issues waiting in
+the project's queue ledger (the toolkit's), shown in the sidebar as the first
+count and in bold amber when above zero (no pulse dot: that marks running). It moves live with the queue listener
+(see "Event to cache" below) and is corrected by a page load or the realtime
+catch-up.
+
+A project's queue is read by `getQueue(slug)`: the project row by slug (an
+unknown slug is an empty list, the page has already decided not-found from
+the runs), then the rows of `adw.queue_items` (the toolkit's mirror of the
+queue ledger, one row per ledger item, primary key `(project_id,
+issue_number)`) where `project_id` matches **and `state` is `queued`**,
+ordered `position asc, issue_number asc` (ledger order, with a deterministic
+tie-break while a move is in flight). Every other state (`QueueState` in
+`src/types/adw.ts`: `running`, `merged`, `failed`, `held`, `skipped` and the
+rest) means the item has left the queue: a started item is a run and shows in
+Active or History, a held or skipped one is not shown. It selects `QUEUE_COLUMNS`, exactly the fields of
+`QueueItem`, and reads no clock.
 
 A project's runs are read in two halves, because they have two lifetimes:
 
@@ -36,57 +63,77 @@ A project's runs are read in two halves, because they have two lifetimes:
   then the rows of `adw.runs` where `project_id` is that project's id **and
   `status` is `running` or `failed`**, ordered by `updated_at` descending. It
   stamps the result with `fetched_at`, the ISO time the rows were read.
-- `getCompletedRuns(slug, bookmark)` reads the same project row, then one
-  page of the rows of `adw.runs` for that id where `status` is `completed`,
-  ordered `updated_at desc, adw_id desc`, and returns
-  `{ items, nextCursor }` (an empty page for an unknown slug, which the page
-  has already excluded). It is keyset-paginated, three runs per page
-  (`HISTORY_PAGE_SIZE` in `src/lib/history-bookmark.ts`): `bookmark` is the
-  last row the previous page showed, or `null` for page one, and the read
-  returns only rows strictly older than it, fetching one row more than a page
-  to know whether an older page exists. It reads no clock.
+- `getCompletedRuns(slug, bookmark, q)` reads the same project row, then one
+  page of the rows of `adw.runs` for that id where `status` is `completed`
+  (and, when the search text `q` is not `null`, that match it),
+  shown `updated_at desc, adw_id desc`, and returns
+  `{ items, page, pageCount, hasNewer, newerCursor, olderCursor }` (page 1 of
+  1 with no rows for an unknown slug, which the page has already excluded).
+  It is keyset-paginated in either direction, three runs per page
+  (`HISTORY_PAGE_SIZE` in `src/lib/history-bookmark.ts`): `bookmark` is
+  `null` for page one, an `after` bookmark (the last row the previous page
+  showed) reads the rows strictly older than it, and a `before` bookmark (the
+  first row the next page showed) reads the rows strictly newer than it,
+  oldest first, reversed for display. Beside the rows it reads two counts on
+  the same filter, the total and the rows strictly newer than the first shown
+  row (than the bookmark itself when a bookmarked page comes back empty, so
+  the left arrow still leads back), which give the page number and the page
+  count. It reads no clock.
 
 In SQL terms:
 
 ```sql
 select * from adw.project_summaries where slug = $1;
-select project_id, adw_id, issue_number, issue_class, branch_name, phase, status,
-       state, toolkit_version, started_at, updated_at, finished_at
+select project_id, adw_id, issue_number, issue_title, issue_class, branch_name,
+       phase, status, state, toolkit_version, started_at, updated_at, finished_at
   from adw.runs where project_id = $2 and status in ('running', 'failed')
  order by updated_at desc;
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
-   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- after page one
+   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- ?after
+   -- ?before: (updated_at > $3 or (updated_at = $3 and adw_id > $4)), order asc
+   and (issue_title ilike $5 or branch_name ilike $5 or adw_id ilike $5
+        or issue_number = $6)                                -- a search; $6 if an integer
  order by updated_at desc, adw_id desc
- limit 4;
+ limit 3;
+select count(*) from adw.runs where project_id = $2 and status = 'completed'
+   and <the same search>;                                    -- total
+select count(*) from adw.runs where project_id = $2 and status = 'completed'
+   and <the same search>
+   and (updated_at > $7 or (updated_at = $7 and adw_id > $8)); -- newer than the first row
 ```
 
 The rows are the raw `Run` type; no label is derived on the server (see
 "Labels" below). There are no fixtures any more; `src/data/fixtures.ts` is
 gone.
 
-`src/data/index.ts` is the single boundary the screens read through. It
-exports three functions and the shape the second one returns:
+`src/data/index.ts` is the single boundary the screens read through. Its
+screen-facing reads are four functions (plus the shape the second one
+returns):
 
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
   `{ project: ProjectSummary; active: Run[]; fetched_at: string }`
-- `getCompletedRuns(slug, bookmark): Promise<HistoryPage>`, where
-  `HistoryPage` is `{ items: Run[]; nextCursor: string | null }` (from
-  `src/lib/history-bookmark.ts`)
+- `getCompletedRuns(slug, bookmark, q): Promise<HistoryPage>`, where
+  `HistoryPage` is `{ items: Run[]; page: number; pageCount: number;
+hasNewer: boolean; newerCursor: HistoryCursor | null; olderCursor:
+HistoryCursor | null }` and `HistoryCursor` is `{ direction: "after" |
+"before"; cursor: string }` (from `src/lib/history-bookmark.ts`)
+- `getQueue(slug): Promise<QueueItem[]>`
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
 data; the query keys and the `QueryClient` factory (next section) are cache
 plumbing, not data, and the server action in `src/app/actions/` touches no
 data at all (it drops cache tags). The Supabase client is untyped (no
 generated `Database` type yet), so the boundary casts rows once: the view's
-rows to `ProjectSummary` and the table's rows to `Run[]` (the shared
-`RUN_COLUMNS` select is exactly the fields of `Run`). Generating types for the
+rows to `ProjectSummary`, the runs rows to `Run[]` (the shared `RUN_COLUMNS`
+select is exactly the fields of `Run`) and the queue rows to `QueueItem[]`
+(`QUEUE_COLUMNS`, exactly the fields of `QueueItem`). Generating types for the
 `adw` schema is a follow-up.
 
 Because the layout prefetch and `generateStaticParams` both call
-`getProjects()`, and the page calls `getActiveRuns()` and `getCompletedRuns()`
-for every slug, the database is read at **build time** as well as at request
+`getProjects()`, and the page calls `getActiveRuns()`, `getQueue()` and
+`getCompletedRuns()` for every slug, the database is read at **build time** as well as at request
 time. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 must therefore be present for `yarn build`, which reads `.env.local` (not
 `.env.development`); without them `getSupabase()` throws and the build fails
@@ -100,14 +147,17 @@ to `notFound()` at request time.
 `src/data/query-keys.ts` and `src/data/query-client.ts` sit beside the boundary
 and are the query layer over it: what the server and the browser share so the
 two sides of the React Query cache cannot drift apart. There are no fetcher
-wrappers; the boundary functions `getProjects` and `getActiveRuns` are the
-`queryFn`s themselves, passed straight from `@/data` at every call site.
+wrappers; the boundary functions `getProjects`, `getActiveRuns` and `getQueue`
+are the `queryFn`s themselves, passed straight from `@/data` at every call site.
 `getCompletedRuns` is not a `queryFn`: history is server-rendered and never
 enters the query cache.
 
 - `queryKeys` in `query-keys.ts`, the single home of every query key:
   `queryKeys.projects` (`["projects"]`) for the project list and
-  `queryKeys.runs(slug)` (`["runs", slug]`) for a project's active runs. A key is
+  `queryKeys.runs(slug)` (`["runs", slug]`) for a project's active runs,
+  `queryKeys.queue(slug)` (`["queue", slug]`) for its queued items, and the two
+  prefixes `queryKeys.allRuns` (`["runs"]`) and `queryKeys.allQueues`
+  (`["queue"]`) that the catch-up enumerates cached entries with. A key is
   imported from there wherever a resource is prefetched, read or written by the
   Realtime listener; no key is ever built inline, and no key literal exists
   anywhere else.
@@ -118,8 +168,9 @@ enters the query cache.
 - `prefetch(queryKey, queryFn)` in the same file, the one server prefetch:
   it builds a client from the factory, awaits `queryClient.query()` and
   returns `{ data, state }`, the resolved value next to `dehydrate()` of the
-  client. Both `"use cache"` state functions (the layout's `getProjectsState`,
-  the page's `getRunsState`) are one-liners around it, so the two prefetches
+  client. Every `"use cache"` state function (the layout's `getProjectsState`,
+  the page's `getRunsState` and `getQueueState`) is a one-liner around it, so
+  the prefetches
   cannot drift apart, and a caller that needs the value (the page's not-found
   decision) reads `data` instead of searching the dehydrated queries by hash.
   (`prefetchQuery` is deprecated in React Query 5.104; `query()` is its
@@ -229,6 +280,17 @@ at all. The page renders it on the server inside a `"use cache"` scope tagged
 `history:<slug>`; no realtime event touches it and the catch-up never reads it.
 It changes only when the server is told to re-render it.
 
+Each section's heading, one-line description and info-button detail are
+rendered by `SectionHeading`, and the copy lives in the project page
+(`src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`) next to the sections.
+
+Each run row shows the issue title (`adw.runs.issue_title`, published by the
+toolkit) after the issue number, on one line truncated with an ellipsis; runs
+published before the toolkit wrote it have no title and show the number alone.
+The title keeps a 10rem flex basis, so on a narrow screen the issue class badge
+and the `adw_id` wrap to the next line instead of squeezing the title to a
+single character; the full text is in the span's `title` attribute.
+
 The prefetch and hydration of Active follow the sidebar's pattern, one cache
 entry per slug:
 
@@ -256,32 +318,72 @@ entry per slug:
    That boundary does not nest inside the layout's, which is scoped to the
    sidebar; the two are siblings in effect, and React Query hydrates both
    dehydrated states into the one client `Providers` holds.
+
+   The queue is a second entry beside it. A third `"use cache"` function,
+   `getQueueState(slug)`, returns
+   `prefetch(queryKeys.queue(slug), () => getQueue(slug))`, untagged (no server
+   writer drops it; like Active it lives in the static shell and the browser
+   keeps it current). The page awaits it together with `getRunsState` in one
+   `Promise.all`, so the two reads do not waterfall; the not-found decision
+   still reads only the runs `data`. The queue gets its own
+   `<HydrationBoundary state={queue.state}>` around its own
+   `<QueryBoundary fallback="Loading queue..."><QueueView slug={slug} heading={queueHeading} /></QueryBoundary>`,
+   passed to `ActiveRunsView` as its `queue` slot, which renders it after the
+   Active section: the Queue sits below Active, and a failed queue read shows
+   its panel in that slot while the header and Active stay up. It is never
+   rendered in the not-found branch. The page builds the Queue and Active
+   headings (`SectionHeading`, with their copy) and passes them in as the
+   `heading` slots of `QueueView` and `ActiveRunsView`, so the headings stay
+   server components inside the two client views.
+
 4. `src/components/ActiveRunsView.tsx` is a client component that reads
    `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"`
    and `refetchOnMount: false` (same two reasons as the sidebar) and renders
-   the header and the Active section (`RunRow`, variant `active`) from the
-   rows as stored; no view model is built and no clock is read. It renders the
+   the header and the Active section (its `heading` slot, then `RunRow`,
+   variant `active`) from the rows as stored; no view model is built and no clock is read. It renders the
    not-found panel for `null` data as a guard only; the server has already
    excluded that case.
+   `src/components/QueueView.tsx` is its counterpart for the queue: the same
+   `useSuspenseQuery` options under `queryKeys.queue(slug)`, its `heading` slot,
+   and either the dashed `Nothing queued.` panel or an ordered list of
+   `QueueRow` (`src/components/QueueRow.tsx`): the issue number as a GitHub
+   link, the title (omitted when `null`), the source and `Queued <time>` (`none`
+   when `queued_at` is `null`). The source is parsed from
+   the stored `source` column by `queueSource` in `src/lib/queue-source.ts`
+   (`label:<name>` renders a `label: <name>` badge, `manual` a `manual` badge
+   plus a visible hint that removing the label does not remove the item, since
+   a manually queued item is not taken out by unlabelling the issue; anything
+   else, or `null`, renders no badge).
+   Every row ends with the amber `queued` `StatusBadge`, the same component
+   and colour map as a run row's status.
 
 History is rendered below that, by the same page:
 
-5. `getHistory(slug, bookmark)` is a second `"use cache"` function in the
+5. `getHistory(slug, bookmark, q)` is a second `"use cache"` function in the
    page, tagged `history:<slug>`, with an explicit
    `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
-   returns `getCompletedRuns(slug, bookmark)`: one page of plain rows, no
+   returns `getCompletedRuns(slug, bookmark, q)`: one page of plain rows, no
    clock read, no React Query. The page renders the History heading row
-   itself, statically: the `<h2>History</h2>` on the left and, on the right,
-   the `HistoryPagination` island in a `SectionBoundary` (fallback `null`,
-   detail "Pagination did not load."). Below the row, the `CompletedRuns`
-   island sits in a second `SectionBoundary` (fallback "Loading history...",
-   detail "This project's history did not load."). Both islands are async
-   server components in the page file; each awaits the page's
-   `searchParams`, decodes `?after` with `readHistoryBookmark`, and calls
-   `getHistory`. `HistoryPagination` renders `HistoryLinks` with the two page
-   links (`newerHref`, `olderHref`, built with `historyHref`, `null` when that
-   page does not exist); `CompletedRuns` renders `RunHistoryList` with the
-   page's `items` and the slug. Each boundary keeps Active and the other
+   itself, statically: a `SectionHeading` whose `<h2>History</h2>`,
+   description and info button sit outside every boundary, and whose
+   `controls` slot holds the `HistorySearchBox` island, right after the
+   title, in a `SectionBoundary` (fallback the same box, disabled; detail
+   "Search did not load."), and whose `actions` slot holds the
+   `HistoryPagination` island in another (fallback `null`, detail
+   "Pagination did not load."), at the right edge of the row and, below
+   `md`, on a second line, right-aligned. Below the row, the
+   `CompletedRuns` island sits in a third `SectionBoundary` (fallback
+   "Loading history...", detail "This project's history did not load.").
+   The islands are async server components in the page file; each awaits the
+   page's `searchParams`. `HistorySearchBox` normalises `?q` and hands it to
+   the client `HistorySearch` as its initial text; the other two decode
+   `?after` and `?before` with `readHistoryBookmark` and `?q` with
+   `readHistoryQuery`, and call `getHistory`. `HistoryPagination` renders
+   `HistoryLinks` with the two arrow links (`newerHref`, `olderHref`, built
+   with `historyHref`, `null` when there is nothing in that direction) and
+   the page's `page` and `pageCount`; `CompletedRuns` renders `RunHistoryList` with
+   the page's `items`, the slug and the empty-state text ("No completed runs
+   yet.", or "No completed runs match ..." during a search). Each boundary keeps Active and the other
    island on screen when its island fails: if `getHistory` throws (database
    down, an RLS change), the boundary shows its panel ("Could not load.", its
    detail, Retry) in its own slot, instead of the segment's `error.tsx`
@@ -297,24 +399,53 @@ History is rendered below that, by the same page:
    and Duration.
 
    History is paged three runs at a time. The URL of a later page carries
-   `?after=<bookmark>`, an opaque base64url JSON of the last row the previous
-   page showed, `{ slug, updated_at, adw_id }` (`updated_at` kept verbatim,
-   microseconds included). The next page is the rows strictly older than that
-   tuple in the order `updated_at desc, adw_id desc` (`adw_id` is unique
-   within a project, so the order is total), so a run completing while a
-   visitor is on page two adds a row to page one and never shifts page two.
-   The bookmark is decoded in each island, outside the cache scope; a
-   missing, malformed or repeated `?after`, or one handed out for another
-   project, is page one, never an error. The History header is one row:
-   the title on the left, `Newer` (back to page one) and `Older` links on the
-   right, each only when that page exists. Every page of a project shares the
-   one `history:<slug>` tag on purpose: the bookmark argument is part of the
-   cache key (one entry per page), and one tag drop after a completion
-   expires all of them, since a new row changes page one and can change
-   whether a later page has an `Older` link. There is no per-page tag. The
+   `?after=<bookmark>` or `?before=<bookmark>`, an opaque base64url JSON
+   `{ slug, direction, updated_at, adw_id }` (`updated_at` kept verbatim,
+   microseconds included). An `after` bookmark is the last row the previous
+   page showed, and the page is the rows strictly older than that tuple in the
+   order `updated_at desc, adw_id desc` (`adw_id` is unique within a project,
+   so the order is total); a `before` bookmark is the first row the following
+   page showed, and the page is the rows strictly newer than it, read oldest
+   first and reversed for display. A run completing while a visitor is on page
+   two adds a row to page one and never shifts page two. The bookmark is
+   decoded in each island, outside the cache scope; a missing, malformed or
+   repeated parameter, one handed out for another project, one in the
+   parameter of the other direction (the direction is checked), or `?after`
+   and `?before` together, is page one, never an error. The History header is
+   one row: the title on the left, then a left arrow, the indicator `N of M`
+   and a right arrow. The right arrow is `?after=` of the last shown row; the
+   left arrow is `?before=` of the first shown row, or page one itself when
+   the newer rows fit on one page, so the head of the list is always the full
+   page one. A missing arrow keeps its slot, and the whole row is absent when
+   there is a single page. `N of M` is never in the URL: `N` is one plus the
+   count of newer completed runs divided by the page size (rounded up), `M`
+   is the total divided by the page size (rounded up, never less than `N`),
+   both counted in the same cached `getHistory` entry as the rows. Every page
+   of a project shares the one `history:<slug>` tag on purpose: the bookmark
+   argument is part of the cache key (one entry per page), and one tag drop
+   after a completion expires all of them, since a new row changes page one
+   and every page's `N of M`, which is recomputed with the rows. There is no
+   per-page tag. The
    lifetime is explicit: stale after 5 minutes, refreshed in the background
    after a day, expired after 30 days; a completion drops the tag long before
    that.
+
+   History is searchable through the URL: the box next to the title
+   (`src/components/HistorySearch.tsx`, a client component with local text)
+   writes `?q=<text>` 300 ms after the last keystroke (a small `setTimeout`
+   hook, `src/hooks/use-debounced-callback.ts`) with `router.replace` inside a
+   transition, always to page one (`historyHref(slug, null, q)`, so `?after`
+   and `?before` are dropped), and its Clear button removes `q`. The islands read `q` beside
+   the bookmark; `readHistoryQuery` in `src/lib/history-search.ts` trims it, cuts
+   it at 60 characters and removes `*`, and `historySearchFilter` turns it
+   into a PostgREST `or` of `ilike` on the issue title, the branch name and
+   the run id (with `%`, `_` and `\` matched literally) plus the issue number
+   when the text is an integer, ANDed with the keyset filter. Each search is
+   its own cache entry under the same `history:<slug>` tag, so a completion
+   still expires every one, and both arrows carry `q`, so paging stays
+   inside the search, and `N of M` counts only the matching runs. `HistoryTransition` shares the box's transition with
+   `HistoryResults`, which dims the list while the new page streams in
+   instead of falling back to "Loading history...".
 
 #### The move: how a completion crosses from Active to History
 
@@ -491,24 +622,28 @@ A pre-rendered project page has two kinds of content. The sidebar (the
 layout's `projects` scope) and Active (the page's `runs:<slug>` scope) are in
 the **static shell**: their `"use cache"` results are resolved at build time
 and embedded in the shell as its Resume Data Cache. So is the History
-heading, which the page renders outside any boundary. The two History islands
-(`HistoryPagination` and `CompletedRuns`) are **request-time holes**: each
-awaits `searchParams` before `getHistory`, a request-time read that stops
-prerendering at the island's own `SectionBoundary`, so the shell carries
-nothing in the pagination slot and "Loading history..." for the list, and both
-stream in on each request. They are the only readers of `searchParams` (for
-`?after`), and there is no `connection()` call (it would be a redundant second
+heading, which the page renders outside any boundary. The three History
+islands (`HistorySearchBox`, `HistoryPagination` and `CompletedRuns`) are
+**request-time holes**: each awaits `searchParams` (the latter two before
+`getHistory`; the search island calls no cache scope and only needs `?q` for
+its initial text), a request-time read that stops prerendering at the
+island's own `SectionBoundary`, so the shell carries a disabled box in the
+search slot, nothing in the pagination slot and "Loading history..." for the
+list, and all three stream in on each server request (a client navigation back to a page seen
+within the last five minutes makes no request; see "Client router cache"
+below). They are the only readers of `searchParams` (for
+`?after`, `?before` and `?q`), and there is no `connection()` call (it would be a redundant second
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
 Two islands do not mean two reads. `getHistory` is a `"use cache"` function
-keyed by its arguments, the slug and a plain bookmark object with the same
+keyed by its arguments, the slug, a plain bookmark object and the search text, with the same
 values in both islands, and the installed Next joins an identical invocation
 within one request instead of running it again
 (`node_modules/next/dist/server/use-cache/use-cache-wrapper.js`,
 "Intra-request deduplication"). With `NEXT_PRIVATE_DEBUG_CACHE=1`, one GET
 shows one `generated entry` (on a miss) or one hit for the history scope.
-On a `?after` page the second island adds a `joining intra-request
+On a `?after` or `?before` page the second island adds a `joining intra-request
 invocation` line; on page one (bookmark `null`) the second call is answered
 before that point and logs nothing, still without a second read.
 
@@ -610,6 +745,26 @@ What would be a problem is the rows missing from the document altogether,
 which is what a clock read in a client component during the prerender
 produces.
 
+#### Client router cache
+
+`experimental.staleTimes.dynamic` is 300 seconds in `next.config.ts`. Holes
+are not prefetched, and the router cache would otherwise keep dynamic content
+for 0 seconds, so every sidebar navigation would make an RSC request for the
+page's dynamic part and flash "Loading history...". With the window, a project
+page visited within it is rendered from the client router cache on a sidebar
+navigation, with no RSC request and no History fallback; after the window, the
+next navigation refetches the dynamic part. Two paths keep it correct. For the
+project on screen, the completion handler calls `revalidateHistory` and then
+`router.refresh()`, which re-renders the route from the server; the action's
+`updateTag` also clears the whole client cache (installed `cacheLife.md`,
+"Client cache behavior"), so in a tab with the channel open any completion
+empties it. For a project not on screen, the refetch after the window reads a
+server cache already dropped by tag (action or webhook). The residual case: a
+completion this tab received no event for (channel down at that moment; the
+catch-up re-reads Active only) can leave a revisited page's History up to
+five minutes old. `staleTimes.static` stays at its default, since it also sets
+the `default` cacheLife profile's `stale`.
+
 ### QueryBoundary
 
 `src/components/QueryBoundary.tsx` is how every suspended query is wrapped: a
@@ -638,8 +793,8 @@ would only re-mount the same failed output. Retry calls `router.refresh()`
 first, which asks the server to render the route again (the section's cache
 scope is read again and, on a miss, the database), and then resets the
 boundary, so the re-mounted child is the fresh server result streaming in
-behind the fallback. The project page wraps `HistoryPagination` and
-`CompletedRuns` each in one; the hole semantics come from their `searchParams`
+behind the fallback. The project page wraps `HistorySearchBox`,
+`HistoryPagination` and `CompletedRuns` each in one; the hole semantics come from their `searchParams`
 read and are unchanged by the boundary, since a server component is a
 legitimate child of a client boundary and the Suspense inside is still the
 streaming boundary the shell carries the fallback for.
@@ -659,6 +814,9 @@ change. Because the query is static, `setQueryData` is the update path (not
 data. The active runs follow suit: the runs listener writes with
 `queryClient.setQueryData(queryKeys.runs(slug), ...)`, and the `runs` or
 `runs:<slug>` tag refreshes the page prefetch for every project or for one.
+The queue too: the queue listener writes with
+`queryClient.setQueryData(queryKeys.queue(slug), ...)`; its prefetch scope has
+no tag.
 History is not a cache entry: its one update path is the server action
 dropping `history:<slug>` followed by a route refresh (see "The move" above).
 
@@ -700,9 +858,9 @@ on the server no channel is ever subscribed, so no socket is opened there.
 
 `src/data/realtime.ts` exports `startRealtime(queryClient, options)`, where
 `options.onHistoryChange?: (slug) => void` is the hook `Providers` uses to
-start the move (above). It opens one channel named `adw` with two
-`postgres_changes` listeners, every event on `adw.projects` and every event on
-`adw.runs`. A projects event goes through
+start the move (above). It opens one channel named `adw` with three
+`postgres_changes` listeners, every event on `adw.projects`, `adw.runs` and
+`adw.queue_items`. A projects event goes through
 `applyProjectChange` (next section) and the result is written under
 `queryKeys.projects`. A runs event is resolved to a project first: the event
 names the project by `project_id` (on DELETE from `ev.old`, which carries the
@@ -715,7 +873,11 @@ the active entry under `queryKeys.runs(slug)` and `applyRunChangeToSummaries`
 for the counts in the project list, in that order, because the second one needs
 the run's previous status and the event does not carry it (see "Event to
 cache"); last, if `isHistoryChange` says the event touched the project's
-completed runs, `onHistoryChange(slug)` is called.
+completed runs, `onHistoryChange(slug)` is called. A queue event is resolved
+to a project the same way (`ev.old` carries `(project_id, issue_number)` only),
+then goes through `applyQueueChange` for `queryKeys.queue(slug)` and
+`applyQueueChangeToSummaries` for the project's `queued` count, with no
+history callback: the queue is not history.
 Every write is `setQueryData`, and every updater has the form
 `current => current && reducer(current, ev)`: **an entry that is not in the
 cache stays absent.** `setQueryData` ignores an `undefined` result, so a single
@@ -744,12 +906,14 @@ a pure function from the cached `ProjectSummary[]` and one
 `RealtimePostgresChangesPayload<Project>` to the next list. INSERT prepends
 the row as a summary with zero counts and `last_run_at: null` (and is a no-op
 if the id is already present); UPDATE merges the row into the matching entry,
-keeping its counts, which are not table columns and so are not in the event;
+keeping its counts (`queued` included), which are not table columns and so
+are not in the event;
 DELETE removes by `ev.old.id`, the only field Supabase guarantees in `old`
 unless the table's replica identity is FULL. It never mutates its input.
 
 It is covered by `src/data/apply-project-change.test.ts` (vitest): the three
-events, a duplicate insert and an update for an unknown id. Run with
+events, a duplicate insert, an update that keeps `queued` and an update for an
+unknown id. Run with
 `yarn test`; `vitest.config.ts` maps the `@/` alias and picks up
 `src/**/*.test.ts`.
 
@@ -785,7 +949,8 @@ covered by `src/data/apply-run-change.test.ts`:
   view's `max(runs.updated_at)`, so INSERT and UPDATE move it forward to
   `ev.new.updated_at` when that is later (compared as instants, since the view
   and the event may format the same moment differently); DELETE never moves it
-  back. The list keeps its order so projects do not jump under the pointer.
+  back. `queued` is not a run status and is never moved by a run event. The
+  list keeps its order so projects do not jump under the pointer.
 
   `oldStatus` is a parameter because the event does not have it: Supabase
   sends `old` with the primary key columns only unless the table's replica
@@ -803,6 +968,30 @@ covered by `src/data/apply-run-change.test.ts`:
   that project's counts until then; and the DELETE of a completed run does not
   lower the `completed` count until the next catch-up.
 
+`src/data/apply-queue-change.ts` holds the two reducers for an
+`adw.queue_items` event (type `QueueChange`), both pure and covered by
+`src/data/apply-queue-change.test.ts`:
+
+- `applyQueueChange(current: QueueItem[], ev): QueueItem[]` holds the queued
+  items only. INSERT or UPDATE with state `queued` adds or replaces the item by
+  `issue_number` and re-sorts by `position, issue_number` (a move changes
+  positions); an UPDATE to any other state removes it (the item started or was
+  stopped); DELETE removes the `issue_number` in `ev.old`. A duplicate INSERT
+  or a non-queued INSERT is a no-op, and the input is returned by identity
+  when nothing changed.
+- `applyQueueChangeToSummaries(current, ev, wasQueued)` moves the project's
+  `queued` by `(queued now) - (queued before)`, never below 0, touching no
+  other count. UPDATE is included, not only INSERT and DELETE, because the
+  toolkit upserts every item on every ledger save: an item starting (`queued`
+  to `running`) or being re-queued arrives as an UPDATE, and the unchanged
+  upsert (`queued` to `queued`) is a zero delta. `wasQueued` is read with
+  `queuedIn(current, issue_number)` from the cached queue entry **before** it
+  is rewritten, for the same replica-identity reason as `oldStatus`. It is
+  `undefined` when the queue is not cached; an INSERT then counts as not
+  queued before, an UPDATE or DELETE leaves the count alone. Known gap: an
+  UPDATE or DELETE for a project whose queue was not loaded this session does
+  not move its sidebar count until the next catch-up or page load.
+
 ### Catch-up on SUBSCRIBED
 
 Events that happen while the channel is down are never delivered, so after a
@@ -814,7 +1003,9 @@ handled by one path: on **every** `SUBSCRIBED`, `realtime.ts` calls
 `getProjects()` and writes the result under `queryKeys.projects`, then for
 every runs entry in the cache (`queryClient.getQueryCache().findAll({ queryKey:
 queryKeys.allRuns })`, the `["runs"]` prefix exported from `query-keys.ts`)
-calls `getActiveRuns(slug)` and writes the result under `queryKeys.runs(slug)`.
+calls `getActiveRuns(slug)` and writes the result under `queryKeys.runs(slug)`,
+then for every queue entry (`queryKeys.allQueues`, the `["queue"]` prefix)
+calls `getQueue(slug)` and writes the result under `queryKeys.queue(slug)`.
 There is no "was I disconnected" flag to keep in step; the first `SUBSCRIBED`
 and a reconnect are the same case. History needs no catch-up: it is not in the
 cache, and a completion this browser missed is the "unwatched completion"
@@ -827,9 +1018,10 @@ themselves, so the refreshed entries have exactly the shape the prefetch put
 there. `getActiveRuns` stamps a fresh `fetched_at`, which nothing in the UI
 reads today.
 
-Cost: one `project_summaries` read plus one `getActiveRuns` (two reads) per
-cached runs entry, per (re)connect. The cache holds the project list and the
-active runs of each project visited this session, so this is a handful of small reads;
+Cost: one `project_summaries` read, plus one `getActiveRuns` (two reads) per
+cached runs entry and one `getQueue` (two reads) per cached queue entry, per
+(re)connect. The cache holds the project list and the active runs and queue of
+each project visited this session, so this is a handful of small reads;
 in development React's strict mode connects twice on mount, so it runs twice
 there. A failed catch-up is logged with `console.warn` and swallowed: the cache
 stays as it was and the next event or reconnect tries again. An event that
@@ -862,11 +1054,12 @@ live updates (above) go through the query cache, not this store.
 
 ## Types
 
-`src/types/adw.ts` has two sections. `Project` and `Run` mirror the database
-tables column for column. `ProjectSummary` is the one view model the screens
+`src/types/adw.ts` has two sections. `Project`, `Run` and `QueueItem` (with
+`QueueState`, the table's state check constraint) mirror the database tables
+column for column. `ProjectSummary` is the one view model the screens
 need that the database does not store (the counts and `last_run_at`); it comes
-from the data layer (the `project_summaries` view computes them). Runs have no
-view model: the screens take `Run` rows as stored, and a finished run's
+from the data layer (the `project_summaries` view computes them). Runs and
+queue items have no view model: the screens take `Run` rows as stored, and a finished run's
 duration is formatted at render time by `durationLabel` in
 `src/lib/run-view.ts`.
 
@@ -901,6 +1094,71 @@ status. That includes a path with one or three segments under `/projects`
 (`/projects/SBub`, `/projects/SBub/adw-dashboard/extra`) and an encoded slash
 (`/projects/SBub%2Fadw-dashboard`, one segment): the router answers them, no
 slug lookup happens.
+
+`/skills` and `/skills/[name]` (`src/app/skills/`) sit outside the
+`(dashboard)` group: no project sidebar, no project prefetch, no `Providers`
+and no Realtime channel, so the header's connection pill stays at
+`connecting` there. An unknown skill name renders
+`src/app/skills/not-found.tsx`.
+
+## Skills
+
+A library of the owner's Claude Code skills, rendered for reading. Installing
+them, serving them to ADW runs and measuring their use are out of scope.
+
+### Format
+
+One directory per skill under `skills/` at the repository root, each holding a
+`SKILL.md` in the official Claude Code skill format
+(<https://code.claude.com/docs/en/skills>):
+
+- YAML frontmatter with exactly these keys: `name`, `description` and the
+  optional `when_to_use`. Nothing else.
+- The frontmatter is a strict YAML subset: one `key: value` per line, the value
+  plain, single-quoted (`''` is one quote) or double-quoted (`\"` and `\\`
+  unescaped). Block scalars, nested maps and lists are rejected.
+- `name` equals the directory name: at most 64 characters, lowercase letters,
+  digits and single hyphens, no leading or trailing hyphen.
+- A non-empty markdown body, written as instructions an agent follows. No links
+  to other repositories at pinned commits; under 200 lines.
+
+### Routes
+
+`src/skills/index.ts` is the one reader of `skills/`: `getSkills()` lists the
+directories, parses each `SKILL.md` with `parseSkillFile`
+(`src/lib/skill-frontmatter.ts`) and sorts by name; `getSkill(name)` validates
+the name and looks it up in that list, never building a path from it. The reads
+are synchronous `node:fs` calls with no clock and no database, so `/skills` is
+static and `/skills/[name]` is prerendered for every skill by
+`generateStaticParams` (an empty `skills/` yields the placeholder `_none`,
+because an empty result fails the build under `cacheComponents`; a name outside
+the list resolves at request time behind `loading.tsx`).
+`outputFileTracingIncludes` in `next.config.ts` ships the files with the server
+output.
+
+The body is rendered on the server by a small hand-written renderer, no
+markdown dependency: `parseMarkdown` (`src/lib/markdown.ts`) turns it into a
+typed tree, and `src/components/Markdown.tsx` maps that tree to React elements,
+so React escapes every text node. It supports headings (`#` to `####`, shifted
+one level down below the page's `h1`), paragraphs, fenced code with a language
+and a `title="..."` caption, flat ordered and unordered lists, blockquotes,
+thematic breaks, code spans, strong, emphasis and links. A link is kept only for
+an `http(s)`, root-relative or `#` href; anything else renders as text.
+
+### Validation
+
+A missing `SKILL.md`, malformed frontmatter, an unknown or duplicate key, a
+missing field, an invalid name or a name that differs from its directory throws
+an error naming the file. The build calls the reader (`/skills` and
+`generateStaticParams`), so a bad skill fails `yarn build`;
+`src/skills/skills.test.ts` runs the same check over every real file on
+`yarn test`.
+
+### Adding a skill
+
+1. Create `skills/<name>/SKILL.md` with the frontmatter and body above.
+2. Run `yarn test` (validates the file).
+3. Run `yarn build` (prerenders `/skills/<name>`).
 
 ## Running it
 

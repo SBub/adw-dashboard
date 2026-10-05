@@ -1,31 +1,58 @@
 // Keyset (bookmark) pagination of a project's completed runs. Everything that
 // decides what a History page is lives here: the page size, the opaque
-// `?after=` cursor (a base64url JSON bookmark of the last row a page showed),
-// the PostgREST filter for "strictly older than the bookmark", the N + 1 page
-// split and the page URL. Pure: it imports nothing from "@/data" or "next/*",
-// reads no clock, and runs in the vitest node pool.
+// `?after=` and `?before=` cursors (a base64url JSON bookmark of the last or
+// first row a page showed, with its direction), the PostgREST filters for
+// "strictly older" and "strictly newer than the bookmark", the read order, the
+// display order, the count-based page split (page N of M) and the page URL.
+// Pure: it imports nothing from "@/data" or "next/*", reads no clock, and runs
+// in the vitest node pool.
 //
-// The order is `updated_at desc, adw_id desc`. adw_id is unique within a
-// project, so the order is total and the strictly-older keyset never repeats
-// or skips a row, even when a run completes at the head while a visitor is on
-// a later page.
+// The display order is `updated_at desc, adw_id desc`. adw_id is unique within
+// a project, so the order is total and neither keyset ever repeats or skips a
+// row, even when a run completes at the head while a visitor is on a later
+// page.
 import { isProjectSlug } from "@/lib/slug";
 import type { Run } from "@/types/adw";
 
-/** The one History page size; the data layer fetches one row more to know whether a next page exists. */
+/** The one History page size. */
 export const HISTORY_PAGE_SIZE = 3;
 
-/** The last row a History page showed, scoped to its project. */
+/**
+ * Which way a bookmark pages: `after` reads the rows strictly older than it
+ * (the right arrow), `before` the rows strictly newer (the left arrow).
+ */
+export type HistoryDirection = "after" | "before";
+
+/** The row a History page is bookmarked at, scoped to its project and its direction. */
 export interface HistoryBookmark {
   slug: string;
+  direction: HistoryDirection;
   updated_at: string;
   adw_id: string;
 }
 
-/** One page of completed runs and the cursor of the next (older) page, or null on the last page. */
+/** The keyset of one row: the two columns of the order. */
+type HistoryKey = Pick<Run, "updated_at" | "adw_id">;
+
+/** An encoded bookmark and the query parameter it travels in. */
+export interface HistoryCursor {
+  direction: HistoryDirection;
+  cursor: string;
+}
+
+/**
+ * One page of completed runs in display order, its position (`page` of
+ * `pageCount`, derived from counts, never from the URL), and the cursors of
+ * the two arrows. `hasNewer` with a null `newerCursor` means the left arrow is
+ * page one; a null `olderCursor` hides the right arrow.
+ */
 export interface HistoryPage {
   items: Run[];
-  nextCursor: string | null;
+  page: number;
+  pageCount: number;
+  hasNewer: boolean;
+  newerCursor: HistoryCursor | null;
+  olderCursor: HistoryCursor | null;
 }
 
 /** A cursor that does not decode to a valid bookmark. */
@@ -33,6 +60,14 @@ export class UnknownCursorError extends Error {
   constructor() {
     super("Unknown cursor");
     this.name = "UnknownCursorError";
+  }
+}
+
+/** A well-formed cursor of the other direction (a `?before` cursor in `?after`, or the reverse). */
+export class CursorDirectionMismatchError extends Error {
+  constructor() {
+    super("Cursor is for the other direction");
+    this.name = "CursorDirectionMismatchError";
   }
 }
 
@@ -82,17 +117,32 @@ function isAdwId(value: unknown): value is string {
   return typeof value === "string" && ADW_ID.test(value);
 }
 
-/** An opaque cursor: `base64url(JSON.stringify({ slug, updated_at, adw_id }))`. */
-export function encodeHistoryBookmark({ slug, updated_at, adw_id }: HistoryBookmark): string {
-  return toBase64Url(JSON.stringify({ slug, updated_at, adw_id }));
+/** An opaque cursor: `base64url(JSON.stringify({ slug, direction, updated_at, adw_id }))`. */
+export function encodeHistoryBookmark({
+  slug,
+  direction,
+  updated_at,
+  adw_id,
+}: HistoryBookmark): string {
+  return toBase64Url(JSON.stringify({ slug, direction, updated_at, adw_id }));
+}
+
+function isDirection(value: unknown): value is HistoryDirection {
+  return value === "after" || value === "before";
 }
 
 /**
- * The bookmark a cursor carries. Throws `UnknownCursorError` on garbage and
- * `CursorScopeMismatchError` when it was handed out for another project.
+ * The bookmark a cursor carries. Throws `UnknownCursorError` on garbage
+ * (including a payload with no or an unknown direction),
+ * `CursorScopeMismatchError` when it was handed out for another project and
+ * `CursorDirectionMismatchError` when it pages the other way than `direction`.
  * Extra keys in the JSON are ignored; the result is a fresh object.
  */
-export function decodeHistoryBookmark(cursor: string, slug: string): HistoryBookmark {
+export function decodeHistoryBookmark(
+  cursor: string,
+  slug: string,
+  direction: HistoryDirection,
+): HistoryBookmark {
   let json: unknown;
   try {
     json = JSON.parse(fromBase64Url(cursor));
@@ -103,18 +153,44 @@ export function decodeHistoryBookmark(cursor: string, slug: string): HistoryBook
   if (typeof json !== "object" || json === null || Array.isArray(json)) {
     throw new UnknownCursorError();
   }
-  const { slug: scope, updated_at, adw_id } = json as Record<string, unknown>;
-  if (!isProjectSlug(scope) || !isTimestamp(updated_at) || !isAdwId(adw_id)) {
+  const { slug: scope, direction: way, updated_at, adw_id } = json as Record<string, unknown>;
+  if (!isProjectSlug(scope) || !isDirection(way) || !isTimestamp(updated_at) || !isAdwId(adw_id)) {
     throw new UnknownCursorError();
   }
   if (scope !== slug) throw new CursorScopeMismatchError();
-  return { slug: scope, updated_at, adw_id };
+  if (way !== direction) throw new CursorDirectionMismatchError();
+  return { slug: scope, direction: way, updated_at, adw_id };
+}
+
+function readCursor(
+  value: string | string[] | undefined,
+  slug: string,
+  direction: HistoryDirection,
+): HistoryBookmark | null {
+  if (typeof value !== "string" || value === "") return null;
+  try {
+    return decodeHistoryBookmark(value, slug, direction);
+  } catch (error) {
+    if (
+      error instanceof UnknownCursorError ||
+      error instanceof CursorScopeMismatchError ||
+      error instanceof CursorDirectionMismatchError
+    ) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function isPresent(value: string | string[] | undefined): boolean {
+  return value !== undefined && value !== "";
 }
 
 /**
- * The bookmark of a page's `?after` parameter, or null for page one. Lenient:
- * absent, repeated, empty, malformed or foreign (another project's) all mean
- * page one, never an error.
+ * The bookmark of a page's `?after` or `?before` parameter, or null for page
+ * one. Lenient: absent, repeated, empty, malformed, foreign (another
+ * project's), of the other direction, or both parameters at once all mean page
+ * one, never an error.
  *
  * Call it outside any "use cache" scope (the page's History islands do): an
  * error thrown inside a cache scope loses its class on the way out, so the
@@ -122,49 +198,107 @@ export function decodeHistoryBookmark(cursor: string, slug: string): HistoryBook
  */
 export function readHistoryBookmark(
   after: string | string[] | undefined,
+  before: string | string[] | undefined,
   slug: string,
 ): HistoryBookmark | null {
-  if (typeof after !== "string" || after === "") return null;
-  try {
-    return decodeHistoryBookmark(after, slug);
-  } catch (error) {
-    if (error instanceof UnknownCursorError || error instanceof CursorScopeMismatchError) {
-      return null;
-    }
-    throw error;
-  }
+  if (isPresent(after) && isPresent(before)) return null;
+  return readCursor(after, slug, "after") ?? readCursor(before, slug, "before");
 }
 
 /**
- * The PostgREST `or` filter for the rows strictly older than the bookmark in
- * the order `updated_at desc, adw_id desc`. Values are double-quoted (the
+ * The PostgREST `or` filter for the rows strictly older than a key in the
+ * order `updated_at desc, adw_id desc`. Values are double-quoted (the
  * timestamp holds `:` and `.`); validation guarantees neither value contains a
  * character the grammar reserves.
  */
-export function historyKeysetFilter({ updated_at, adw_id }: HistoryBookmark): string {
+function historyOlderFilter({ updated_at, adw_id }: HistoryKey): string {
   return `updated_at.lt."${updated_at}",and(updated_at.eq."${updated_at}",adw_id.lt."${adw_id}")`;
 }
 
 /**
- * One page from a query result of at most `HISTORY_PAGE_SIZE + 1` rows, already
- * ordered. The extra row only says a next page exists; the cursor is built from
- * the last row shown. Never mutates its input.
+ * The PostgREST `or` filter for the rows strictly newer than a key in the
+ * same order: the mirror of the older filter. Also what the data layer counts
+ * to number a page.
  */
-export function toHistoryPage(rows: readonly Run[], slug: string): HistoryPage {
-  const items = rows.slice(0, HISTORY_PAGE_SIZE);
-  const last = items.at(-1);
-  const nextCursor =
-    rows.length > HISTORY_PAGE_SIZE && last !== undefined
-      ? encodeHistoryBookmark({ slug, updated_at: last.updated_at, adw_id: last.adw_id })
-      : null;
-  return { items, nextCursor };
+export function historyNewerFilter({ updated_at, adw_id }: HistoryKey): string {
+  return `updated_at.gt."${updated_at}",and(updated_at.eq."${updated_at}",adw_id.gt."${adw_id}")`;
+}
+
+/** The keyset filter of a bookmarked page: older for `after`, newer for `before`. */
+export function historyKeysetFilter(bookmark: HistoryBookmark): string {
+  return bookmark.direction === "after"
+    ? historyOlderFilter(bookmark)
+    : historyNewerFilter(bookmark);
 }
 
 /**
- * The project page's URL for a History page: page one without a query, any
- * other with `?after=<cursor>` (base64url needs no further encoding).
+ * Whether the read orders oldest first: only for a `before` bookmark, whose
+ * page is the `HISTORY_PAGE_SIZE` rows nearest above it, reached by walking
+ * towards the head.
  */
-export function historyHref(slug: string, cursor: string | null): string {
+export function historyOrderAscending(bookmark: HistoryBookmark | null): boolean {
+  return bookmark?.direction === "before";
+}
+
+/**
+ * The rows a page shows, in display order (newest first), from a read ordered
+ * by historyOrderAscending: at most `HISTORY_PAGE_SIZE`, reversed for a
+ * `before` bookmark. Never mutates its input.
+ */
+export function historyItems(rows: readonly Run[], bookmark: HistoryBookmark | null): Run[] {
+  const items = rows.slice(0, HISTORY_PAGE_SIZE);
+  return historyOrderAscending(bookmark) ? items.reverse() : items;
+}
+
+function cursorOf(slug: string, direction: HistoryDirection, row: Run): HistoryCursor {
+  const { updated_at, adw_id } = row;
+  return { direction, cursor: encodeHistoryBookmark({ slug, direction, updated_at, adw_id }) };
+}
+
+/**
+ * One page from its rows in display order and two counts within the same
+ * filter: `newer`, the completed runs strictly newer than the first shown row,
+ * and `total`. `page` is `1 + ceil(newer / size)` (the steps back to page one
+ * along the left arrow), `pageCount` is `ceil(total / size)`, never less than
+ * `page`. The left arrow is a `before` cursor of the first row only when the
+ * newer rows do not fit one page; otherwise it is page one itself. The right
+ * arrow is an `after` cursor of the last row while older rows remain.
+ */
+export function toHistoryPage(
+  items: readonly Run[],
+  { slug, newer, total }: { slug: string; newer: number; total: number },
+): HistoryPage {
+  const page = 1 + Math.ceil(newer / HISTORY_PAGE_SIZE);
+  const pageCount = Math.max(Math.ceil(total / HISTORY_PAGE_SIZE), page);
+  const first = items.at(0);
+  const last = items.at(-1);
+  return {
+    items: [...items],
+    page,
+    pageCount,
+    hasNewer: newer > 0,
+    newerCursor:
+      newer > HISTORY_PAGE_SIZE && first !== undefined ? cursorOf(slug, "before", first) : null,
+    olderCursor:
+      newer + items.length < total && last !== undefined ? cursorOf(slug, "after", last) : null,
+  };
+}
+
+/**
+ * The project page's URL for a History page: page one without a cursor, any
+ * other with `?after=<cursor>` or `?before=<cursor>` by the cursor's direction
+ * (base64url needs no further encoding). A search text (already normalised by
+ * readHistoryQuery) comes first as a percent-encoded `?q=`, so paging inside a
+ * search keeps the filter.
+ */
+export function historyHref(
+  slug: string,
+  cursor: HistoryCursor | null,
+  q: string | null = null,
+): string {
+  const params = [];
+  if (q !== null) params.push(`q=${encodeURIComponent(q)}`);
+  if (cursor !== null) params.push(`${cursor.direction}=${cursor.cursor}`);
   const path = `/projects/${slug}`;
-  return cursor === null ? path : `${path}?after=${cursor}`;
+  return params.length === 0 ? path : `${path}?${params.join("&")}`;
 }
