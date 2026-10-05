@@ -4,7 +4,7 @@ A public dashboard for runs of the AI Developer Workflow (ADW) toolkit across
 projects. One two-pane screen:
 
 - The left pane is a persistent sidebar listing every project with its
-  running, completed and failed counts and the time its last run started. It
+  queued, running, completed and failed counts and the time its last run started. It
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
@@ -26,7 +26,10 @@ database, see the toolkit's `supabase/README.md`). The view runs with
 `security_invoker`, so the publishable key sees only public projects. The list
 is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
-rows change.
+rows change. The view also carries `queued`, the number of issues waiting in
+the project's queue ledger (the toolkit's), shown in the sidebar as the first
+count and emphasised when above zero; it is refreshed by a page load or the
+realtime catch-up, not live.
 
 A project's runs are read in two halves, because they have two lifetimes:
 
@@ -773,12 +776,14 @@ a pure function from the cached `ProjectSummary[]` and one
 `RealtimePostgresChangesPayload<Project>` to the next list. INSERT prepends
 the row as a summary with zero counts and `last_run_at: null` (and is a no-op
 if the id is already present); UPDATE merges the row into the matching entry,
-keeping its counts, which are not table columns and so are not in the event;
+keeping its counts (`queued` included), which are not table columns and so
+are not in the event;
 DELETE removes by `ev.old.id`, the only field Supabase guarantees in `old`
 unless the table's replica identity is FULL. It never mutates its input.
 
 It is covered by `src/data/apply-project-change.test.ts` (vitest): the three
-events, a duplicate insert and an update for an unknown id. Run with
+events, a duplicate insert, an update that keeps `queued` and an update for an
+unknown id. Run with
 `yarn test`; `vitest.config.ts` maps the `@/` alias and picks up
 `src/**/*.test.ts`.
 
@@ -814,7 +819,8 @@ covered by `src/data/apply-run-change.test.ts`:
   view's `max(runs.updated_at)`, so INSERT and UPDATE move it forward to
   `ev.new.updated_at` when that is later (compared as instants, since the view
   and the event may format the same moment differently); DELETE never moves it
-  back. The list keeps its order so projects do not jump under the pointer.
+  back. `queued` is not a run status and is never moved by a run event. The
+  list keeps its order so projects do not jump under the pointer.
 
   `oldStatus` is a parameter because the event does not have it: Supabase
   sends `old` with the primary key columns only unless the table's replica

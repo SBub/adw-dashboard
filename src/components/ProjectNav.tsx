@@ -53,6 +53,7 @@ function ProjectNavItem({ project, selected }: { project: ProjectSummary; select
           {project.slug}
         </span>
         <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+          <Count label="queued" value={project.queued} emphasised={project.queued > 0} />
           <Count label="running" value={project.running} emphasised={project.running > 0} />
           <Count label="completed" value={project.completed} emphasised={false} />
           <Count label="failed" value={project.failed} emphasised={false} />

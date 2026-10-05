@@ -49,6 +49,7 @@ function summary(id: string, overrides: Partial<ProjectSummary> = {}): ProjectSu
     is_public: true,
     created_at: "2026-10-01T00:00:00Z",
     updated_at: "2026-10-01T00:00:00Z",
+    queued: 0,
     running: 1,
     completed: 2,
     failed: 3,
