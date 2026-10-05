@@ -270,24 +270,29 @@ History is rendered below that, by the same page:
    page, tagged `history:<slug>`, with an explicit
    `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
    returns `getCompletedRuns(slug, bookmark)`: one page of plain rows, no
-   clock read, no React Query. `HistorySection` is an async server component
-   that awaits `connection()` (from `next/server`), then the page's
-   `searchParams`, decodes `?after` with `readHistoryBookmark`, calls
-   `getHistory`, and renders `RunHistory` with the page's `items`, the slug
-   and the two page links (`newerHref`, `olderHref`, built with
-   `historyHref`, `null` when that page does not exist), wrapped in its own
-   `SectionBoundary` (fallback "Loading history...") so Active never waits on
-   it and never falls with it: if `getHistory` throws (database down, an RLS
-   change), the boundary shows its panel ("Could not load.", "This project's
-   history did not load.", Retry) in the History slot and the Active list
-   above stays on screen, instead of the segment's `error.tsx` replacing the
-   whole pane. Retry there refreshes the route (`router.refresh()`) and then
-   resets the boundary, so the section is re-rendered by the server rather
-   than replayed from the failed render; see "SectionBoundary" below. The
-   `connection()` call makes the section a request-time hole, which is what
-   lets the tag revalidation below reach it; see "What is prerendered and what
-   is not". `src/components/RunHistory.tsx` is a server component
-   with no state: the all/completed/failed toggle is gone because history is
+   clock read, no React Query. The page renders the History heading row
+   itself, statically: the `<h2>History</h2>` on the left and, on the right,
+   the `HistoryPagination` island in a `SectionBoundary` (fallback `null`,
+   detail "Pagination did not load."). Below the row, the `CompletedRuns`
+   island sits in a second `SectionBoundary` (fallback "Loading history...",
+   detail "This project's history did not load."). Both islands are async
+   server components in the page file; each awaits the page's
+   `searchParams`, decodes `?after` with `readHistoryBookmark`, and calls
+   `getHistory`. `HistoryPagination` renders `HistoryLinks` with the two page
+   links (`newerHref`, `olderHref`, built with `historyHref`, `null` when that
+   page does not exist); `CompletedRuns` renders `RunHistoryList` with the
+   page's `items` and the slug. Each boundary keeps Active and the other
+   island on screen when its island fails: if `getHistory` throws (database
+   down, an RLS change), the boundary shows its panel ("Could not load.", its
+   detail, Retry) in its own slot, instead of the segment's `error.tsx`
+   replacing the whole pane. Retry there refreshes the route
+   (`router.refresh()`) and then resets the boundary, so the island is
+   re-rendered by the server rather than replayed from the failed render; see
+   "SectionBoundary" below. The `searchParams` read makes each island a
+   request-time hole, which is what lets the tag revalidation below reach it;
+   see "What is prerendered and what is not". `src/components/HistoryLinks.tsx`
+   and `src/components/RunHistoryList.tsx` are server components with no
+   state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant still shows Finished
    and Duration.
 
@@ -298,7 +303,7 @@ History is rendered below that, by the same page:
    tuple in the order `updated_at desc, adw_id desc` (`adw_id` is unique
    within a project, so the order is total), so a run completing while a
    visitor is on page two adds a row to page one and never shifts page two.
-   The bookmark is decoded in `HistorySection`, outside the cache scope; a
+   The bookmark is decoded in each island, outside the cache scope; a
    missing, malformed or repeated `?after`, or one handed out for another
    project, is page one, never an error. The History header is one row:
    the title on the left, `Newer` (back to page one) and `Older` links on the
@@ -333,7 +338,7 @@ When a run completes, three things happen in the browser, in this order:
    "What is prerendered and what is not"); the browser covers Active anyway.
 3. Only after the action resolves, and only if the route in the address bar is
    that project's page, `router.refresh()` re-renders the route on the server.
-   The history scope is a cache miss, so `HistorySection` reads
+   The history scope is a cache miss, so the History islands read
    `getCompletedRuns` from the database and the new row appears. Step 2 runs
    for every completion whatever is on screen (it drops the server cache for
    that project, so its next render is fresh for whoever opens it); step 3 only
@@ -485,13 +490,27 @@ The browser's fetch is not patched and keeps the default. After a build,
 A pre-rendered project page has two kinds of content. The sidebar (the
 layout's `projects` scope) and Active (the page's `runs:<slug>` scope) are in
 the **static shell**: their `"use cache"` results are resolved at build time
-and embedded in the shell as its Resume Data Cache. History is a
-**request-time hole**: `HistorySection` awaits `connection()` before
-`getHistory`, so the shell carries the "Loading history..." fallback and the
-section streams in on each request. It is also the only place that reads
-`searchParams` (for `?after`), after `connection()`, so the shell stays the
-same for every page of History. The build's route table shows the project
-pages as "Partial Prerender" for this reason.
+and embedded in the shell as its Resume Data Cache. So is the History
+heading, which the page renders outside any boundary. The two History islands
+(`HistoryPagination` and `CompletedRuns`) are **request-time holes**: each
+awaits `searchParams` before `getHistory`, a request-time read that stops
+prerendering at the island's own `SectionBoundary`, so the shell carries
+nothing in the pagination slot and "Loading history..." for the list, and both
+stream in on each request. They are the only readers of `searchParams` (for
+`?after`), and there is no `connection()` call (it would be a redundant second
+marker), so the shell stays the same for every page of History. The build's
+route table shows the project pages as "Partial Prerender" for this reason.
+
+Two islands do not mean two reads. `getHistory` is a `"use cache"` function
+keyed by its arguments, the slug and a plain bookmark object with the same
+values in both islands, and the installed Next joins an identical invocation
+within one request instead of running it again
+(`node_modules/next/dist/server/use-cache/use-cache-wrapper.js`,
+"Intra-request deduplication"). With `NEXT_PRIVATE_DEBUG_CACHE=1`, one GET
+shows one `generated entry` (on a miss) or one hit for the history scope.
+On a `?after` page the second island adds a `joining intra-request
+invocation` line; on page one (bookmark `null`) the second call is answered
+before that point and logs nothing, still without a second read.
 
 The distinction matters because of how a prerendered route is served. Under
 `cacheComponents`, a request for a prerendered page resumes the shell, and a
@@ -507,8 +526,8 @@ scope keeps its long explicit lifetime, so `getHistory` still runs only on a mis
 (build, then once after each tag update), not per request. The documented
 alternative is a `cacheLife` with `expire` under 5 minutes, which also
 excludes the scope from prerenders (`node_modules/next/dist/docs/01-app/
-03-api-reference/04-functions/cacheLife.md`, "Prerendering behavior");
-`connection()` is used instead because it keeps the long lifetime.
+03-api-reference/04-functions/cacheLife.md`, "Prerendering behavior"); the
+`searchParams` read is used instead because it keeps the long lifetime.
 
 The same applies to Active: `runs:<slug>` is in the shell, so
 `updateTag("runs:<slug>")` does not refresh it on a resume. That is left as
@@ -619,8 +638,9 @@ would only re-mount the same failed output. Retry calls `router.refresh()`
 first, which asks the server to render the route again (the section's cache
 scope is read again and, on a miss, the database), and then resets the
 boundary, so the re-mounted child is the fresh server result streaming in
-behind the fallback. The project page wraps `HistorySection` in it; the
-`connection()` hole semantics are unchanged, since a server component is a
+behind the fallback. The project page wraps `HistoryPagination` and
+`CompletedRuns` each in one; the hole semantics come from their `searchParams`
+read and are unchanged by the boundary, since a server component is a
 legitimate child of a client boundary and the Suspense inside is still the
 streaming boundary the shell carries the fallback for.
 
