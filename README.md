@@ -622,10 +622,10 @@ produces.
 #### Client router cache
 
 `experimental.staleTimes.dynamic` is 300 seconds in `next.config.ts`. Holes
-are not prefetched, and the router cache otherwise keeps dynamic content for 0
-seconds, so every sidebar navigation used to make an RSC request for the
-page's dynamic part and flash "Loading history...". Now a project page visited
-within the window is rendered from the client router cache on a sidebar
+are not prefetched, and the router cache would otherwise keep dynamic content
+for 0 seconds, so every sidebar navigation would make an RSC request for the
+page's dynamic part and flash "Loading history...". With the window, a project
+page visited within it is rendered from the client router cache on a sidebar
 navigation, with no RSC request and no History fallback; after the window, the
 next navigation refetches the dynamic part. Two paths keep it correct. For the
 project on screen, the completion handler calls `revalidateHistory` and then
