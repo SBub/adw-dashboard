@@ -8,13 +8,13 @@ Summary metrics across all ADW runs.
 
 | Metric            | Value      | Last Updated     |
 | ----------------- | ---------- | ---------------- |
-| Current Streak    | 13         | 2026-10-05 16:50 |
-| Longest Streak    | 13         | 2026-10-05 16:50 |
-| Total Plan Size   | 2863 lines | 2026-10-05 16:50 |
-| Largest Plan Size | 389 lines  | 2026-10-05 16:50 |
-| Total Diff Size   | 7369 lines | 2026-10-05 16:50 |
-| Largest Diff Size | 1285 lines | 2026-10-05 16:50 |
-| Average Presence  | 1.0        | 2026-10-05 16:50 |
+| Current Streak    | 14         | 2026-10-05 17:06 |
+| Longest Streak    | 14         | 2026-10-05 17:06 |
+| Total Plan Size   | 3167 lines | 2026-10-05 17:06 |
+| Largest Plan Size | 389 lines  | 2026-10-05 17:06 |
+| Total Diff Size   | 7921 lines | 2026-10-05 17:06 |
+| Largest Diff Size | 1285 lines | 2026-10-05 17:06 |
+| Average Presence  | 1.0        | 2026-10-05 17:06 |
 
 ## ADW KPIs
 
@@ -35,3 +35,4 @@ Detailed metrics for individual ADW workflow runs.
 | 2026-10-05 | f094ecd9 | 38           | /feature    | 1        | 258               | 766/83/13                       | 2026-10-05 16:22 | 2026-10-05 16:22 |
 | 2026-10-05 | 52e59eaf | 40           | /feature    | 1        | 220               | 822/210/8                       | 2026-10-05 16:37 | 2026-10-05 16:37 |
 | 2026-10-05 | 64fc9104 | 42           | /chore      | 1        | 145               | 316/36/9                        | 2026-10-05 16:50 | 2026-10-05 16:50 |
+| 2026-10-05 | aaa3cb4e | 45           | /feature    | 1        | 304               | 533/19/8                        | 2026-10-05 17:06 | 2026-10-05 17:06 |
