@@ -40,7 +40,7 @@ export function HistorySearch({ slug, initial }: HistorySearchProps) {
   const { schedule, cancel } = useDebouncedCallback(navigate, 300);
 
   return (
-    <div className="relative w-full sm:w-64">
+    <div className="relative w-64 max-w-full min-w-0">
       <input
         type="search"
         aria-label="Search history"
@@ -73,7 +73,7 @@ export function HistorySearch({ slug, initial }: HistorySearchProps) {
 /** The box, disabled, while the search island streams in: it reserves the space in the static shell. */
 export function HistorySearchFallback() {
   return (
-    <div className="relative w-full sm:w-64">
+    <div className="relative w-64 max-w-full min-w-0">
       <input
         type="search"
         aria-label="Search history"
