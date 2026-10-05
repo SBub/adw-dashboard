@@ -36,12 +36,15 @@ A project's runs are read in two halves, because they have two lifetimes:
   then the rows of `adw.runs` where `project_id` is that project's id **and
   `status` is `running` or `failed`**, ordered by `updated_at` descending. It
   stamps the result with `fetched_at`, the ISO time the rows were read.
-- `getCompletedRuns(slug)` reads the same project row, then the rows of
-  `adw.runs` for that id where `status` is `completed`, `updated_at`
-  descending, and returns the plain rows (an empty list for an unknown slug,
-  which the page has already excluded). It reads no clock. Pagination, when it
-  comes, goes into this function alone: it is the one read that grows without
-  bound.
+- `getCompletedRuns(slug, bookmark)` reads the same project row, then one
+  page of the rows of `adw.runs` for that id where `status` is `completed`,
+  ordered `updated_at desc, adw_id desc`, and returns
+  `{ items, nextCursor }` (an empty page for an unknown slug, which the page
+  has already excluded). It is keyset-paginated, three runs per page
+  (`HISTORY_PAGE_SIZE` in `src/lib/history-bookmark.ts`): `bookmark` is the
+  last row the previous page showed, or `null` for page one, and the read
+  returns only rows strictly older than it, fetching one row more than a page
+  to know whether an older page exists. It reads no clock.
 
 In SQL terms:
 
@@ -53,7 +56,9 @@ select project_id, adw_id, issue_number, issue_class, branch_name, phase, status
  order by updated_at desc;
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
- order by updated_at desc;
+   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- after page one
+ order by updated_at desc, adw_id desc
+ limit 4;
 ```
 
 The rows are the raw `Run` type; no label is derived on the server (see
@@ -66,7 +71,9 @@ exports three functions and the shape the second one returns:
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
   `{ project: ProjectSummary; active: Run[]; fetched_at: string }`
-- `getCompletedRuns(slug): Promise<Run[]>`
+- `getCompletedRuns(slug, bookmark): Promise<HistoryPage>`, where
+  `HistoryPage` is `{ items: Run[]; nextCursor: string | null }` (from
+  `src/lib/history-bookmark.ts`)
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
 data; the query keys and the `QueryClient` factory (next section) are cache
@@ -259,11 +266,15 @@ entry per slug:
 
 History is rendered below that, by the same page:
 
-5. `getHistory(slug)` is a second `"use cache"` function in the page, tagged
-   `history:<slug>`, that returns `getCompletedRuns(slug)`: plain rows, no
+5. `getHistory(slug, bookmark)` is a second `"use cache"` function in the
+   page, tagged `history:<slug>`, with an explicit
+   `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
+   returns `getCompletedRuns(slug, bookmark)`: one page of plain rows, no
    clock read, no React Query. `HistorySection` is an async server component
-   that awaits `connection()` (from `next/server`) and then `getHistory`, and
-   renders `<RunHistory runs={...} projectSlug={slug} />`, wrapped in its own
+   that awaits `connection()` (from `next/server`), then the page's
+   `searchParams`, decodes `?after` with `readHistoryBookmark`, calls
+   `getHistory`, and renders `<RunHistory runs={...} projectSlug={slug}
+newerHref={...} olderHref={...} />`, wrapped in its own
    `SectionBoundary` (fallback "Loading history...") so Active never waits on
    it and never falls with it: if `getHistory` throws (database down, an RLS
    change), the boundary shows its panel ("Could not load.", "This project's
@@ -278,6 +289,26 @@ History is rendered below that, by the same page:
    with no state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant still shows Finished
    and Duration.
+
+   History is paged three runs at a time. The URL of a later page carries
+   `?after=<bookmark>`, an opaque base64url JSON of the last row the previous
+   page showed, `{ slug, updated_at, adw_id }` (`updated_at` kept verbatim,
+   microseconds included). The next page is the rows strictly older than that
+   tuple in the order `updated_at desc, adw_id desc` (`adw_id` is unique
+   within a project, so the order is total), so a run completing while a
+   visitor is on page two adds a row to page one and never shifts page two.
+   The bookmark is decoded in `HistorySection`, outside the cache scope; a
+   missing, malformed or repeated `?after`, or one handed out for another
+   project, is page one, never an error. The History header is one row:
+   the title on the left, `Newer` (back to page one) and `Older` links on the
+   right, each only when that page exists. Every page of a project shares the
+   one `history:<slug>` tag on purpose: the bookmark argument is part of the
+   cache key (one entry per page), and one tag drop after a completion
+   expires all of them, since a new row changes page one and can change
+   whether a later page has an `Older` link. There is no per-page tag. The
+   lifetime is explicit: stale after 5 minutes, refreshed in the background
+   after a day, expired after 30 days; a completion drops the tag long before
+   that.
 
 #### The move: how a completion crosses from Active to History
 
@@ -456,7 +487,9 @@ the **static shell**: their `"use cache"` results are resolved at build time
 and embedded in the shell as its Resume Data Cache. History is a
 **request-time hole**: `HistorySection` awaits `connection()` before
 `getHistory`, so the shell carries the "Loading history..." fallback and the
-section streams in on each request. The build's route table shows the project
+section streams in on each request. It is also the only place that reads
+`searchParams` (for `?after`), after `connection()`, so the shell stays the
+same for every page of History. The build's route table shows the project
 pages as "Partial Prerender" for this reason.
 
 The distinction matters because of how a prerendered route is served. Under
@@ -469,7 +502,7 @@ expire the live entry and `getHistory` did re-execute with fresh rows, but
 every later request kept resuming the shell and reading the build-time rows;
 `revalidatePath` changes nothing about that. A hole is resolved from the
 live cache handler on every request, so a tag update reaches it, and the
-scope keeps its default lifetime, so `getHistory` still runs only on a miss
+scope keeps its long explicit lifetime, so `getHistory` still runs only on a miss
 (build, then once after each tag update), not per request. The documented
 alternative is a `cacheLife` with `expire` under 5 minutes, which also
 excludes the scope from prerenders (`node_modules/next/dist/docs/01-app/
@@ -527,8 +560,8 @@ Two caveats of the design:
   webhook ("Webhook revalidation" above) covers that case from the server
   side, dropping the same two tags through the route handler. Until its two
   database settings are set, History stays as it was until the cache lifetime
-  (15 minutes, the default `cacheLife`) or until the next completion anyone
-  sees. The Active half has no such gap: the catch-up re-reads it on every
+  (`getHistory`'s explicit `cacheLife`: a background refresh once an entry is
+  a day old) or until the next completion anyone sees. The Active half has no such gap: the catch-up re-reads it on every
   `SUBSCRIBED`.
 
 A DELETE of a run that is not in the Active list is treated as a history

@@ -69,9 +69,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   a `queryFn`. All three are async database reads: `getProjects` reads the
   `project_summaries` view, `getActiveRuns` reads the same view by slug and
   then the `runs` table by `project_id` with `status in (running, failed)`,
-  `getCompletedRuns` the same with `status = completed`. Changing what is read
+  `getCompletedRuns(slug, bookmark)` the same with `status = completed`, one
+  keyset page at a time (rows strictly older than the decoded bookmark, order
+  `updated_at desc, adw_id desc`, `HISTORY_PAGE_SIZE + 1` rows split by
+  `toHistoryPage` into `{ items, nextCursor }`; never an offset). Changing what is read
   means changing `src/data/index.ts` while keeping those signatures, and
-  nothing elsewhere; pagination of history goes into `getCompletedRuns`. The
+  nothing elsewhere. The
   query layer (`query-keys.ts`, `query-client.ts`) holds keys and the client
   factory only; it never reads Supabase.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
@@ -123,7 +126,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `getRunsState`'s result (`data === null`), not from a second
   `getActiveRuns` call and not by searching the dehydrated state's queries by
   hash; `HistorySection` renders only after that decision, so
-  `getCompletedRuns` returning `[]` for an unknown slug is never shown.
+  `getCompletedRuns` returning an empty page for an unknown slug is never shown.
 - Two boundaries, never a bare `Suspense`. Any `useSuspenseQuery` is rendered
   inside `QueryBoundary` (`src/components/QueryBoundary.tsx`); any
   server-rendered section that can fail independently of its siblings (the
@@ -212,6 +215,24 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   for a short `cacheLife` (`expire` under 5 minutes also makes a hole but
   gives up the long lifetime). The Active scope (`runs:<slug>`) stays in the
   shell on purpose; the browser keeps it current.
+- History is paged by a keyset bookmark. Everything that decides a page lives
+  in `src/lib/history-bookmark.ts` (pure, tested in
+  `src/lib/history-bookmark.test.ts`): `HISTORY_PAGE_SIZE` (defined there and
+  nowhere else), the base64url codec, `readHistoryBookmark`,
+  `historyKeysetFilter`, `toHistoryPage` and `historyHref`. Every change to the
+  bookmark, the filter or the page split goes with a test case.
+- `HistorySection` is the only reader of `searchParams`, and it awaits them
+  after `connection()`. The page body, `getRunsState` and `generateMetadata`
+  never touch them (the page passes the promise down unawaited), or the shell
+  stops being prerendered. `?after` is decoded by `readHistoryBookmark` there,
+  outside the cache scope (an error thrown inside `"use cache"` loses its
+  class), and never surfaces an error: anything invalid or foreign is page one.
+- Every page of a project shares `historyTag(slug)`; never add a per-page tag.
+  The bookmark is a `getHistory` argument, so it is already part of the cache
+  key, and one tag drop must expire every page a completion changes.
+  `getHistory` keeps its explicit
+  `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`; never an
+  `expire` under 5 minutes.
 - Proof rule for anything about revalidation: verify with a database change
   made **after** `yarn build` (a test row inserted, a run completing), call
   the action, and look for the change in the next response's HTML. A row that

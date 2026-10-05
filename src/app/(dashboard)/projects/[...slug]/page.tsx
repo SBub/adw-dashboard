@@ -1,6 +1,6 @@
 import { HydrationBoundary } from "@tanstack/react-query";
 import type { Metadata } from "next";
-import { cacheTag } from "next/cache";
+import { cacheLife, cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 import { ActiveRunsView } from "@/components/ActiveRunsView";
@@ -10,15 +10,23 @@ import { SectionBoundary } from "@/components/SectionBoundary";
 import { getActiveRuns, getCompletedRuns, getProjects } from "@/data";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
+import {
+  type HistoryBookmark,
+  type HistoryPage,
+  historyHref,
+  readHistoryBookmark,
+} from "@/lib/history-bookmark";
 import { historyTag, runsTag } from "@/lib/history-tags";
-import type { Run } from "@/types/adw";
 
 // Project slugs contain a slash ("owner/repo"), so this is a catch-all
 // segment: /projects/SBub/adw-toolkit arrives as ["SBub", "adw-toolkit"] and
 // is joined back into the slug the data layer knows.
 interface ProjectPageProps {
   params: Promise<{ slug: string[] }>;
+  searchParams: Promise<SearchParams>;
 }
+
+type SearchParams = { [key: string]: string | string[] | undefined };
 
 // Pre-render one page per known project at build time. A catch-all segment
 // takes an array per param, so each slug is split back into its parts.
@@ -86,10 +94,18 @@ async function getRunsState(slug: string) {
 }
 
 /**
- * One project's completed runs, read inside a "use cache" scope tagged
- * `history:${slug}`. Plain rows, no clock read: getCompletedRuns stamps
+ * One page of a project's completed runs, read inside a "use cache" scope
+ * tagged `history:${slug}`. Plain rows, no clock read: getCompletedRuns stamps
  * nothing, so this scope is here for the lifetime and the tag, not for a
- * clock-read permission. The rows never enter the React Query cache and no
+ * clock-read permission.
+ *
+ * Every page of a project carries the same tag on purpose, never a per-page
+ * one: a completion adds a row at the head and so changes what page one
+ * holds and whether a later page has an Older link, and one tag drop must
+ * reach all of them. The bookmark is a plain serialisable argument, so it is
+ * part of the cache key: one entry per page, all under that tag. The lifetime
+ * is explicit (stale 5 minutes, background refresh after a day, expiry after
+ * 30 days); a completion drops the tag long before that. The rows never enter the React Query cache and no
  * Realtime event touches them. A completed run is immutable, so the entry is
  * only wrong when a run completes (or a completed run is deleted), and that is
  * when the browser calls the revalidateHistory action (dropping this tag) and
@@ -98,11 +114,12 @@ async function getRunsState(slug: string) {
  * /api/revalidate, which drops the same tag. Its spelling comes from
  * src/lib/history-tags.ts, shared with both.
  */
-async function getHistory(slug: string): Promise<Run[]> {
+async function getHistory(slug: string, bookmark: HistoryBookmark | null): Promise<HistoryPage> {
   "use cache";
   cacheTag(historyTag(slug));
+  cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 });
 
-  return getCompletedRuns(slug);
+  return getCompletedRuns(slug, bookmark);
 }
 
 // The History half of the pane, an async server component. It reads through
@@ -118,8 +135,8 @@ async function getHistory(slug: string): Promise<Run[]> {
 // the live cache entry and re-executes getHistory, but a resumed render never
 // consults the live handler for that scope, so the new rows are never served.
 // Made a hole, the scope is resolved per request from the live cache handler,
-// and the tag reaches it. The scope keeps its default cacheLife, so history is
-// still cached between completions (observed: getHistory runs at build and
+// and the tag reaches it. The scope keeps its long explicit cacheLife, so
+// history is still cached between completions (observed: getHistory runs at build and
 // once after the tag update, not per request). The documented alternative is
 // a cacheLife with `expire` under 5 minutes, which also excludes the scope
 // from prerenders (node_modules/next/dist/docs/01-app/03-api-reference/
@@ -136,16 +153,38 @@ async function getHistory(slug: string): Promise<Run[]> {
 // SUBSCRIBED re-reads it. The action keeps dropping the tag because it is
 // correct on a full regeneration of the page and on hosts whose cache handler
 // behaves differently.
-async function HistorySection({ slug }: { slug: string }) {
+//
+// It is also the one reader of searchParams, after connection(), so the shell
+// stays prerendered. `?after` is decoded here, outside the cache scope (an
+// error thrown inside "use cache" loses its class); an invalid or foreign
+// bookmark is page one, never an error.
+async function HistorySection({
+  slug,
+  searchParams,
+}: {
+  slug: string;
+  searchParams: Promise<SearchParams>;
+}) {
   await connection();
-  const runs = await getHistory(slug);
-  return <RunHistory runs={runs} projectSlug={slug} />;
+  const { after } = await searchParams;
+  const bookmark = readHistoryBookmark(after, slug);
+  const { items, nextCursor } = await getHistory(slug, bookmark);
+  return (
+    <RunHistory
+      runs={items}
+      projectSlug={slug}
+      newerHref={bookmark ? historyHref(slug, null) : null}
+      olderHref={nextCursor ? historyHref(slug, nextCursor) : null}
+    />
+  );
 }
 
 // Awaiting params makes this page request-time for slugs outside
 // generateStaticParams. The sibling loading.tsx is the Suspense boundary for
 // the segment, so the layout and sidebar above it still prerender.
-export default async function ProjectPage({ params }: ProjectPageProps) {
+// searchParams is handed to HistorySection unawaited: only that request-time
+// hole reads it.
+export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const { slug: parts } = await params;
   const slug = parts.join("/");
 
@@ -197,13 +236,15 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       <SectionBoundary
         fallback={
           <section>
-            <h2 className="mb-3 text-lg font-semibold">History</h2>
+            <div className="mb-3 flex items-center justify-between gap-4">
+              <h2 className="text-lg font-semibold">History</h2>
+            </div>
             <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading history...</p>
           </section>
         }
         detail="This project's history did not load."
       >
-        <HistorySection slug={slug} />
+        <HistorySection slug={slug} searchParams={searchParams} />
       </SectionBoundary>
     </>
   );
