@@ -20,19 +20,25 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `node_modules/next/dist/docs/` before Next.js work; the framework moves
   faster than training data.
 - No em-dashes in any file. Use commas, periods, colons or parentheses.
+- `.adw/project.md` is this repository's ADW profile; the toolkit's slash commands
+  read it before anything else. When a change renames a script, moves a port,
+  adds an env file or changes where docs live, update the profile in the same
+  change, and never rename or reorder its nine `##` headings.
 
 ## Architecture
 
 - Components take typed props only. They never fetch, compute or count
-  business values; they render what they are given. `RunRow` and `RunHistory`
-  take `Run` rows as stored (the page's `HistorySection` is the one async
-  component that awaits data, and it lives in the page file, not under
-  `src/components/`). The one formatting a component may do is call a
+  business values; they render what they are given. `RunRow` and
+  `RunHistoryList` take `Run` rows as stored (the page's `HistoryPagination`
+  and `CompletedRuns` are the async components that await data, and they live
+  in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
   anywhere for runs.
-- No clock reads outside the cached boundary. The only `new Date()` /
-  `Date.now()` in the codebase is `getActiveRuns`'s `fetched_at` stamp, which
+- No clock reads outside the cached boundary. The only argument-less
+  `new Date()` / `Date.now()` in the codebase is `getActiveRuns`'s
+  `fetched_at` stamp (`new Date(ms)` on a parsed input, as in
+  `formatTimestamp`, is not a clock read), which
   on the server only ever executes inside the page's `"use cache"` scope (in
   the browser it runs as a `queryFn` on a cache miss and in the realtime
   catch-up, where a clock read is fine). `getCompletedRuns` reads no clock and
@@ -63,9 +69,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   a `queryFn`. All three are async database reads: `getProjects` reads the
   `project_summaries` view, `getActiveRuns` reads the same view by slug and
   then the `runs` table by `project_id` with `status in (running, failed)`,
-  `getCompletedRuns` the same with `status = completed`. Changing what is read
+  `getCompletedRuns(slug, bookmark)` the same with `status = completed`, one
+  keyset page at a time (rows strictly older than the decoded bookmark, order
+  `updated_at desc, adw_id desc`, `HISTORY_PAGE_SIZE + 1` rows split by
+  `toHistoryPage` into `{ items, nextCursor }`; never an offset). Changing what is read
   means changing `src/data/index.ts` while keeping those signatures, and
-  nothing elsewhere; pagination of history goes into `getCompletedRuns`. The
+  nothing elsewhere. The
   query layer (`query-keys.ts`, `query-client.ts`) holds keys and the client
   factory only; it never reads Supabase.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
@@ -82,10 +91,17 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `"use cache"` function, tagged `historyTag(slug)`; that tag is the contract
   with the `revalidateHistory` action and the `/api/revalidate` route handler,
   and all three take the spelling from `src/lib/history-tags.ts`.
-- `generateStaticParams` in `src/app/(dashboard)/projects/[...slug]/page.tsx`
+- The project route is `projects/[owner]/[repo]`. The slug is assembled from
+  `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
+  file splits or joins it, and everything below the page (data boundary,
+  `queryKeys.runs(slug)`, `runsTag`/`historyTag`, the bookmark,
+  `revalidateHistory`) takes the slug as is. `generateStaticParams` in the
+  same file is the one place that splits a slug, into the two params. URLs
+  never carry the project id. Do not reintroduce a catch-all segment.
+- `generateStaticParams` in `src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`
   must never return an empty array. Under `cacheComponents` an empty result
   fails the build (nothing to prerender the segment with), so the empty-list
-  branch returns the placeholder `{ slug: ["_", "none"] }`, which the page
+  branch returns the placeholder `{ owner: "_", repo: "none" }`, which the page
   turns into `notFound()` at request time. Keep that guard when touching the
   function.
 - `getProjects()` runs at build time (layout prefetch and
@@ -101,8 +117,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   and in every `setQueryData` the Realtime listeners do. Never build a key inline and never
   add a key literal elsewhere: a key that differs by one element is a cache
   miss, which means a second fetch in the browser. The slug is part of the runs
-  key's hash, so join it the same way on both sides (`parts.join("/")`, as the
-  page does).
+  key's hash; the slug is assembled once in the page; pass it as is.
 - `makeQueryClient()` in `src/data/query-client.ts` is the one `QueryClient`
   factory. Every server prefetch and `Providers` build from it; do not call
   `new QueryClient()` anywhere else, or the dehydrate rule drifts between sides.
@@ -116,12 +131,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - A project page's not-found decision is read off the `data` half of
   `getRunsState`'s result (`data === null`), not from a second
   `getActiveRuns` call and not by searching the dehydrated state's queries by
-  hash; `HistorySection` renders only after that decision, so
-  `getCompletedRuns` returning `[]` for an unknown slug is never shown.
+  hash; the History islands render only after that decision, so
+  `getCompletedRuns` returning an empty page for an unknown slug is never shown.
 - Two boundaries, never a bare `Suspense`. Any `useSuspenseQuery` is rendered
   inside `QueryBoundary` (`src/components/QueryBoundary.tsx`); any
   server-rendered section that can fail independently of its siblings (the
-  page's `HistorySection`) is rendered inside `SectionBoundary`
+  page's `HistoryPagination` and `CompletedRuns`, one boundary each) is
+  rendered inside `SectionBoundary`
   (`src/components/SectionBoundary.tsx`). Without an error boundary a failed
   read escapes to the segment's `error.tsx` and unmounts the whole pane,
   Active included. The two differ in their Retry and must not be swapped:
@@ -163,12 +179,20 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   hold state (the React Query provider in `src/app/providers.tsx`,
   `ProjectNav`, which reads the pathname and the query cache,
   `ActiveRunsView`, which reads the active runs from the query cache, and
-  `ConnectionIndicator`, which subscribes to its store). `RunHistory` is a
-  server component with no state; do not put `"use client"` back on it or
-  give it a filter that needs one. `src/lib/run-view.ts` is plain and
+  `ConnectionIndicator`, which subscribes to its store). `HistoryLinks` and
+  `RunHistoryList` are server components with no state; do not put
+  `"use client"` on them or give them a filter that needs one. The `Newer`
+  and `Older` links of `HistoryLinks` are plain `next/link` hrefs that
+  `HistoryPagination` builds with `historyHref` and passes in (`null` hides
+  the link); do not decode a bookmark or build a URL in the component. `src/lib/run-view.ts` is plain and
   importable from anywhere.
-- `Timestamp` renders ISO strings by substring on purpose so server and client
-  markup agree. Do not introduce locale or timezone formatting in components.
+- The visible text of every timestamp comes from `formatTimestamp` in
+  `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
+  the input, unit-tested in `src/lib/format-date.test.ts`), called only by
+  `Timestamp`, whose `<time>` keeps the ISO value in `dateTime`. The output
+  depends on the input string alone, so server and client markup agree. Do not
+  introduce `toLocaleString`, `Intl` or runtime-time-zone formatting, and every
+  change to the format goes with a test case.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written
   only through its exported `setConnectionStatus`, with a `ConnectionStatus`
   enum member, never a bare string. Do not export the `status` variable, add a
@@ -182,25 +206,54 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   Do not move failed runs into History or add a status toggle to it.
 - History is server-rendered and never enters the React Query cache. It is
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
-  `cacheTag(\`history:${slug}\`)`) and rendered by the async `HistorySection`under its own`SectionBoundary`. No `queryKeys`entry, no`useSuspenseQuery`, no
-`setQueryData`, no realtime reducer and no catch-up read may touch completed
+  ``cacheTag(`history:${slug}`)``) and rendered by the page's two async
+  islands, `HistoryPagination` and `CompletedRuns`, each under its own
+  `SectionBoundary`. No `queryKeys` entry, no `useSuspenseQuery`, no
+  `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
 - Any `"use cache"` scope that must reflect on-demand revalidation on a
-  prerendered route awaits `connection()` (from `next/server`) before the
-  cached call, as `HistorySection` does before `getHistory`. A scope that is
-  prerendered into the static shell is read from the shell's embedded Resume
-  Data Cache on every resumed request, frozen at build time, and no
+  prerendered route is called only after a request-time read, under a
+  `SectionBoundary`: here the islands' `await searchParams` (through
+  `readHistory`), the first thing each does before `getHistory`. A scope that
+  is prerendered into the static shell is read from the shell's embedded
+  Resume Data Cache on every resumed request, frozen at build time, and no
   `updateTag`, `revalidateTag` or `revalidatePath` reaches it; a request-time
   hole is resolved from the live cache handler and keeps its lifetime (see
-  README, "What is prerendered and what is not"). The `await connection()`
-  stays the first statement of `HistorySection`, the `SectionBoundary` (whose
-  inner `Suspense` is the streaming boundary) stays around it, and
-  `getHistory` stays out of the page body and `generateMetadata`,
-  where it would be prerendered again. Do not swap it
-  for a short `cacheLife` (`expire` under 5 minutes also makes a hole but
-  gives up the long lifetime). The Active scope (`runs:<slug>`) stays in the
+  README, "What is prerendered and what is not"). Do not add `connection()`
+  back as a redundant second marker. The `SectionBoundary` (whose inner
+  `Suspense` is the streaming boundary) stays around each island, and
+  `getHistory` stays out of the page body and `generateMetadata`, where it
+  would be prerendered again. Do not swap the hole for a short `cacheLife`
+  (`expire` under 5 minutes also makes a hole but gives up the long
+  lifetime). The Active scope (`runs:<slug>`) stays in the
   shell on purpose; the browser keeps it current.
+- History is paged by a keyset bookmark. Everything that decides a page lives
+  in `src/lib/history-bookmark.ts` (pure, tested in
+  `src/lib/history-bookmark.test.ts`): `HISTORY_PAGE_SIZE` (defined there and
+  nowhere else), the base64url codec, `readHistoryBookmark`,
+  `historyKeysetFilter`, `toHistoryPage` and `historyHref`. Every change to the
+  bookmark, the filter or the page split goes with a test case.
+- A static heading sits outside the boundary of the hole it labels: the
+  `History` `<h2>` is rendered by the page, above both islands, never inside a
+  `SectionBoundary` or its fallback, so it is in the static shell.
+- `HistoryPagination` and `CompletedRuns` are the only readers of
+  `searchParams`, and each awaits it itself. The page passes the promise down
+  unawaited and never awaits it, nor do `getRunsState` or `generateMetadata`,
+  or the whole page turns request-time. `?after` is decoded by
+  `readHistoryBookmark` in the islands,
+  outside the cache scope (an error thrown inside `"use cache"` loses its
+  class), and never surfaces an error: anything invalid or foreign is page one.
+- Every page of a project shares `historyTag(slug)`; never add a per-page tag.
+  The bookmark is a `getHistory` argument, so it is already part of the cache
+  key, and one tag drop must expire every page a completion changes.
+- Two islands calling `getHistory` with the same arguments are one cache read
+  per request: Next joins an identical `"use cache"` invocation within the
+  request (debug line `joining intra-request invocation`). Do not add a React
+  `cache()` wrapper or pass one island's result to the other.
+  `getHistory` keeps its explicit
+  `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`; never an
+  `expire` under 5 minutes.
 - Proof rule for anything about revalidation: verify with a database change
   made **after** `yarn build` (a test row inserted, a run completing), call
   the action, and look for the change in the next response's HTML. A row that
@@ -227,8 +280,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `src/lib/project-route.ts`; do not switch `Providers` to `usePathname()`,
   which would subscribe the whole tree to navigation and re-render it on
   every route change. `isProjectPath` decodes the pathname before comparing
-  (Next decodes route params, so a percent-encoded slug renders the same
-  page) and answers false for a malformed sequence; keep it pure and tested
+  (Next decodes route params, so a percent-encoded character in a segment
+  renders the same page) and answers false for a malformed sequence; keep it pure and tested
   in `src/lib/project-route.test.ts`.
 - `src/app/actions/revalidate-history.ts` is a public endpoint. It validates
   the slug with `isProjectSlug` from `src/lib/slug.ts` (the pattern

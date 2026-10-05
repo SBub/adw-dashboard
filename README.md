@@ -36,12 +36,15 @@ A project's runs are read in two halves, because they have two lifetimes:
   then the rows of `adw.runs` where `project_id` is that project's id **and
   `status` is `running` or `failed`**, ordered by `updated_at` descending. It
   stamps the result with `fetched_at`, the ISO time the rows were read.
-- `getCompletedRuns(slug)` reads the same project row, then the rows of
-  `adw.runs` for that id where `status` is `completed`, `updated_at`
-  descending, and returns the plain rows (an empty list for an unknown slug,
-  which the page has already excluded). It reads no clock. Pagination, when it
-  comes, goes into this function alone: it is the one read that grows without
-  bound.
+- `getCompletedRuns(slug, bookmark)` reads the same project row, then one
+  page of the rows of `adw.runs` for that id where `status` is `completed`,
+  ordered `updated_at desc, adw_id desc`, and returns
+  `{ items, nextCursor }` (an empty page for an unknown slug, which the page
+  has already excluded). It is keyset-paginated, three runs per page
+  (`HISTORY_PAGE_SIZE` in `src/lib/history-bookmark.ts`): `bookmark` is the
+  last row the previous page showed, or `null` for page one, and the read
+  returns only rows strictly older than it, fetching one row more than a page
+  to know whether an older page exists. It reads no clock.
 
 In SQL terms:
 
@@ -53,7 +56,9 @@ select project_id, adw_id, issue_number, issue_class, branch_name, phase, status
  order by updated_at desc;
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
- order by updated_at desc;
+   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- after page one
+ order by updated_at desc, adw_id desc
+ limit 4;
 ```
 
 The rows are the raw `Run` type; no label is derived on the server (see
@@ -66,7 +71,9 @@ exports three functions and the shape the second one returns:
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
   `{ project: ProjectSummary; active: Run[]; fetched_at: string }`
-- `getCompletedRuns(slug): Promise<Run[]>`
+- `getCompletedRuns(slug, bookmark): Promise<HistoryPage>`, where
+  `HistoryPage` is `{ items: Run[]; nextCursor: string | null }` (from
+  `src/lib/history-bookmark.ts`)
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
 data; the query keys and the `QueryClient` factory (next section) are cache
@@ -138,8 +145,10 @@ clock and is unit-tested with fixed timestamps in `src/lib/run-view.test.ts`.
 The labels that need the current time, "updated 2m ago", the stale badge for a
 running run with no progress for 30 minutes, and the elapsed time of a run
 still in progress, are removed for now and tracked in issue #3. An active row
-shows the absolute `updated_at` ("Updated 2026-10-03 11:52 UTC") through the
-`Timestamp` component instead. The reason they are not simply computed in
+shows the absolute `updated_at` ("Updated 03.10.2026 11:52 UTC") through the
+`Timestamp` component instead, which formats every timestamp through the pure
+`formatTimestamp` helper in `src/lib/format-date.ts` (UTC getters, no clock, no
+locale). The reason they are not simply computed in
 render: under `cacheComponents` the time is the one thing neither prerender
 pass may read (details in the sections below), so a clock-dependent label needs
 a `useSyncExternalStore` hook with a data-derived server snapshot, and the
@@ -223,7 +232,7 @@ It changes only when the server is told to re-render it.
 The prefetch and hydration of Active follow the sidebar's pattern, one cache
 entry per slug:
 
-1. `src/app/(dashboard)/projects/[...slug]/page.tsx` has a `"use cache"`
+1. `src/app/(dashboard)/projects/[owner]/[repo]/page.tsx` has a `"use cache"`
    function `getRunsState(slug)`, tagged `runs` and `runs:<slug>`, that returns
    `prefetch(queryKeys.runs(slug), () => getActiveRuns(slug))`: the same
    one-liner shape as the layout's `getProjectsState`. The cache scope is
@@ -257,25 +266,55 @@ entry per slug:
 
 History is rendered below that, by the same page:
 
-5. `getHistory(slug)` is a second `"use cache"` function in the page, tagged
-   `history:<slug>`, that returns `getCompletedRuns(slug)`: plain rows, no
-   clock read, no React Query. `HistorySection` is an async server component
-   that awaits `connection()` (from `next/server`) and then `getHistory`, and
-   renders `<RunHistory runs={...} projectSlug={slug} />`, wrapped in its own
-   `SectionBoundary` (fallback "Loading history...") so Active never waits on
-   it and never falls with it: if `getHistory` throws (database down, an RLS
-   change), the boundary shows its panel ("Could not load.", "This project's
-   history did not load.", Retry) in the History slot and the Active list
-   above stays on screen, instead of the segment's `error.tsx` replacing the
-   whole pane. Retry there refreshes the route (`router.refresh()`) and then
-   resets the boundary, so the section is re-rendered by the server rather
-   than replayed from the failed render; see "SectionBoundary" below. The
-   `connection()` call makes the section a request-time hole, which is what
-   lets the tag revalidation below reach it; see "What is prerendered and what
-   is not". `src/components/RunHistory.tsx` is a server component
-   with no state: the all/completed/failed toggle is gone because history is
+5. `getHistory(slug, bookmark)` is a second `"use cache"` function in the
+   page, tagged `history:<slug>`, with an explicit
+   `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
+   returns `getCompletedRuns(slug, bookmark)`: one page of plain rows, no
+   clock read, no React Query. The page renders the History heading row
+   itself, statically: the `<h2>History</h2>` on the left and, on the right,
+   the `HistoryPagination` island in a `SectionBoundary` (fallback `null`,
+   detail "Pagination did not load."). Below the row, the `CompletedRuns`
+   island sits in a second `SectionBoundary` (fallback "Loading history...",
+   detail "This project's history did not load."). Both islands are async
+   server components in the page file; each awaits the page's
+   `searchParams`, decodes `?after` with `readHistoryBookmark`, and calls
+   `getHistory`. `HistoryPagination` renders `HistoryLinks` with the two page
+   links (`newerHref`, `olderHref`, built with `historyHref`, `null` when that
+   page does not exist); `CompletedRuns` renders `RunHistoryList` with the
+   page's `items` and the slug. Each boundary keeps Active and the other
+   island on screen when its island fails: if `getHistory` throws (database
+   down, an RLS change), the boundary shows its panel ("Could not load.", its
+   detail, Retry) in its own slot, instead of the segment's `error.tsx`
+   replacing the whole pane. Retry there refreshes the route
+   (`router.refresh()`) and then resets the boundary, so the island is
+   re-rendered by the server rather than replayed from the failed render; see
+   "SectionBoundary" below. The `searchParams` read makes each island a
+   request-time hole, which is what lets the tag revalidation below reach it;
+   see "What is prerendered and what is not". `src/components/HistoryLinks.tsx`
+   and `src/components/RunHistoryList.tsx` are server components with no
+   state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant still shows Finished
    and Duration.
+
+   History is paged three runs at a time. The URL of a later page carries
+   `?after=<bookmark>`, an opaque base64url JSON of the last row the previous
+   page showed, `{ slug, updated_at, adw_id }` (`updated_at` kept verbatim,
+   microseconds included). The next page is the rows strictly older than that
+   tuple in the order `updated_at desc, adw_id desc` (`adw_id` is unique
+   within a project, so the order is total), so a run completing while a
+   visitor is on page two adds a row to page one and never shifts page two.
+   The bookmark is decoded in each island, outside the cache scope; a
+   missing, malformed or repeated `?after`, or one handed out for another
+   project, is page one, never an error. The History header is one row:
+   the title on the left, `Newer` (back to page one) and `Older` links on the
+   right, each only when that page exists. Every page of a project shares the
+   one `history:<slug>` tag on purpose: the bookmark argument is part of the
+   cache key (one entry per page), and one tag drop after a completion
+   expires all of them, since a new row changes page one and can change
+   whether a later page has an `Older` link. There is no per-page tag. The
+   lifetime is explicit: stale after 5 minutes, refreshed in the background
+   after a day, expired after 30 days; a completion drops the tag long before
+   that.
 
 #### The move: how a completion crosses from Active to History
 
@@ -299,7 +338,7 @@ When a run completes, three things happen in the browser, in this order:
    "What is prerendered and what is not"); the browser covers Active anyway.
 3. Only after the action resolves, and only if the route in the address bar is
    that project's page, `router.refresh()` re-renders the route on the server.
-   The history scope is a cache miss, so `HistorySection` reads
+   The history scope is a cache miss, so the History islands read
    `getCompletedRuns` from the database and the new row appears. Step 2 runs
    for every completion whatever is on screen (it drops the server cache for
    that project, so its next render is fresh for whoever opens it); step 3 only
@@ -310,8 +349,8 @@ When a run completes, three things happen in the browser, in this order:
    `src/lib/project-route.ts`, read inside the callback after the action has
    resolved rather than through `usePathname()`, so `Providers` does not
    subscribe to navigation and re-render on every route change. The pathname is
-   decoded first: Next decodes every route param, so a percent-encoded spelling
-   of the slug renders the same page while `window.location.pathname` keeps it
+   decoded first: Next decodes every route param, so a percent-encoded character
+   in a segment renders the same page while `window.location.pathname` keeps it
    encoded; a malformed sequence answers false instead of throwing.
 
 `updateTag`, not `revalidateTag`. The installed Next docs
@@ -451,11 +490,27 @@ The browser's fetch is not patched and keeps the default. After a build,
 A pre-rendered project page has two kinds of content. The sidebar (the
 layout's `projects` scope) and Active (the page's `runs:<slug>` scope) are in
 the **static shell**: their `"use cache"` results are resolved at build time
-and embedded in the shell as its Resume Data Cache. History is a
-**request-time hole**: `HistorySection` awaits `connection()` before
-`getHistory`, so the shell carries the "Loading history..." fallback and the
-section streams in on each request. The build's route table shows the project
-pages as "Partial Prerender" for this reason.
+and embedded in the shell as its Resume Data Cache. So is the History
+heading, which the page renders outside any boundary. The two History islands
+(`HistoryPagination` and `CompletedRuns`) are **request-time holes**: each
+awaits `searchParams` before `getHistory`, a request-time read that stops
+prerendering at the island's own `SectionBoundary`, so the shell carries
+nothing in the pagination slot and "Loading history..." for the list, and both
+stream in on each request. They are the only readers of `searchParams` (for
+`?after`), and there is no `connection()` call (it would be a redundant second
+marker), so the shell stays the same for every page of History. The build's
+route table shows the project pages as "Partial Prerender" for this reason.
+
+Two islands do not mean two reads. `getHistory` is a `"use cache"` function
+keyed by its arguments, the slug and a plain bookmark object with the same
+values in both islands, and the installed Next joins an identical invocation
+within one request instead of running it again
+(`node_modules/next/dist/server/use-cache/use-cache-wrapper.js`,
+"Intra-request deduplication"). With `NEXT_PRIVATE_DEBUG_CACHE=1`, one GET
+shows one `generated entry` (on a miss) or one hit for the history scope.
+On a `?after` page the second island adds a `joining intra-request
+invocation` line; on page one (bookmark `null`) the second call is answered
+before that point and logs nothing, still without a second read.
 
 The distinction matters because of how a prerendered route is served. Under
 `cacheComponents`, a request for a prerendered page resumes the shell, and a
@@ -467,12 +522,12 @@ expire the live entry and `getHistory` did re-execute with fresh rows, but
 every later request kept resuming the shell and reading the build-time rows;
 `revalidatePath` changes nothing about that. A hole is resolved from the
 live cache handler on every request, so a tag update reaches it, and the
-scope keeps its default lifetime, so `getHistory` still runs only on a miss
+scope keeps its long explicit lifetime, so `getHistory` still runs only on a miss
 (build, then once after each tag update), not per request. The documented
 alternative is a `cacheLife` with `expire` under 5 minutes, which also
 excludes the scope from prerenders (`node_modules/next/dist/docs/01-app/
-03-api-reference/04-functions/cacheLife.md`, "Prerendering behavior");
-`connection()` is used instead because it keeps the long lifetime.
+03-api-reference/04-functions/cacheLife.md`, "Prerendering behavior"); the
+`searchParams` read is used instead because it keeps the long lifetime.
 
 The same applies to Active: `runs:<slug>` is in the shell, so
 `updateTag("runs:<slug>")` does not refresh it on a resume. That is left as
@@ -525,8 +580,8 @@ Two caveats of the design:
   webhook ("Webhook revalidation" above) covers that case from the server
   side, dropping the same two tags through the route handler. Until its two
   database settings are set, History stays as it was until the cache lifetime
-  (15 minutes, the default `cacheLife`) or until the next completion anyone
-  sees. The Active half has no such gap: the catch-up re-reads it on every
+  (`getHistory`'s explicit `cacheLife`: a background refresh once an entry is
+  a day old) or until the next completion anyone sees. The Active half has no such gap: the catch-up re-reads it on every
   `SUBSCRIBED`.
 
 A DELETE of a run that is not in the Active list is treated as a history
@@ -583,8 +638,9 @@ would only re-mount the same failed output. Retry calls `router.refresh()`
 first, which asks the server to render the route again (the section's cache
 scope is read again and, on a miss, the database), and then resets the
 boundary, so the re-mounted child is the fresh server result streaming in
-behind the fallback. The project page wraps `HistorySection` in it; the
-`connection()` hole semantics are unchanged, since a server component is a
+behind the fallback. The project page wraps `HistoryPagination` and
+`CompletedRuns` each in one; the hole semantics come from their `searchParams`
+read and are unchanged by the boundary, since a server component is a
 legitimate child of a client boundary and the Suspense inside is still the
 streaming boundary the shell carries the fallback for.
 
@@ -816,12 +872,23 @@ duration is formatted at render time by `durationLabel` in
 
 ## Routing
 
-Project slugs are `owner/repo`, so the detail page is a catch-all segment,
-`src/app/(dashboard)/projects/[...slug]/page.tsx`. `/projects/SBub/adw-toolkit`
-arrives as `["SBub", "adw-toolkit"]` and is joined back into the slug. Project
-pages are pre-rendered at build time from the project list
+A project slug is exactly `owner/repo`, so the detail page has two named
+segments, `src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`.
+`/projects/SBub/adw-dashboard` arrives as
+`{ owner: "SBub", repo: "adw-dashboard" }`; the page assembles the slug once,
+and everything below it (the data boundary, the query key, the cache tags, the
+History bookmark, the `revalidateHistory` action) takes the slug as is.
+
+URLs never carry the project id: it is a UUID and an internal key. The slug
+stays the key because it is what the toolkit derives from the git remote, it is
+the tenant key in the database, and it mirrors the GitHub URL.
+
+Project pages are pre-rendered at build time from the project list
 (`generateStaticParams` awaits `getProjects()`, so the database is read during
-the build); a slug that is not in that list still renders on demand. The segment's `loading.tsx` is the Suspense boundary
+the build, and splits each slug into an `{ owner, repo }` pair; an empty list
+yields the placeholder pair `_` / `none`, because an empty result fails the
+build under `cacheComponents`); a slug that is not in that list still renders
+on demand. The segment's `loading.tsx` is the Suspense boundary
 that lets the shell prerender while the page streams in, and its `error.tsx` is
 the client error boundary (message, digest, Retry) for anything the page body
 throws. A failure inside one of the pane's own boundaries (`QueryBoundary`
@@ -829,7 +896,11 @@ around Active, `SectionBoundary` around History) stays in that section and
 never reaches it.
 An unknown slug calls Next's `notFound()`, which renders
 `src/app/(dashboard)/not-found.tsx` inside the two-pane shell; URLs that match
-no route at all fall through to the root `src/app/not-found.tsx`.
+no route at all fall through to the root `src/app/not-found.tsx`, with a 404
+status. That includes a path with one or three segments under `/projects`
+(`/projects/SBub`, `/projects/SBub/adw-dashboard/extra`) and an encoded slash
+(`/projects/SBub%2Fadw-dashboard`, one segment): the router answers them, no
+slug lookup happens.
 
 ## Running it
 
@@ -841,6 +912,39 @@ yarn install   # also installs the git hooks (lefthook) through postinstall
 cp .env.example .env.development && cp .env.example .env.local   # then fill in the real values
 yarn dev       # http://localhost:3000, or PORT=3101 yarn dev
 ```
+
+## ADW
+
+This repository can be worked by the [ADW toolkit](https://github.com/SBub/adw-toolkit): a
+GitHub issue goes in, and a plan, an implementation, a test run, a review and a pull request
+against `develop` come out, each run in its own git worktree under `trees/<adw_id>/` on its own
+port. The toolkit is never committed here; it is symlinked in from its own checkout.
+
+The one way onto the queue is the GitHub label `adw:queued` on an issue. The webhook trigger (or
+the runner's offline sweep) puts the issue in the queue, and `uv run adws/adw_queue.py run --apply`
+works it one issue at a time, merging each pull request before the next starts; see the
+toolkit's `adws/QUEUE.md`. GitHub access is whatever `gh auth login` provides; no personal access
+token is configured.
+
+What the toolkit reads here:
+
+- `.adw/project.md`, the committed ADW profile: how to install, build and test this app, which
+  port it runs on, what is protected, and where plans (`specs/`) and documentation (this file and
+  `AGENTS.md`) go. Its nine headings are a contract with the toolkit's slash commands.
+- `.env.development`, which carries the toolkit's keys (`CLAUDE_CODE_PATH`, `ADW_PROJECT_ROOT`,
+  `ADW_BASE_BRANCH`, `ADW_UI_DISPLAY_NAME`; see `.env.example`) next to the app's own.
+- `.mcp.json` and `playwright-mcp-config.json`, the Playwright MCP server the review phase
+  screenshots the app with. Every Claude invocation runs with `--strict-mcp-config`, so only servers
+  declared there reach a run.
+
+One-time setup in a checkout, after cloning the toolkit beside this repository:
+
+```sh
+ln -s /path/to/adw-toolkit/adws adws
+mkdir -p .claude && ln -s /path/to/adw-toolkit/commands .claude/commands
+```
+
+`adws`, `.claude`, `agents/`, `trees/` and `.ports.env` are gitignored.
 
 ## Scripts
 
