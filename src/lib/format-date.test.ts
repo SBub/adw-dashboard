@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTimestamp } from "./format-date";
+import { formatDay, formatTimestamp } from "./format-date";
 
 // The module under test never reads the clock and uses only UTC getters, so
 // nothing here depends on when or in which time zone the suite runs.
@@ -26,5 +26,19 @@ describe("formatTimestamp", () => {
 
   it("returns an unparseable input unchanged", () => {
     expect(formatTimestamp("not a date")).toBe("not a date");
+  });
+});
+
+describe("formatDay", () => {
+  it("formats a calendar date as DD.MM.YYYY", () => {
+    expect(formatDay("2026-10-05")).toBe("05.10.2026");
+  });
+
+  it("keeps the day whatever the runtime time zone (date-only input is UTC)", () => {
+    expect(formatDay("2026-01-01")).toBe("01.01.2026");
+  });
+
+  it("returns an unparseable input unchanged", () => {
+    expect(formatDay("someday")).toBe("someday");
   });
 });

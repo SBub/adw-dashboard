@@ -23,10 +23,10 @@ projects. One two-pane screen:
   "Runs: active and history" below). `/` shows an empty "Select a project"
   panel; `/projects/<owner>/<repo>` selects a project and is the deep link.
 
-Beside it, a read-only Skills section: `/skills` lists the owner's Claude Code
-skills (kept in `skills/<name>/SKILL.md` in this repository) and
-`/skills/<name>` renders one. The header's "Projects" and "Skills" links switch
-between the two (see "Skills" below).
+Beside it, a second section, `/summary`, shows finished runs per UTC day
+across projects: issue classes, median duration, tokens and cost (see
+"Summary" below). The header's "Projects" and "Summary" links switch between
+them.
 
 ## Data: projects and runs from the database
 
@@ -461,8 +461,9 @@ When a run completes, three things happen in the browser, in this order:
    action validates the slug with `isProjectSlug` (`src/lib/slug.ts`, the
    pattern `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`) and returns early otherwise;
    for a valid slug it calls `updateTag` on each tag of `historyTags(slug)`
-   (`src/lib/history-tags.ts`: `history:<slug>` and `runs:<slug>`, the same
-   helpers the page's `cacheTag` calls use), and nothing else. The second tag is
+   (`src/lib/history-tags.ts`: `history:<slug>`, `runs:<slug>` and `summary`,
+   the same helpers the pages' `cacheTag` calls use), and nothing else. The
+   third tag is the `/summary` page's scope (see "Summary"). The second tag is
    the Active prefetch scope: on a full regeneration of the page it keeps the
    refresh (and the next visitor) from getting an Active list that still holds
    the finished run. On a resumed prerender it does not reach that scope (see
@@ -506,7 +507,8 @@ that project stays as the cache has it until the lifetime ends or until a
 completion someone does see. The route handler `src/app/api/revalidate/route.ts`
 closes that gap from the database side: the toolkit's database tells the
 dashboard about every history change, watched or not, and the handler drops
-the same two tags the action drops.
+the same three tags the action drops (`history:<slug>`, `runs:<slug>` and
+`summary`).
 
 **The trigger.** The toolkit owns the database, so the trigger lives in the
 toolkit repository (`adw-toolkit`, `supabase/migrations/*_history_webhook.sql`,
@@ -636,6 +638,11 @@ below). They are the only readers of `searchParams` (for
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
+`/summary` is built the same way: its heading and description are the static
+shell, and the report island awaits `searchParams` before its `"use cache"`
+scope (`getSummary`, tag `summary`), so the report is a request-time hole and
+the route is a partial prerender too.
+
 Two islands do not mean two reads. `getHistory` is a `"use cache"` function
 keyed by its arguments, the slug, a plain bookmark object and the search text, with the same
 values in both islands, and the installed Next joins an identical invocation
@@ -707,13 +714,13 @@ Two caveats of the design:
 
 - The server action is a public endpoint: anyone who can reach the site can
   call it with any string. That is why it validates the slug strictly and does
-  nothing but drop two tags; the worst a caller can do is make the next render
-  of one project page read the database once.
+  nothing but drop three tags; the worst a caller can do is make the next
+  render of one project page, and of `/summary`, read the database once.
 - A completion nobody is watching is not moved by the browser. The move is
   triggered by a browser that received the event; if no browser had the
   channel open when the run completed, nothing calls the action. The database
   webhook ("Webhook revalidation" above) covers that case from the server
-  side, dropping the same two tags through the route handler. Until its two
+  side, dropping the same three tags through the route handler. Until its two
   database settings are set, History stays as it was until the cache lifetime
   (`getHistory`'s explicit `cacheLife`: a background refresh once an entry is
   a day old) or until the next completion anyone sees. The Active half has no such gap: the catch-up re-reads it on every
@@ -1095,70 +1102,67 @@ status. That includes a path with one or three segments under `/projects`
 (`/projects/SBub%2Fadw-dashboard`, one segment): the router answers them, no
 slug lookup happens.
 
-`/skills` and `/skills/[name]` (`src/app/skills/`) sit outside the
-`(dashboard)` group: no project sidebar, no project prefetch, no `Providers`
-and no Realtime channel, so the header's connection pill stays at
-`connecting` there. An unknown skill name renders
-`src/app/skills/not-found.tsx`.
+`/summary` (`src/app/summary/`) sits outside the `(dashboard)` group: no
+project sidebar, no project prefetch, no `Providers` and no Realtime channel,
+so the header's connection pill stays at `connecting` there.
 
-## Skills
+## Summary
 
-A library of the owner's Claude Code skills, rendered for reading. Installing
-them, serving them to ADW runs and measuring their use are out of scope.
+`/summary` shows what the toolkit finished per UTC day, newest first: runs
+completed and failed (halted when there are any), the split by issue class as
+an inline-SVG stacked bar with its counts as text, the median run duration,
+and tokens in, tokens out and cost, each as a sum and a median. By default it
+covers 30 days across every public project, with a per-project table under
+each day.
 
-### Format
+**Data.** The toolkit's `adw.daily_summary` view (its migration
+`supabase/migrations/*_run_metrics.sql`) holds one row per project per UTC day
+of `runs.finished_at`, left-joined to `adw.run_metrics`; the token and cost
+medians are over the runs that published metrics and are `n/a` when none did.
+`getDailySummary(days, project)` in `src/data/index.ts` reads the projects, the
+newest `day` in the view and the rows of the window, casts them to
+`DailySummary` (`src/types/adw.ts`), and hands them to `toSummaryReport` in
+`src/lib/daily-summary.ts`, which groups and adds them. Everything that shapes
+the report (the parameters, the window, the totals, the bar's segments, the
+labels) lives in that file, pure and unit-tested. A day is shown as
+`DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and a median duration
+by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
+`durationLabel`); both are pure and read no clock.
 
-One directory per skill under `skills/` at the repository root, each holding a
-`SKILL.md` in the official Claude Code skill format
-(<https://code.claude.com/docs/en/skills>):
+**The window.** "Last 30 days" needs a reference day, and reading the clock
+would be a second clock read in the data layer (the one permitted is
+`getActiveRuns`'s `fetched_at`). So the window ends on the newest day in the
+view for the selection, and the page states it ("30 days to 05.10.2026"). On
+an active installation that is today; on a quiet one it is the last day with a
+finished run.
 
-- YAML frontmatter with exactly these keys: `name`, `description` and the
-  optional `when_to_use`. Nothing else.
-- The frontmatter is a strict YAML subset: one `key: value` per line, the value
-  plain, single-quoted (`''` is one quote) or double-quoted (`\"` and `\\`
-  unescaped). Block scalars, nested maps and lists are rejected.
-- `name` equals the directory name: at most 64 characters, lowercase letters,
-  digits and single hyphens, no leading or trailing hyphen.
-- A non-empty markdown body, written as instructions an agent follows. No links
-  to other repositories at pinned commits; under 200 lines.
+**Medians across projects.** A median cannot be combined from per-project
+medians. In the all-projects view a day's counts and sums are added; a median
+is shown only when exactly one project contributed that day (it is then that
+project's exact value), and reads `per project` otherwise, where the table
+below carries each project's exact medians. With a project selected every
+median is exact.
 
-### Routes
+**Filters.** A plain GET form, no client state: `?days` (1 to 90, default 30;
+the form offers 7, 30 and 90) and `?project=owner/repo`. Both are normalised
+by `readSummaryDays` and `readSummaryProject` outside the cache scope; an
+invalid value is the default, never an error. A valid slug the publishable key
+cannot see renders a "No public project" panel.
 
-`src/skills/index.ts` is the one reader of `skills/`: `getSkills()` lists the
-directories, parses each `SKILL.md` with `parseSkillFile`
-(`src/lib/skill-frontmatter.ts`) and sorts by name; `getSkill(name)` validates
-the name and looks it up in that list, never building a path from it. The reads
-are synchronous `node:fs` calls with no clock and no database, so `/skills` is
-static and `/skills/[name]` is prerendered for every skill by
-`generateStaticParams` (an empty `skills/` yields the placeholder `_none`,
-because an empty result fails the build under `cacheComponents`; a name outside
-the list resolves at request time behind `loading.tsx`).
-`outputFileTracingIncludes` in `next.config.ts` ships the files with the server
-output.
+**Cache.** `getSummary` in `src/app/summary/page.tsx` is `"use cache"`, tagged
+`summary` (`summaryTag()` in `src/lib/history-tags.ts`; one tag for every
+window and filter) with `cacheLife({ stale: 300, revalidate: 900, expire:
+86400 })`. It is called only from the report island after its `searchParams`
+read, so it is a request-time hole (see "What is prerendered and what is
+not"); there is no `connection()` call, as in History.
 
-The body is rendered on the server by a small hand-written renderer, no
-markdown dependency: `parseMarkdown` (`src/lib/markdown.ts`) turns it into a
-typed tree, and `src/components/Markdown.tsx` maps that tree to React elements,
-so React escapes every text node. It supports headings (`#` to `####`, shifted
-one level down below the page's `h1`), paragraphs, fenced code with a language
-and a `title="..."` caption, flat ordered and unordered lists, blockquotes,
-thematic breaks, code spans, strong, emphasis and links. A link is kept only for
-an `http(s)`, root-relative or `#` href; anything else renders as text.
-
-### Validation
-
-A missing `SKILL.md`, malformed frontmatter, an unknown or duplicate key, a
-missing field, an invalid name or a name that differs from its directory throws
-an error naming the file. The build calls the reader (`/skills` and
-`generateStaticParams`), so a bad skill fails `yarn build`;
-`src/skills/skills.test.ts` runs the same check over every real file on
-`yarn test`.
-
-### Adding a skill
-
-1. Create `skills/<name>/SKILL.md` with the frontmatter and body above.
-2. Run `yarn test` (validates the file).
-3. Run `yarn build` (prerenders `/skills/<name>`).
+**Revalidation.** `historyTags(slug)` includes `summary`, so the
+`revalidateHistory` action and the `/api/revalidate` webhook drop it on every
+completion they handle. Not covered by a tag drop: a run that finishes
+`failed` or `halted` (neither fires the action or the webhook), and tokens and
+cost that the toolkit writes after the completion. The 15-minute `revalidate`
+bounds both. The page is not live: it is outside `(dashboard)`, so no
+Realtime listener refreshes it on screen.
 
 ## Running it
 

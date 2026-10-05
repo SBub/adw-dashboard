@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { durationLabel } from "./run-view";
+import { durationLabel, secondsLabel } from "./run-view";
 
 // The module under test never reads the clock, so nothing here depends on
 // when the suite runs; every case is two fixed timestamps.
@@ -26,5 +26,19 @@ describe("durationLabel", () => {
 
   it("clamps a negative span to zero", () => {
     expect(durationLabel("2026-10-02T12:30:00Z", "2026-10-02T12:00:00Z")).toBe("0m 00s");
+  });
+});
+
+describe("secondsLabel", () => {
+  it("is null for null", () => {
+    expect(secondsLabel(null)).toBeNull();
+  });
+
+  it("drops the fraction of a second under an hour", () => {
+    expect(secondsLabel(780.158333)).toBe("13m 00s");
+  });
+
+  it("switches to hours from one hour up", () => {
+    expect(secondsLabel(3725)).toBe("1h 02m");
   });
 });

@@ -34,3 +34,12 @@ export function durationLabel(startedAt: string, finishedAt: string | null): str
   if (finishedAt === null) return null;
   return formatDuration(Date.parse(finishedAt) - Date.parse(startedAt));
 }
+
+/**
+ * A duration given in seconds (the summary view's median_duration_s) in the
+ * same format as durationLabel, or null for null.
+ */
+export function secondsLabel(seconds: number | null): string | null {
+  if (seconds === null) return null;
+  return formatDuration(seconds * SECOND);
+}
