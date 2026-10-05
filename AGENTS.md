@@ -254,6 +254,16 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `getHistory` keeps its explicit
   `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`; never an
   `expire` under 5 minutes.
+- `experimental.staleTimes.dynamic` in `next.config.ts` (300 seconds) keeps a
+  visited project page's dynamic part in the client router cache. Keep it at
+  or under `getHistory`'s `cacheLife` `stale` (300) and never longer than a
+  few minutes: within the window a page not on screen is not refetched, so
+  the window is the bound on how stale a revisited History can be. Leave
+  `staleTimes.static` at its default (it also moves the `default` cacheLife
+  profile). Any new live section on a cached page must either be patched
+  client-side (React Query and a Realtime reducer, like Active) or be
+  re-rendered by the completion handler's `router.refresh()`; never rely on
+  a navigation to refetch it.
 - Proof rule for anything about revalidation: verify with a database change
   made **after** `yarn build` (a test row inserted, a run completing), call
   the action, and look for the change in the next response's HTML. A row that
