@@ -57,8 +57,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   in the UI reads it today; issue #3 needs it as the server snapshot.
 - `durationLabel` in `src/lib/run-view.ts` is pure (two timestamps in, reads no
   clock, `null` while `finished_at` is `null`) and unit-tested in
-  `src/lib/run-view.test.ts` with fixed timestamps. Every change to the label
-  format goes with a test case; do not move label derivation into SQL.
+  `src/lib/run-view.test.ts` with fixed timestamps; `secondsLabel` in the same
+  file formats the summary's `median_duration_s` in the same format through
+  the same helper. Every change to the label format goes with a test case; do
+  not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects`, `getActiveRuns`, `getCompletedRuns` and `getQueue` from
   `@/data` and nothing else for data. Skill content is not data: the skills
@@ -66,7 +68,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   from `@/data`. The fifth export, `getProjectSlug(projectId)`, is
   read only by the `/api/revalidate` route handler (it turns a webhook's
   `project_id` into the slug the tags are keyed by); never call it from a
-  page, a component or a `queryFn`. `getProjects`, `getActiveRuns` and
+  page, a component or a `queryFn`. The sixth, `getDailySummary(days,
+project)`, is called only from the summary page's `getSummary` scope (see
+  "Summary"), never a `queryFn`. `getProjects`, `getActiveRuns` and
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
@@ -89,11 +93,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   query layer (`query-keys.ts`, `query-client.ts`) holds keys and the client
   factory only; it never reads Supabase.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
-  `Run[]` for `runs`, `QueueItem[]` for `queue_items`) in `src/data/index.ts`.
+  `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
+  `daily_summary`) in `src/data/index.ts`.
   Those casts are the only place the shapes are asserted; do not add another
   in a page or component. When touching the `runs` select, keep the column
-  list equal to the fields of `Run`, and `QUEUE_COLUMNS` equal to the fields
-  of `QueueItem`, both in `src/types/adw.ts`.
+  list equal to the fields of `Run`, `QUEUE_COLUMNS` equal to the fields
+  of `QueueItem`, and `DAILY_SUMMARY_COLUMNS` equal to the fields of
+  `DailySummary`, all in `src/types/adw.ts`.
 - `getActiveRuns` is called on the server only from inside `getRunsState`,
   the page's `"use cache"` function: both the page body and `generateMetadata`
   go through it. Do not call `getActiveRuns` directly from a page, layout or
@@ -225,7 +231,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks`,
-  `RunHistoryList`, `SectionNav` and `Markdown` are server components with no state; do not put
+  `RunHistoryList`, `SectionNav`, `Markdown`, `SummaryFilters`,
+  `DailySummaryList`, `ClassDistributionBar` and `ProjectBreakdownTable` are
+  server components with no state; do not put
   `"use client"` on them or give them a filter that needs one. The left and
   right arrows of `HistoryLinks` are plain `next/link` hrefs that
   `HistoryPagination` builds with `historyHref` and passes in with `page` and
@@ -246,7 +254,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
   the input, unit-tested in `src/lib/format-date.test.ts`), called only by
   `Timestamp`, whose `<time>` keeps the ISO value in `dateTime`. The output
-  depends on the input string alone, so server and client markup agree. Do not
+  depends on the input string alone, so server and client markup agree. The
+  summary's calendar days (`YYYY-MM-DD`, no time) are the one other case:
+  `formatDay` in the same file (`DD.MM.YYYY`, same parse and UTC getters,
+  same test file). Do not
   introduce `toLocaleString`, `Intl` or runtime-time-zone formatting, and every
   change to the format goes with a test case.
 - Status colours come only from `STATUS_COLORS` in `src/lib/status-colors.ts`
@@ -380,8 +391,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`, defined nowhere else) and returns early
   otherwise; for a valid slug it calls `updateTag` on each tag of
   `historyTags(slug)` and does nothing else. Do not add a database read or
-  write, a parameter beyond the slug, a return value, or a third tag without
-  deciding what an anonymous caller can do with it. `updateTag`, not
+  write, a parameter beyond the slug, a return value, or a fourth tag without
+  deciding what an anonymous caller can do with it. The third, `summary`, was
+  decided: an anonymous caller can make the next `/summary` render read the
+  database once, nothing else. `updateTag`, not
   `revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
   refresh would be served the old history (see
   `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`).
@@ -391,12 +404,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   refresh (and the next visitor) hydrate an Active list that still holds the
   completed run. Know that on a resumed prerender the tag does not reach that
   scope (it is in the static shell); Realtime, the hydration rule and the
-  catch-up cover Active there. Both tag spellings live in one place,
-  `src/lib/history-tags.ts` (`historyTag`, `runsTag`, and `historyTags`, which
-  returns both): the page's `cacheTag` calls, the action's `updateTag` calls
+  catch-up cover Active there. All three tag spellings live in one place,
+  `src/lib/history-tags.ts` (`historyTag`, `runsTag`, `summaryTag`, and
+  `historyTags`, which returns the three, history first): the pages'
+  `cacheTag` calls, the action's `updateTag` calls
   and the route handler's `revalidateTag` calls all import from it, and
   `src/lib/history-tags.test.ts` pins the strings. Never write
-  `history:`/`runs:` inline anywhere.
+  `history:`/`runs:`/`"summary"` inline anywhere.
 - Hydration after a refresh is safe because React Query only overwrites an
   existing entry when the incoming `dataUpdatedAt` is strictly newer
   (`src/data/hydration.test.ts` pins this against the installed
@@ -434,6 +448,37 @@ app is, how to run it, scripts) lives in `README.md`, not here.
     (`app.settings.dashboard_revalidate_url`, `..._secret`) are the toolkit's
     (`adw-toolkit/supabase`). Changing the payload shape or the header name
     here means changing them there in the same change.
+
+## Summary
+
+- `/summary` lives in `src/app/summary/`, outside `(dashboard)`. `getSummary`
+  is `"use cache"`, tagged `summaryTag()`, with an explicit
+  `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`, and is called
+  only from the `SummaryContent` island after its `await searchParams`, under
+  a `SectionBoundary`; never from the page body or metadata (it would be
+  prerendered into the shell and frozen). No `connection()` call, as in
+  History. One tag for every window and filter; never a per-project or
+  per-window summary tag.
+- `?days` and `?project` are normalised by `readSummaryDays` and
+  `readSummaryProject` outside the scope and never surface an error: an
+  invalid value is the default. An unknown or private project renders a
+  panel, not an error.
+- The window is anchored on the newest `day` in `adw.daily_summary` for the
+  selection, never on a clock read. If a calendar window is ever wanted, the
+  clock rule above must be amended in the same change.
+- Medians across projects are never combined: a day's all-projects median is
+  the one project's exact value or `per project`. Never show a median of
+  medians.
+- Everything that shapes the report lives in `src/lib/daily-summary.ts`
+  (`SUMMARY_DEFAULT_DAYS`, `SUMMARY_MAX_DAYS`, `SUMMARY_DAY_OPTIONS` defined
+  there and nowhere else), pure and tested in
+  `src/lib/daily-summary.test.ts`; every change to it goes with a test case.
+- Charts are inline SVG with their values also as text; no charting library.
+  Class hues match `IssueClassBadge`; completed and failed counts use
+  `STATUS_COLORS`.
+- The summary is not a live section: no React Query entry, no Realtime
+  reducer and no catch-up read touch it. It follows completions only through
+  the `summary` tag in `historyTags(slug)`.
 
 ## Skills
 

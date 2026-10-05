@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyTag, historyTags, runsTag } from "./history-tags";
+import { historyTag, historyTags, runsTag, summaryTag } from "./history-tags";
 
 // The spellings are a contract between the page's cacheTag calls and the two
 // places that expire them (the server action and the route handler). Pinning
@@ -13,10 +13,15 @@ describe("history tags", () => {
     expect(runsTag("SBub/adw-toolkit")).toBe("runs:SBub/adw-toolkit");
   });
 
-  it("returns both tags for a completion, history first", () => {
+  it("spells the summary scope tag as summary", () => {
+    expect(summaryTag()).toBe("summary");
+  });
+
+  it("returns all three tags for a completion, history first", () => {
     expect(historyTags("SBub/adw-toolkit")).toEqual([
       "history:SBub/adw-toolkit",
       "runs:SBub/adw-toolkit",
+      "summary",
     ]);
   });
 });

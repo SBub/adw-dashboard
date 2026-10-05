@@ -23,3 +23,15 @@ export function formatTimestamp(iso: string): string {
   const minutes = pad2(date.getUTCMinutes());
   return `${day}.${month}.${year} ${hours}:${minutes} UTC`;
 }
+
+/**
+ * A calendar date "YYYY-MM-DD" (the summary view's UTC day) as "DD.MM.YYYY",
+ * through the same parse and UTC getters. An unparseable input is returned
+ * unchanged.
+ */
+export function formatDay(day: string): string {
+  const ms = Date.parse(day);
+  if (Number.isNaN(ms)) return day;
+  const date = new Date(ms);
+  return `${pad2(date.getUTCDate())}.${pad2(date.getUTCMonth() + 1)}.${date.getUTCFullYear()}`;
+}

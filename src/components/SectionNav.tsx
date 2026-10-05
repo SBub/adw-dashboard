@@ -6,7 +6,7 @@ import Link from "next/link";
 // params and would make the header stream.
 export function SectionNav() {
   return (
-    <nav aria-label="Sections" className="flex items-center gap-4 text-sm">
+    <nav aria-label="Sections" className="flex items-center gap-3 text-sm sm:gap-4">
       <Link
         href="/"
         className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
@@ -18,6 +18,12 @@ export function SectionNav() {
         className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
       >
         Skills
+      </Link>
+      <Link
+        href="/summary"
+        className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+      >
+        Summary
       </Link>
     </nav>
   );
