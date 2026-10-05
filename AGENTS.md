@@ -63,9 +63,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects`, `getActiveRuns`, `getCompletedRuns` and `getQueue` from
-  `@/data` and nothing else for data. Skill content is not data: the skills
-  pages import `getSkills` and `getSkill` from `@/skills` (see "Skills"), never
-  from `@/data`. The fifth export, `getProjectSlug(projectId)`, is
+  `@/data` and nothing else for data. The fifth export, `getProjectSlug(projectId)`, is
   read only by the `/api/revalidate` route handler (it turns a webhook's
   `project_id` into the slug the tags are keyed by); never call it from a
   page, a component or a `queryFn`. The sixth, `getDailySummary(days,
@@ -231,7 +229,7 @@ project)`, is called only from the summary page's `getSummary` scope (see
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks`,
-  `RunHistoryList`, `SectionNav`, `Markdown`, `SummaryFilters`,
+  `RunHistoryList`, `SectionNav`, `SummaryFilters`,
   `DailySummaryList`, `ClassDistributionBar` and `ProjectBreakdownTable` are
   server components with no state; do not put
   `"use client"` on them or give them a filter that needs one. The left and
@@ -479,28 +477,6 @@ project)`, is called only from the summary page's `getSummary` scope (see
 - The summary is not a live section: no React Query entry, no Realtime
   reducer and no catch-up read touch it. It follows completions only through
   the `summary` tag in `historyTags(slug)`.
-
-## Skills
-
-- Skills follow the official Claude Code skill format only: `skills/<name>/SKILL.md`,
-  frontmatter with `name`, `description` and the optional `when_to_use` and
-  nothing else, `name` equal to the directory, a markdown body. No links to
-  other repositories at pinned commits; each file stays under 200 lines.
-- `src/skills/index.ts` is the one reader of `skills/`. It reads
-  synchronously (an awaited `fs/promises` read is request-time IO under
-  `cacheComponents`), and a bad file throws and fails the build: no skip, no
-  fallback. `getSkill` validates its argument with `isSkillName` and looks it
-  up in `getSkills()`; it never builds a path from it.
-- The renderer is `parseMarkdown` in `src/lib/markdown.ts` plus the
-  `Markdown` server component. Server-side and hand-written: no client
-  markdown library, no new dependency, no `dangerouslySetInnerHTML`, and no
-  link for an href that is not `http(s)`, root relative or `#`. The page
-  calls `parseMarkdown`; the component only renders the tree.
-- Every change to `parseSkillFile` (`src/lib/skill-frontmatter.ts`) or to the
-  markdown grammar goes with a test case in its colocated test.
-- The skills routes stay under `src/app/skills/`, outside `(dashboard)`, and
-  static. `generateStaticParams` keeps the `_none` placeholder for an empty
-  `skills/` directory.
 
 ## Realtime and Supabase
 
