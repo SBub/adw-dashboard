@@ -174,7 +174,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `ActiveRunsView`, which reads the active runs from the query cache, and
   `ConnectionIndicator`, which subscribes to its store). `RunHistory` is a
   server component with no state; do not put `"use client"` back on it or
-  give it a filter that needs one. `src/lib/run-view.ts` is plain and
+  give it a filter that needs one. Its `Newer` and `Older` links are plain
+  `next/link` hrefs that `HistorySection` builds with `historyHref` and passes
+  in (`null` hides the link); do not decode a bookmark or build a URL in the
+  component. `src/lib/run-view.ts` is plain and
   importable from anywhere.
 - The visible text of every timestamp comes from `formatTimestamp` in
   `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of

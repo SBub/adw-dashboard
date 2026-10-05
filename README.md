@@ -273,8 +273,9 @@ History is rendered below that, by the same page:
    clock read, no React Query. `HistorySection` is an async server component
    that awaits `connection()` (from `next/server`), then the page's
    `searchParams`, decodes `?after` with `readHistoryBookmark`, calls
-   `getHistory`, and renders `<RunHistory runs={...} projectSlug={slug}
-newerHref={...} olderHref={...} />`, wrapped in its own
+   `getHistory`, and renders `RunHistory` with the page's `items`, the slug
+   and the two page links (`newerHref`, `olderHref`, built with
+   `historyHref`, `null` when that page does not exist), wrapped in its own
    `SectionBoundary` (fallback "Loading history...") so Active never waits on
    it and never falls with it: if `getHistory` throws (database down, an RLS
    change), the boundary shows its panel ("Could not load.", "This project's
