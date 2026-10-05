@@ -118,7 +118,7 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 ## Review
 
 - Open at `http://localhost:$PORT`: `/` (project sidebar plus the "Select a project" panel) and
-  `/projects/SBub/issebya-homes-ai-system` (header, Queue section, Active section, History section), or the first
+  `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue section, History section), or the first
   project the sidebar lists if that slug is 404, plus `/skills` (list of skills) and
   `/skills/server-prefetch-with-hydration` (rendered skill). Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.

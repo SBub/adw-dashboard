@@ -12,7 +12,7 @@ import { QueueRow } from "./QueueRow";
  * React Query cache, where the queue_items Realtime listener can update it in
  * place. The page prefetches it under the same key and hydrates it, so the
  * query below is a cache hit on the first render and the server HTML already
- * holds the rows. The page slots it into ActiveRunsView, above Active, under
+ * holds the rows. The page slots it into ActiveRunsView, below Active, under
  * its own HydrationBoundary and QueryBoundary.
  *
  * The heading and its copy come from the page as the `heading` slot, so the

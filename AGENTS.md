@@ -107,12 +107,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `"use cache"` function (untagged: no server writer drops it), awaited
   together with `getRunsState` in one `Promise.all`; `generateMetadata` does
   not call it.
-- The Queue section sits above Active through `ActiveRunsView`'s `queue` slot
+- The Queue section sits below Active through `ActiveRunsView`'s `queue` slot
   prop: the page builds it (its own `HydrationBoundary` around its own
   `QueryBoundary` around `QueueView`) and passes it in, and `ActiveRunsView`
-  renders it between `PageHeader` and the Active section, never in the
-  not-found branch. Do not read the queue inside `ActiveRunsView`, merge it
-  into the runs entry, or share one boundary between the two. The Queue and
+  renders it after the Active section, never in the not-found branch. Do
+  not read the queue inside `ActiveRunsView`, merge it into the runs entry,
+  or share one boundary between the two. The Queue and
   Active headings arrive the same way, as the `heading` slot props of
   `QueueView` and `ActiveRunsView`, and the not-found branch renders neither.
 - Section headings come from `SectionHeading` (`src/components/SectionHeading.tsx`),
