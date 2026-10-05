@@ -26,6 +26,7 @@ export interface Run {
   project_id: string;
   adw_id: string;
   issue_number: number | null;
+  issue_title: string | null;
   issue_class: string | null;
   branch_name: string | null;
   phase: string | null;

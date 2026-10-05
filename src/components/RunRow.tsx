@@ -38,7 +38,8 @@ function Mono({ value }: { value: string | null }) {
  * function of two columns (durationLabel, which is null while finished_at is
  * null, so a running run shows no duration). Nothing here reads the clock:
  * "updated 2m ago", the stale badge and the elapsed time of a running run are
- * removed pending issue #3.
+ * removed pending issue #3. The issue title is a column shown as stored; runs
+ * published before the toolkit started writing it have none and show no title.
  */
 export function RunRow({ run, projectSlug, variant }: RunRowProps) {
   const duration = durationLabel(run.started_at, run.finished_at);
@@ -58,6 +59,11 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
             </a>
           ) : (
             <span className="text-sm text-neutral-400 dark:text-neutral-600">no issue</span>
+          )}
+          {run.issue_title !== null && (
+            <span className="min-w-0 flex-1 basis-40 truncate text-sm" title={run.issue_title}>
+              {run.issue_title}
+            </span>
           )}
           <IssueClassBadge issueClass={run.issue_class} />
           <code className="font-mono text-xs text-neutral-500 dark:text-neutral-400">

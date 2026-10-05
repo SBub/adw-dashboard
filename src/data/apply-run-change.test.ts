@@ -17,6 +17,7 @@ function run(adwId: string, overrides: Partial<Run> = {}): Run {
     project_id: PROJECT,
     adw_id: adwId,
     issue_number: 1,
+    issue_title: null,
     issue_class: "/feature",
     branch_name: `feat/${adwId}`,
     phase: "adw_build_iso",
@@ -160,6 +161,24 @@ describe("applyRunChange", () => {
         phase: "adw_test_iso",
         updated_at: "2026-10-02T10:45:00Z",
       });
+    });
+
+    it("keeps the issue title of an updated run", () => {
+      const title = "Show the issue title on run rows";
+      const current = active([run("aaaa", { issue_title: title }), run("bbbb")]);
+      const next = applyRunChange(
+        current,
+        update(
+          run("aaaa", {
+            issue_title: title,
+            phase: "adw_test_iso",
+            updated_at: "2026-10-02T10:45:00Z",
+          }),
+        ),
+      );
+
+      expect(next.active[0]).toMatchObject({ issue_title: title, phase: "adw_test_iso" });
+      expect(next.active[1]?.issue_title).toBeNull();
     });
 
     it("removes a run that completes", () => {
