@@ -322,21 +322,24 @@ entry per slug:
    `Promise.all`, so the two reads do not waterfall; the not-found decision
    still reads only the runs `data`. The queue gets its own
    `<HydrationBoundary state={queue.state}>` around its own
-   `<QueryBoundary fallback="Loading queue..."><QueueView slug={slug} /></QueryBoundary>`,
+   `<QueryBoundary fallback="Loading queue..."><QueueView slug={slug} heading={queueHeading} /></QueryBoundary>`,
    passed to `ActiveRunsView` as its `queue` slot, which renders it between the
    header and Active: the Queue sits above Active, and a failed queue read shows
    its panel in that slot while the header and Active stay up. It is never
-   rendered in the not-found branch.
+   rendered in the not-found branch. The page builds the Queue and Active
+   headings (`SectionHeading`, with their copy) and passes them in as the
+   `heading` slots of `QueueView` and `ActiveRunsView`, so the headings stay
+   server components inside the two client views.
 
 4. `src/components/ActiveRunsView.tsx` is a client component that reads
    `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"`
    and `refetchOnMount: false` (same two reasons as the sidebar) and renders
-   the header and the Active section (`RunRow`, variant `active`) from the
-   rows as stored; no view model is built and no clock is read. It renders the
+   the header and the Active section (its `heading` slot, then `RunRow`,
+   variant `active`) from the rows as stored; no view model is built and no clock is read. It renders the
    not-found panel for `null` data as a guard only; the server has already
    excluded that case.
    `src/components/QueueView.tsx` is its counterpart for the queue: the same
-   `useSuspenseQuery` options under `queryKeys.queue(slug)`, a `Queue` heading,
+   `useSuspenseQuery` options under `queryKeys.queue(slug)`, its `heading` slot,
    and either the dashed `Nothing queued.` panel or an ordered list of
    `QueueRow` (`src/components/QueueRow.tsx`): the issue number as a GitHub
    link, the title (omitted when `null`), the source and `Queued <time>` (`none`
@@ -356,8 +359,9 @@ History is rendered below that, by the same page:
    `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
    returns `getCompletedRuns(slug, bookmark, q)`: one page of plain rows, no
    clock read, no React Query. The page renders the History heading row
-   itself, statically: the `<h2>History</h2>`, then the `HistorySearchBox`
-   island in a `SectionBoundary` (fallback the same box, disabled; detail
+   itself, statically: a `SectionHeading` whose `<h2>History</h2>`,
+   description and info button sit outside every boundary, and whose
+   `actions` slot holds the `HistorySearchBox` island in a `SectionBoundary` (fallback the same box, disabled; detail
    "Search did not load.") and the `HistoryPagination` island in another
    (fallback `null`, detail "Pagination did not load."). Below the row, the
    `CompletedRuns` island sits in a third `SectionBoundary` (fallback
