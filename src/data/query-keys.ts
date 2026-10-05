@@ -14,8 +14,9 @@ export const queryKeys = {
    */
   allRuns: ["runs"] as const,
   /**
-   * One project's runs, by slug. The slug is part of the hash, so both sides
-   * must join it the same way (`parts.join("/")`, as the page does).
+   * One project's runs, by slug. The slug is part of the hash; the page
+   * assembles it once from the `owner` and `repo` params and every caller
+   * passes it as is.
    */
   runs: (slug: string) => ["runs", slug] as const,
 } as const;

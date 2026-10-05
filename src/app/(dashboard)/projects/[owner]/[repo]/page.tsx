@@ -18,18 +18,29 @@ import {
 } from "@/lib/history-bookmark";
 import { historyTag, runsTag } from "@/lib/history-tags";
 
-// Project slugs contain a slash ("owner/repo"), so this is a catch-all
-// segment: /projects/SBub/adw-toolkit arrives as ["SBub", "adw-toolkit"] and
-// is joined back into the slug the data layer knows.
+// A project slug is exactly "owner/repo", so the route has two named
+// segments: /projects/SBub/adw-toolkit arrives as
+// { owner: "SBub", repo: "adw-toolkit" }. The page assembles the slug once
+// (projectSlug below) and everything below it takes the slug.
 interface ProjectPageProps {
-  params: Promise<{ slug: string[] }>;
+  params: Promise<ProjectParams>;
   searchParams: Promise<SearchParams>;
+}
+
+interface ProjectParams {
+  owner: string;
+  repo: string;
 }
 
 type SearchParams = { [key: string]: string | string[] | undefined };
 
-// Pre-render one page per known project at build time. A catch-all segment
-// takes an array per param, so each slug is split back into its parts.
+// The one place the slug is joined from the route's two params.
+function projectSlug({ owner, repo }: ProjectParams) {
+  return `${owner}/${repo}`;
+}
+
+// Pre-render one page per known project at build time. Each slug is split at
+// its one slash into the route's two named params, owner and repo.
 // Slugs not in this list are still served: cacheComponents is on in
 // next.config.ts, so Next prerenders a static shell up to the segment's
 // loading.tsx boundary and resolves params on request, and an unknown project
@@ -43,11 +54,16 @@ export async function generateStaticParams() {
   // Under cacheComponents an empty array here is not "prerender nothing": the
   // build errors out, because it has no params to prerender the segment with.
   // An empty database (or a database with no public project yet) must still
-  // build, so hand it one placeholder slug. "_/none" is no real owner/repo;
-  // getActiveRuns returns null for it and the page falls through to
-  // notFound() at request time, exactly like any other unknown slug.
-  if (projects.length === 0) return [{ slug: ["_", "none"] }];
-  return projects.map((project) => ({ slug: project.slug.split("/") }));
+  // build, so hand it one placeholder pair. owner "_" and repo "none" are no
+  // real project; getActiveRuns returns null for "_/none" and the page falls
+  // through to notFound() at request time, exactly like any other unknown slug.
+  if (projects.length === 0) return [{ owner: "_", repo: "none" }];
+  // A slug from the database always has exactly one slash (the toolkit's
+  // owner/repo).
+  return projects.map((project) => {
+    const i = project.slug.indexOf("/");
+    return { owner: project.slug.slice(0, i), repo: project.slug.slice(i + 1) };
+  });
 }
 
 // Reads the project through the same cached state function as the page body,
@@ -56,8 +72,7 @@ export async function generateStaticParams() {
 // fetched_at with the current time, which is only allowed inside a "use cache"
 // scope during the prerender.
 export async function generateMetadata({ params }: ProjectPageProps): Promise<Metadata> {
-  const { slug } = await params;
-  const { data } = await getRunsState(slug.join("/"));
+  const { data } = await getRunsState(projectSlug(await params));
   return { title: data ? `${data.project.display_name} | ADW Dashboard` : "Not found" };
 }
 
@@ -200,8 +215,7 @@ async function CompletedRuns({ slug, searchParams }: HistoryIslandProps) {
 // searchParams is handed to HistoryPagination and CompletedRuns unawaited:
 // only those request-time holes read it.
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
-  const { slug: parts } = await params;
-  const slug = parts.join("/");
+  const slug = projectSlug(await params);
 
   const { data, state } = await getRunsState(slug);
 

@@ -7,7 +7,12 @@ describe("isProjectPath", () => {
   });
 
   it("matches the percent-encoded spelling Next decodes to the same slug", () => {
-    expect(isProjectPath("/projects/SBub%2Fadw-toolkit", "SBub/adw-toolkit")).toBe(true);
+    expect(isProjectPath("/projects/SBub/adw%2Dtoolkit", "SBub/adw-toolkit")).toBe(true);
+  });
+
+  it("matches /projects/<owner>/<repo> and not a three-segment path", () => {
+    expect(isProjectPath("/projects/SBub/adw-dashboard", "SBub/adw-dashboard")).toBe(true);
+    expect(isProjectPath("/projects/SBub/adw-dashboard/extra", "SBub/adw-dashboard")).toBe(false);
   });
 
   it("is false for another project's page", () => {

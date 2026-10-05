@@ -91,10 +91,17 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `"use cache"` function, tagged `historyTag(slug)`; that tag is the contract
   with the `revalidateHistory` action and the `/api/revalidate` route handler,
   and all three take the spelling from `src/lib/history-tags.ts`.
-- `generateStaticParams` in `src/app/(dashboard)/projects/[...slug]/page.tsx`
+- The project route is `projects/[owner]/[repo]`. The slug is assembled from
+  `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
+  file splits or joins it, and everything below the page (data boundary,
+  `queryKeys.runs(slug)`, `runsTag`/`historyTag`, the bookmark,
+  `revalidateHistory`) takes the slug as is. `generateStaticParams` in the
+  same file is the one place that splits a slug, into the two params. URLs
+  never carry the project id. Do not reintroduce a catch-all segment.
+- `generateStaticParams` in `src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`
   must never return an empty array. Under `cacheComponents` an empty result
   fails the build (nothing to prerender the segment with), so the empty-list
-  branch returns the placeholder `{ slug: ["_", "none"] }`, which the page
+  branch returns the placeholder `{ owner: "_", repo: "none" }`, which the page
   turns into `notFound()` at request time. Keep that guard when touching the
   function.
 - `getProjects()` runs at build time (layout prefetch and
@@ -110,8 +117,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   and in every `setQueryData` the Realtime listeners do. Never build a key inline and never
   add a key literal elsewhere: a key that differs by one element is a cache
   miss, which means a second fetch in the browser. The slug is part of the runs
-  key's hash, so join it the same way on both sides (`parts.join("/")`, as the
-  page does).
+  key's hash; the slug is assembled once in the page; pass it as is.
 - `makeQueryClient()` in `src/data/query-client.ts` is the one `QueryClient`
   factory. Every server prefetch and `Providers` build from it; do not call
   `new QueryClient()` anywhere else, or the dehydrate rule drifts between sides.
@@ -274,8 +280,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `src/lib/project-route.ts`; do not switch `Providers` to `usePathname()`,
   which would subscribe the whole tree to navigation and re-render it on
   every route change. `isProjectPath` decodes the pathname before comparing
-  (Next decodes route params, so a percent-encoded slug renders the same
-  page) and answers false for a malformed sequence; keep it pure and tested
+  (Next decodes route params, so a percent-encoded character in a segment
+  renders the same page) and answers false for a malformed sequence; keep it pure and tested
   in `src/lib/project-route.test.ts`.
 - `src/app/actions/revalidate-history.ts` is a public endpoint. It validates
   the slug with `isProjectSlug` from `src/lib/slug.ts` (the pattern
