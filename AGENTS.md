@@ -231,6 +231,15 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   depends on the input string alone, so server and client markup agree. Do not
   introduce `toLocaleString`, `Intl` or runtime-time-zone formatting, and every
   change to the format goes with a test case.
+- Status colours come only from `STATUS_COLORS` in `src/lib/status-colors.ts`
+  (queued amber, running emerald with the pulse dot, completed sky, failed
+  rose, `neutral` for zeros), written as full literal class strings so
+  Tailwind sees them; never interpolate a hue name. No component writes an
+  `emerald`, `amber`, `sky`, `rose` or `red` class inline;
+  `src/lib/status-colors.test.ts` scans `src/` and fails on one. The
+  connection pill in `ConnectionIndicator` is the one exemption (it describes
+  the socket, not a run). Issue class badges are not states and use hues
+  outside the palette.
 - The connection status in `src/components/ConnectionIndicator.tsx` is written
   only through its exported `setConnectionStatus`, with a `ConnectionStatus`
   enum member, never a bare string. Do not export the `status` variable, add a

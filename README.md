@@ -8,6 +8,10 @@ projects. One two-pane screen:
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
+  Every run and queue state has one colour wherever it appears (queued
+  amber, running emerald with a pulsing dot, completed sky, failed rose, a
+  zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
+  the header's connection pill keeps its own colours.
 - The right pane shows the selected project's queue and runs: a Queue
   section for the issues waiting in the project's queue ledger, in the order
   they will run, then an Active section for
@@ -30,7 +34,7 @@ is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
 rows change. The view also carries `queued`, the number of issues waiting in
 the project's queue ledger (the toolkit's), shown in the sidebar as the first
-count and emphasised when above zero. It moves live with the queue listener
+count and in bold amber when above zero (no pulse dot: that marks running). It moves live with the queue listener
 (see "Event to cache" below) and is corrected by a page load or the realtime
 catch-up.
 
@@ -338,6 +342,8 @@ entry per slug:
    plus a visible hint that removing the label does not remove the item, since
    a manually queued item is not taken out by unlabelling the issue; anything
    else, or `null`, renders no badge).
+   Every row ends with the amber `queued` `StatusBadge`, the same component
+   and colour map as a run row's status.
 
 History is rendered below that, by the same page:
 
