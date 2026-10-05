@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
   // Next 16 otherwise writes its own AGENTS.md and CLAUDE.md on every `next
   // dev`. This repo keeps those files by hand; see AGENTS.md.
   agentRules: false,
+  // Ship skills/ with the server output. The skills reader builds its paths
+  // from process.cwd(), which file tracing cannot follow, and a name outside
+  // generateStaticParams is read at request time.
+  outputFileTracingIncludes: {
+    "/skills": ["./skills/**/*"],
+    "/skills/[name]": ["./skills/**/*"],
+  },
   // Keep a visited project page's dynamic part in the client router cache
   // for five minutes. The History islands are request-time holes (they await
   // searchParams), holes are not prefetched, and the router cache keeps

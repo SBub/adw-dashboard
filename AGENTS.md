@@ -61,7 +61,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   format goes with a test case; do not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
   `getProjects`, `getActiveRuns`, `getCompletedRuns` and `getQueue` from
-  `@/data` and nothing else for data. The fifth export, `getProjectSlug(projectId)`, is
+  `@/data` and nothing else for data. Skill content is not data: the skills
+  pages import `getSkills` and `getSkill` from `@/skills` (see "Skills"), never
+  from `@/data`. The fifth export, `getProjectSlug(projectId)`, is
   read only by the `/api/revalidate` route handler (it turns a webhook's
   `project_id` into the slug the tags are keyed by); never call it from a
   page, a component or a `queryFn`. `getProjects`, `getActiveRuns` and
@@ -222,8 +224,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `ConnectionIndicator`, which subscribes to its store, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
-  `HistoryResults` share). `HistoryLinks` and
-  `RunHistoryList` are server components with no state; do not put
+  `HistoryResults` share). `HistoryLinks`,
+  `RunHistoryList`, `SectionNav` and `Markdown` are server components with no state; do not put
   `"use client"` on them or give them a filter that needs one. The left and
   right arrows of `HistoryLinks` are plain `next/link` hrefs that
   `HistoryPagination` builds with `historyHref` and passes in with `page` and
@@ -432,6 +434,28 @@ app is, how to run it, scripts) lives in `README.md`, not here.
     (`app.settings.dashboard_revalidate_url`, `..._secret`) are the toolkit's
     (`adw-toolkit/supabase`). Changing the payload shape or the header name
     here means changing them there in the same change.
+
+## Skills
+
+- Skills follow the official Claude Code skill format only: `skills/<name>/SKILL.md`,
+  frontmatter with `name`, `description` and the optional `when_to_use` and
+  nothing else, `name` equal to the directory, a markdown body. No links to
+  other repositories at pinned commits; each file stays under 200 lines.
+- `src/skills/index.ts` is the one reader of `skills/`. It reads
+  synchronously (an awaited `fs/promises` read is request-time IO under
+  `cacheComponents`), and a bad file throws and fails the build: no skip, no
+  fallback. `getSkill` validates its argument with `isSkillName` and looks it
+  up in `getSkills()`; it never builds a path from it.
+- The renderer is `parseMarkdown` in `src/lib/markdown.ts` plus the
+  `Markdown` server component. Server-side and hand-written: no client
+  markdown library, no new dependency, no `dangerouslySetInnerHTML`, and no
+  link for an href that is not `http(s)`, root relative or `#`. The page
+  calls `parseMarkdown`; the component only renders the tree.
+- Every change to `parseSkillFile` (`src/lib/skill-frontmatter.ts`) or to the
+  markdown grammar goes with a test case in its colocated test.
+- The skills routes stay under `src/app/skills/`, outside `(dashboard)`, and
+  static. `generateStaticParams` keeps the `_none` placeholder for an empty
+  `skills/` directory.
 
 ## Realtime and Supabase
 
