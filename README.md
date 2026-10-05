@@ -503,7 +503,9 @@ heading, which the page renders outside any boundary. The two History islands
 awaits `searchParams` before `getHistory`, a request-time read that stops
 prerendering at the island's own `SectionBoundary`, so the shell carries
 nothing in the pagination slot and "Loading history..." for the list, and both
-stream in on each request. They are the only readers of `searchParams` (for
+stream in on each server request (a client navigation back to a page seen
+within the last five minutes makes no request; see "Client router cache"
+below). They are the only readers of `searchParams` (for
 `?after`), and there is no `connection()` call (it would be a redundant second
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
@@ -616,6 +618,26 @@ on the lazy module reference and completes the boundary once the chunk is in.
 What would be a problem is the rows missing from the document altogether,
 which is what a clock read in a client component during the prerender
 produces.
+
+#### Client router cache
+
+`experimental.staleTimes.dynamic` is 300 seconds in `next.config.ts`. Holes
+are not prefetched, and the router cache would otherwise keep dynamic content
+for 0 seconds, so every sidebar navigation would make an RSC request for the
+page's dynamic part and flash "Loading history...". With the window, a project
+page visited within it is rendered from the client router cache on a sidebar
+navigation, with no RSC request and no History fallback; after the window, the
+next navigation refetches the dynamic part. Two paths keep it correct. For the
+project on screen, the completion handler calls `revalidateHistory` and then
+`router.refresh()`, which re-renders the route from the server; the action's
+`updateTag` also clears the whole client cache (installed `cacheLife.md`,
+"Client cache behavior"), so in a tab with the channel open any completion
+empties it. For a project not on screen, the refetch after the window reads a
+server cache already dropped by tag (action or webhook). The residual case: a
+completion this tab received no event for (channel down at that moment; the
+catch-up re-reads Active only) can leave a revisited page's History up to
+five minutes old. `staleTimes.static` stays at its default, since it also sets
+the `default` cacheLife profile's `stale`.
 
 ### QueryBoundary
 
