@@ -10,6 +10,7 @@ import { QueryBoundary } from "@/components/QueryBoundary";
 import { QueueView } from "@/components/QueueView";
 import { RunHistoryList } from "@/components/RunHistoryList";
 import { SectionBoundary } from "@/components/SectionBoundary";
+import { SectionHeading } from "@/components/SectionHeading";
 import { getActiveRuns, getCompletedRuns, getProjects, getQueue } from "@/data";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
@@ -168,7 +169,7 @@ async function getHistory(
 // (HistorySearchBox), the arrows and the page indicator (HistoryPagination) and the list
 // (CompletedRuns), each under its own SectionBoundary (Suspense plus an error
 // boundary) so the Active half above never waits on them and never falls with
-// them. The History heading is not part of any: it sits in the page, above
+// them. The History heading (SectionHeading) is not part of any: it sits in the page, beside and above
 // the boundaries, in the static shell.
 //
 // The search box island is a hole only for its initial text (the normalised
@@ -279,6 +280,32 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   // streams in as a soft 404 (the body says not found, the status does not).
   if (data === null) notFound();
 
+  // The section copy lives here, next to the sections. The Queue and Active
+  // headings are slotted into their client views, so every heading stays a
+  // server component; History's is rendered below, in the static shell.
+  const queueHeading = (
+    <SectionHeading
+      title="Queue"
+      description={
+        <>
+          Issues waiting for their turn. An issue joins when its repository labels it{" "}
+          <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
+            adw:queued
+          </code>
+          ; removing the label withdraws it. Runs start one at a time per project, in this order.
+        </>
+      }
+      detail="Items added by hand show a manual marker; those stay until removed by hand."
+    />
+  );
+  const activeHeading = (
+    <SectionHeading
+      title="Active"
+      description="Runs in progress, and runs that failed and can be resumed. Each run plans, builds, tests, reviews and documents a change, then opens a pull request. The row updates live as phases complete."
+      detail="A failed run keeps its branch and can be resumed from the phase that failed, which is why it stays here rather than in history."
+    />
+  );
+
   // The queue's own entry, under its own boundaries, slotted into
   // ActiveRunsView between the header and Active: a failed queue read shows
   // its panel in this slot while the header and Active stay up.
@@ -290,7 +317,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
         }
         detail="This project's queue did not load."
       >
-        <QueueView slug={slug} />
+        <QueueView slug={slug} heading={queueHeading} />
       </QueryBoundary>
     </HydrationBoundary>
   );
@@ -315,13 +342,15 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           }
           detail="This project's runs did not load."
         >
-          <ActiveRunsView slug={slug} queue={queueSection} />
+          <ActiveRunsView slug={slug} queue={queueSection} heading={activeHeading} />
         </QueryBoundary>
       </HydrationBoundary>
 
       {/* Server-rendered, not hydrated: no query, so not a QueryBoundary but a
           SectionBoundary, whose Retry refreshes the route instead of resetting
-          a query. The heading is static and in the prerendered shell. Each
+          a query. The heading (SectionHeading, with the search and pagination
+          boundaries in its actions slot) is static and in the prerendered
+          shell, outside every boundary. Each
           island awaits searchParams, so the Suspense inside its boundary is a
           real streaming boundary: the shell carries the fallback (nothing for
           the links, a loading line for the list) and the island streams in at
@@ -338,15 +367,21 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           of falling back to its loading line. */}
       <HistoryTransition>
         <section>
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-4">
-            <h2 className="text-lg font-semibold">History</h2>
-            <SectionBoundary fallback={<HistorySearchFallback />} detail="Search did not load.">
-              <HistorySearchBox slug={slug} searchParams={searchParams} />
-            </SectionBoundary>
-            <SectionBoundary fallback={null} detail="Pagination did not load.">
-              <HistoryPagination slug={slug} searchParams={searchParams} />
-            </SectionBoundary>
-          </div>
+          <SectionHeading
+            title="History"
+            description="Completed runs, newest first. A run completes when its pull request was merged by the merge gate: tests green, review without blockers, CI green."
+            detail="Completed runs never change, so this list is cached and only refreshed when a new run completes."
+            actions={
+              <>
+                <SectionBoundary fallback={<HistorySearchFallback />} detail="Search did not load.">
+                  <HistorySearchBox slug={slug} searchParams={searchParams} />
+                </SectionBoundary>
+                <SectionBoundary fallback={null} detail="Pagination did not load.">
+                  <HistoryPagination slug={slug} searchParams={searchParams} />
+                </SectionBoundary>
+              </>
+            }
+          />
           <HistoryResults>
             <SectionBoundary
               fallback={

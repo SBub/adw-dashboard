@@ -1,6 +1,7 @@
 "use client";
 
 import { useSuspenseQuery } from "@tanstack/react-query";
+import type { ReactNode } from "react";
 import { getQueue } from "@/data";
 import { queryKeys } from "@/data/query-keys";
 import { QueueRow } from "./QueueRow";
@@ -13,8 +14,11 @@ import { QueueRow } from "./QueueRow";
  * query below is a cache hit on the first render and the server HTML already
  * holds the rows. The page slots it into ActiveRunsView, above Active, under
  * its own HydrationBoundary and QueryBoundary.
+ *
+ * The heading and its copy come from the page as the `heading` slot, so the
+ * copy sits next to the sections and the heading stays a server component.
  */
-export function QueueView({ slug }: { slug: string }) {
+export function QueueView({ slug, heading }: { slug: string; heading: ReactNode }) {
   const { data: items } = useSuspenseQuery({
     // The same key builder the page prefetched under. Never build it inline.
     queryKey: queryKeys.queue(slug),
@@ -32,7 +36,7 @@ export function QueueView({ slug }: { slug: string }) {
 
   return (
     <section className="mb-10">
-      <h2 className="mb-3 text-lg font-semibold">Queue</h2>
+      {heading}
       {items.length === 0 ? (
         <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
           Nothing queued.
