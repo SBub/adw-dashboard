@@ -200,10 +200,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   Do not move failed runs into History or add a status toggle to it.
 - History is server-rendered and never enters the React Query cache. It is
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
-  `cacheTag(\`history:${slug}\`)`) and rendered by the page's two async
-islands, `HistoryPagination`and`CompletedRuns`, each under its own
-`SectionBoundary`. No `queryKeys`entry, no`useSuspenseQuery`, no
-`setQueryData`, no realtime reducer and no catch-up read may touch completed
+  ``cacheTag(`history:${slug}`)``) and rendered by the page's two async
+  islands, `HistoryPagination` and `CompletedRuns`, each under its own
+  `SectionBoundary`. No `queryKeys` entry, no `useSuspenseQuery`, no
+  `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
 - Any `"use cache"` scope that must reflect on-demand revalidation on a
