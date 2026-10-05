@@ -275,6 +275,10 @@ at all. The page renders it on the server inside a `"use cache"` scope tagged
 `history:<slug>`; no realtime event touches it and the catch-up never reads it.
 It changes only when the server is told to re-render it.
 
+Each section's heading, one-line description and info-button detail are
+rendered by `SectionHeading`, and the copy lives in the project page
+(`src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`) next to the sections.
+
 Each run row shows the issue title (`adw.runs.issue_title`, published by the
 toolkit) after the issue number, on one line truncated with an ellipsis; runs
 published before the toolkit wrote it have no title and show the number alone.

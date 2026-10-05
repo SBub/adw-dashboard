@@ -110,7 +110,20 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `QueryBoundary` around `QueueView`) and passes it in, and `ActiveRunsView`
   renders it between `PageHeader` and the Active section, never in the
   not-found branch. Do not read the queue inside `ActiveRunsView`, merge it
-  into the runs entry, or share one boundary between the two.
+  into the runs entry, or share one boundary between the two. The Queue and
+  Active headings arrive the same way, as the `heading` slot props of
+  `QueueView` and `ActiveRunsView`, and the not-found branch renders neither.
+- Section headings come from `SectionHeading` (`src/components/SectionHeading.tsx`),
+  a server component with no state: title, an always-visible muted
+  description, and an optional detail behind an info button. The detail is
+  CSS-only (group hover and `focus-within`), always in the DOM and referenced
+  by the button's `aria-describedby`, with an id derived from the title. The
+  section copy lives in the page, which builds all three headings and passes
+  Queue's and Active's into `QueueView` and `ActiveRunsView` as `heading`
+  slots; do not import `SectionHeading` into a client component or move the
+  copy into one. History's heading takes the search and pagination
+  boundaries in its `actions` slot, so the `<h2>` stays outside every
+  `SectionBoundary`.
 - The project route is `projects/[owner]/[repo]`. The slug is assembled from
   `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
   file splits or joins it, and everything below the page (data boundary,
