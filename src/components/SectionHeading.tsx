@@ -21,8 +21,11 @@ interface SectionHeadingProps {
  * client markup agree; the titles are unique on the page.
  *
  * `not-sr-only` resets position, width and padding, so the element it toggles
- * carries none of them: the positioned wrapper sits around it (its `pt-2` is
- * the bridge the pointer crosses onto the popover) and the surface inside it.
+ * carries none of them: the positioned wrapper sits around it and the surface
+ * inside it. The wrapper hangs from the bottom of the title row (`top-full`),
+ * and the group stretches to that row's full height (`self-stretch`), so the
+ * hover area runs without a gap from the button through the wrapper's `pt-2`
+ * bridge onto the popover.
  */
 export function SectionHeading({ title, description, detail, actions }: SectionHeadingProps) {
   const detailId = `section-${title.toLowerCase()}-detail`;
@@ -33,7 +36,7 @@ export function SectionHeading({ title, description, detail, actions }: SectionH
         <div className="relative flex items-center gap-2">
           <h2 className="text-lg font-semibold">{title}</h2>
           {detail && (
-            <span className="group inline-flex">
+            <span className="group inline-flex items-center self-stretch">
               <button
                 type="button"
                 aria-label={`About ${title}`}
