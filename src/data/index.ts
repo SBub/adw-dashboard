@@ -19,7 +19,10 @@ import {
   HISTORY_PAGE_SIZE,
   type HistoryBookmark,
   type HistoryPage,
+  historyItems,
   historyKeysetFilter,
+  historyNewerFilter,
+  historyOrderAscending,
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
@@ -172,32 +175,69 @@ export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
 }
 
 /**
- * One page of a project's completed runs, `HISTORY_PAGE_SIZE` at a time in the
- * order `updated_at desc, adw_id desc`, with the cursor of the next (older)
- * page; an empty page for an unknown slug (the page has already decided
- * not-found from getActiveRuns by the time this is called).
+ * A project's completed runs, narrowed by the search text when there is one:
+ * the one filter the History rows read and both of its counts share, so the
+ * page and its "N of M" can never disagree on what is counted.
+ */
+function completedRuns<Columns extends string>(
+  projectId: string,
+  q: string | null,
+  columns: Columns,
+  options?: { count: "exact"; head: true },
+) {
+  const query = getSupabase()
+    .from("runs")
+    .select(columns, options)
+    .eq("project_id", projectId)
+    .eq("status", "completed");
+  return q ? query.or(historySearchFilter(q)) : query;
+}
+
+/** The number of rows a count read reports, or its error thrown as `runs: <message>`. */
+function countOf({ count, error }: { count: number | null; error: { message: string } | null }) {
+  if (error) {
+    throw new Error(`runs: ${error.message}`);
+  }
+  return count ?? 0;
+}
+
+/**
+ * One page of a project's completed runs, at most `HISTORY_PAGE_SIZE` in the
+ * display order `updated_at desc, adw_id desc`, with its position (page N of
+ * M) and the cursors of its two arrows; page 1 of 1 with no rows for an
+ * unknown slug (the page has already decided not-found from getActiveRuns by
+ * the time this is called).
  *
- * Keyset, not offset: `bookmark` is the last row the previous page showed
- * (null for page one), already decoded and validated by the caller outside
- * the cache scope (readHistoryBookmark in src/lib/history-bookmark.ts), and
- * the read returns only rows strictly older than it. A run completing at the
- * head therefore never shifts a later page. adw_id is unique within a project,
- * so the order is total. One row more than a page is fetched so toHistoryPage
- * can tell whether a next page exists.
+ * Keyset in either direction, never an offset: `bookmark` (null for page one)
+ * is already decoded and validated by the caller outside the cache scope
+ * (readHistoryBookmark in src/lib/history-bookmark.ts). An `after` bookmark
+ * reads the rows strictly older than it, newest first; a `before` bookmark the
+ * rows strictly newer, oldest first (historyOrderAscending), which
+ * historyItems reverses for display. A run completing at the head therefore
+ * never shifts a bookmarked page. adw_id is unique within a project, so the
+ * order is total.
+ *
+ * Two counts on the same filter number the page: the total, read alongside
+ * the rows, and the rows strictly newer than the first shown row (or than the
+ * bookmark itself when a bookmarked page is empty), read after them.
+ * toHistoryPage turns the two into the page number, the page count and both
+ * arrows, so no N + 1 row is fetched.
  *
  * `q` is the search text, already normalised by the caller outside the cache
  * scope (readHistoryQuery in src/lib/history-search.ts), or null for no
- * search. It narrows the page through historySearchFilter, never the order,
- * so a search page's cursor is the same keyset bookmark. Its `or` is a second
- * filter parameter next to the keyset's, and PostgREST ANDs the two.
+ * search. It narrows the rows and both counts through historySearchFilter,
+ * never the order, so a search page's cursor is the same keyset bookmark. Its
+ * `or` is a second filter parameter next to the keyset's, and PostgREST ANDs
+ * the two.
  *
  * Server only, and only from inside the page's "use cache" scope for history
- * (tagged history:<slug>, shared by every page). It never enters the React
- * Query cache and reads no clock: there is no fetched_at here, and nothing in
- * it needs the current time. A completed run never changes, so the cached
- * pages are only refilled when the browser asks the server to drop the tag
- * after a completion (revalidateHistory), when the database webhook does, or
- * when the cache lifetime ends.
+ * (tagged history:<slug>, shared by every page), so the counts drop with the
+ * tag together with the rows. It never enters the React Query cache and reads
+ * no clock: there is no fetched_at here, and nothing in it needs the current
+ * time. A completed run never changes, so the cached pages are only refilled
+ * when the browser asks the server to drop the tag after a completion
+ * (revalidateHistory), when the database webhook does, or when the cache
+ * lifetime ends.
  */
 export async function getCompletedRuns(
   slug: string,
@@ -205,25 +245,35 @@ export async function getCompletedRuns(
   q: string | null,
 ): Promise<HistoryPage> {
   const project = await getProjectBySlug(slug);
-  if (project === null) return { items: [], nextCursor: null };
+  if (project === null) return toHistoryPage([], { slug, newer: 0, total: 0 });
 
-  let query = getSupabase()
-    .from("runs")
-    .select(RUN_COLUMNS)
-    .eq("project_id", project.id)
-    .eq("status", "completed");
-  if (bookmark) query = query.or(historyKeysetFilter(bookmark));
-  if (q) query = query.or(historySearchFilter(q));
-  const { data, error } = await query
-    .order("updated_at", { ascending: false })
-    .order("adw_id", { ascending: false })
-    .limit(HISTORY_PAGE_SIZE + 1);
-  if (error) {
-    throw new Error(`runs: ${error.message}`);
+  let rowsQuery = completedRuns(project.id, q, RUN_COLUMNS);
+  if (bookmark) rowsQuery = rowsQuery.or(historyKeysetFilter(bookmark));
+  const ascending = historyOrderAscending(bookmark);
+  const [rows, totalCount] = await Promise.all([
+    rowsQuery
+      .order("updated_at", { ascending })
+      .order("adw_id", { ascending })
+      .limit(HISTORY_PAGE_SIZE),
+    completedRuns(project.id, q, "adw_id", { count: "exact", head: true }),
+  ]);
+  if (rows.error) {
+    throw new Error(`runs: ${rows.error.message}`);
   }
+  const total = countOf(totalCount);
   // The selected columns are exactly the fields of Run, the same cast as in
   // getActiveRuns: the one place the table's shape is asserted.
-  return toHistoryPage((data ?? []) as Run[], slug);
+  const items = historyItems((rows.data ?? []) as Run[], bookmark);
+
+  const anchor = items[0] ?? bookmark;
+  const newer = anchor
+    ? countOf(
+        await completedRuns(project.id, q, "adw_id", { count: "exact", head: true }).or(
+          historyNewerFilter(anchor),
+        ),
+      )
+    : 0;
+  return toHistoryPage(items, { slug, newer, total });
 }
 
 /**

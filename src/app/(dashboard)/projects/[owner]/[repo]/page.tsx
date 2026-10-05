@@ -136,8 +136,9 @@ async function getQueueState(slug: string) {
  *
  * Every page of a project carries the same tag on purpose, never a per-page
  * one: a completion adds a row at the head and so changes what page one
- * holds and whether a later page has an Older link, and one tag drop must
- * reach all of them. The bookmark is a plain serialisable argument, so it is
+ * holds and every page's "N of M" (the two counts are read in this same
+ * scope, next to the rows), and one tag drop must reach all of them. The
+ * bookmark is a plain serialisable argument (its direction included), so it is
  * part of the cache key: one entry per page, all under that tag. The search
  * text q is a plain string (or null), normalised outside the scope, so each
  * search is its own entry too, under the same tag, never a per-query one. The lifetime
@@ -164,7 +165,7 @@ async function getHistory(
 }
 
 // The History half of the pane: three async server components, the search box
-// (HistorySearchBox), the Newer/Older links (HistoryPagination) and the list
+// (HistorySearchBox), the arrows and the page indicator (HistoryPagination) and the list
 // (CompletedRuns), each under its own SectionBoundary (Suspense plus an error
 // boundary) so the Active half above never waits on them and never falls with
 // them. The History heading is not part of any: it sits in the page, above
@@ -172,7 +173,7 @@ async function getHistory(
 //
 // The search box island is a hole only for its initial text (the normalised
 // `?q`); it calls no cache scope. The box itself rewrites the URL, and the two
-// other islands read `q` next to `after`.
+// other islands read `q` next to `after` and `before`.
 //
 // Each island awaits the page's searchParams first. That is a request-time
 // read, so under cacheComponents prerendering stops there and the hole is cut
@@ -196,7 +197,7 @@ async function getHistory(
 // a plain bookmark object with the same values in both), and Next joins an
 // identical invocation within one request instead of running it twice
 // (use-cache-wrapper.js, debug line "joining intra-request invocation" on a
-// ?after page; on page one the second call logs nothing and still reads
+// ?after or ?before page; on page one the second call logs nothing and still reads
 // nothing).
 //
 // The same Resume Data Cache limitation applies to the Active prefetch scope
@@ -208,17 +209,17 @@ async function getHistory(
 // is correct on a full regeneration of the page and on hosts whose cache
 // handler behaves differently.
 //
-// `?after` and `?q` are decoded here, outside the cache scope (an error thrown
-// inside "use cache" loses its class); an invalid or foreign bookmark is page
-// one and an empty or repeated `q` is no search, never an error. readHistory is
-// neither cached nor a boundary function; it only keeps the two islands from
-// repeating the same lines.
+// `?after`, `?before` and `?q` are decoded here, outside the cache scope (an
+// error thrown inside "use cache" loses its class); an invalid, foreign or
+// mismatched-direction bookmark is page one, and an empty or repeated `q` is
+// no search, never an error. readHistory is neither cached nor a boundary
+// function; it only keeps the two islands from repeating the same lines.
 async function readHistory(slug: string, searchParams: Promise<SearchParams>) {
-  const { after, q: rawQuery } = await searchParams;
-  const bookmark = readHistoryBookmark(after, slug);
+  const { after, before, q: rawQuery } = await searchParams;
+  const bookmark = readHistoryBookmark(after, before, slug);
   const q = readHistoryQuery(rawQuery);
   const page = await getHistory(slug, bookmark, q);
-  return { bookmark, q, ...page };
+  return { q, ...page };
 }
 
 interface HistoryIslandProps {
@@ -232,11 +233,16 @@ async function HistorySearchBox({ slug, searchParams }: HistoryIslandProps) {
 }
 
 async function HistoryPagination({ slug, searchParams }: HistoryIslandProps) {
-  const { bookmark, q, nextCursor } = await readHistory(slug, searchParams);
+  const { q, page, pageCount, hasNewer, newerCursor, olderCursor } = await readHistory(
+    slug,
+    searchParams,
+  );
   return (
     <HistoryLinks
-      newerHref={bookmark ? historyHref(slug, null, q) : null}
-      olderHref={nextCursor ? historyHref(slug, nextCursor, q) : null}
+      newerHref={hasNewer ? historyHref(slug, newerCursor, q) : null}
+      olderHref={olderCursor ? historyHref(slug, olderCursor, q) : null}
+      page={page}
+      pageCount={pageCount}
     />
   );
 }
