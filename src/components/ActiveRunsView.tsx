@@ -18,9 +18,9 @@ import { RunRow } from "./RunRow";
  *
  * The Queue section is not read here either. It is a separate cache entry
  * under its own HydrationBoundary and QueryBoundary, built by the page and
- * passed in as the `queue` slot, which is rendered between the header and
- * Active so the queue sits above Active while its loading and error states
- * stay independent of this entry's. The Active heading is a slot too
+ * passed in as the `queue` slot, which is rendered after the Active section
+ * (below the header) so the queue sits below Active while its loading and
+ * error states stay independent of this entry's. The Active heading is a slot too
  * (`heading`): the page builds it with its copy, so the copy sits next to the
  * sections and the heading stays a server component. The not-found branch
  * renders neither slot.
@@ -79,8 +79,6 @@ export function ActiveRunsView({
     <>
       <PageHeader title={project.display_name} subtitle={project.slug} repoUrl={project.repo_url} />
 
-      {queue}
-
       <section className="mb-10">
         {heading}
         {active.length === 0 ? (
@@ -95,6 +93,8 @@ export function ActiveRunsView({
           </ul>
         )}
       </section>
+
+      {queue}
     </>
   );
 }

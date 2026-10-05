@@ -307,7 +307,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   );
 
   // The queue's own entry, under its own boundaries, slotted into
-  // ActiveRunsView between the header and Active: a failed queue read shows
+  // ActiveRunsView after Active: a failed queue read shows
   // its panel in this slot while the header and Active stay up.
   const queueSection = (
     <HydrationBoundary state={queue.state}>

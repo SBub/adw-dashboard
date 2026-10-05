@@ -12,12 +12,11 @@ projects. One two-pane screen:
   amber, running emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
   the header's connection pill keeps its own colours.
-- The right pane shows the selected project's queue and runs: a Queue
-  section for the issues waiting in the project's queue ledger, in the order
-  they will run, then an Active section for
-  live runs, status `running` or `failed` (a failed run can be resumed, so it
-  is still live), with phase, branch and the absolute time of the last update,
-  and a History section for `completed` runs (final phase, timings, duration).
+- The right pane shows the selected project's runs and queue: an Active
+  section for live runs, status `running` or `failed` (a failed run can be
+  resumed, so it is still live), with phase, branch and the absolute time of
+  the last update, then a Queue section for the issues waiting in the
+  project's queue ledger, in the order they will run, and a History section for `completed` runs (final phase, timings, duration).
   Active is a React Query entry patched by Realtime; History is rendered on
   the server from a cache scope and re-rendered when a run completes (see
   "Runs: active and history" below). `/` shows an empty "Select a project"
@@ -328,8 +327,8 @@ entry per slug:
    still reads only the runs `data`. The queue gets its own
    `<HydrationBoundary state={queue.state}>` around its own
    `<QueryBoundary fallback="Loading queue..."><QueueView slug={slug} heading={queueHeading} /></QueryBoundary>`,
-   passed to `ActiveRunsView` as its `queue` slot, which renders it between the
-   header and Active: the Queue sits above Active, and a failed queue read shows
+   passed to `ActiveRunsView` as its `queue` slot, which renders it after the
+   Active section: the Queue sits below Active, and a failed queue read shows
    its panel in that slot while the header and Active stay up. It is never
    rendered in the not-found branch. The page builds the Queue and Active
    headings (`SectionHeading`, with their copy) and passes them in as the
