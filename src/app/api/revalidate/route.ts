@@ -6,12 +6,15 @@
 // trigger on adw.runs (the toolkit's supabase/migrations/*_history_webhook.sql)
 // posts here through pg_net whenever a run becomes completed, stops being
 // completed, or a completed run is deleted, whether or not anyone is watching.
-// It then drops the same two cache tags the action drops, so the project's
-// next render reads the database. See README, "Webhook revalidation".
+// It then drops the same three cache tags the action drops (the project's
+// history and Active scopes, and the summary page's), so the project's next
+// render, and the next render of /summary, read the database. See README,
+// "Webhook revalidation".
 //
 // It does nothing else. No database write, no second read beyond resolving
 // the slug, no other side effect: an authenticated caller can make the next
-// render of one project page read the database once, and that is all.
+// render of one project page and of /summary read the database once, and that
+// is all.
 //
 // Runs on the Node.js runtime, which is the default for route handlers in the
 // installed Next (no `runtime` export is needed for node:crypto).

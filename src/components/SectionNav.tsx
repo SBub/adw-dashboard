@@ -19,6 +19,12 @@ export function SectionNav() {
       >
         Skills
       </Link>
+      <Link
+        href="/summary"
+        className="text-neutral-500 hover:text-neutral-900 dark:text-neutral-400 dark:hover:text-neutral-100"
+      >
+        Summary
+      </Link>
     </nav>
   );
 }

@@ -119,8 +119,10 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 - Open at `http://localhost:$PORT`: `/` (project sidebar plus the "Select a project" panel) and
   `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue section, History section), or the first
-  project the sidebar lists if that slug is 404, plus `/skills` (list of skills) and
-  `/skills/server-prefetch-with-hydration` (rendered skill). Capture each at desktop 1920x1080 and mobile
+  project the sidebar lists if that slug is 404, plus `/skills` (list of skills),
+  `/skills/server-prefetch-with-hydration` (rendered skill), `/summary` (heading, filters, day
+  cards with class bars, per-project tables) and `/summary?project=SBub/issebya-homes-ai-system`
+  (or the first listed project; one row per day, no table). Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
 - The header's connection indicator moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report

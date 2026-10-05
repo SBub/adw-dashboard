@@ -15,6 +15,11 @@
 //   a project shares the one per-project tag, never enters the query cache,
 //   and a completion in the browser asks the server to drop that tag and
 //   re-render. getCompletedRuns.
+//
+// The /summary page reads the adw.daily_summary view (finished runs per
+// project per UTC day) through getDailySummary, server only, from that page's
+// own "use cache" scope; it never enters the query cache either.
+import { summaryWindowStart, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
   type HistoryBookmark,
@@ -26,7 +31,7 @@ import {
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
-import type { ProjectSummary, QueueItem, Run } from "@/types/adw";
+import type { DailySummary, ProjectSummary, QueueItem, Run, SummaryReport } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
 export interface ActiveRuns {
@@ -49,6 +54,10 @@ const RUN_COLUMNS =
 /** The columns of adw.queue_items the screens read, which are exactly the fields of QueueItem. */
 const QUEUE_COLUMNS =
   "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, note, updated_at";
+
+/** The columns of adw.daily_summary the summary page reads, which are exactly the fields of DailySummary. */
+const DAILY_SUMMARY_COLUMNS =
+  "project_id, day, runs, completed, failed, halted, features, bugs, chores, patches, median_duration_s, tokens_in_sum, tokens_in_median, tokens_out_sum, tokens_out_median, cost_usd_sum, cost_usd_median";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -305,4 +314,81 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
   // The selected columns are exactly the fields of QueueItem, so this cast is
   // the one place the table's shape is asserted.
   return (data ?? []) as QueueItem[];
+}
+
+/**
+ * The /summary page's report: the finished runs per UTC day over a window of
+ * `days` days, for every visible project or for one (`project`, a slug), or
+ * null when `project` names no project the publishable key can see.
+ *
+ * The window ends on the newest day in adw.daily_summary for the selection,
+ * not on today: "today" would be a second clock read in the data layer, and
+ * the one permitted is getActiveRuns's fetched_at. On an active installation
+ * the newest day is today anyway; on a quiet one it is the last day with a
+ * finished run, which is the more useful window. The page states the range.
+ *
+ * Three reads: the projects (to name the rows and offer the filter), the
+ * newest day (the anchor), and the view's rows from the window's first day on.
+ * The view runs with security_invoker, so only public projects are seen.
+ * Assembly is toSummaryReport's (src/lib/daily-summary.ts): counts and sums
+ * are added across projects, medians never are.
+ *
+ * Server only, and only from the summary page's "use cache" scope (getSummary,
+ * tagged summary). Never a queryFn, never in the React Query cache. `days` is
+ * already normalised by the caller (readSummaryDays), outside the scope.
+ */
+export async function getDailySummary(
+  days: number,
+  project: string | null = null,
+): Promise<SummaryReport | null> {
+  const listed = await getSupabase()
+    .from("projects")
+    .select("id, slug, display_name")
+    .order("slug", { ascending: true });
+  if (listed.error) {
+    throw new Error(`projects: ${listed.error.message}`);
+  }
+  // Same untyped client as everywhere in this file; the three selected
+  // columns are asserted here, at the boundary.
+  const projects = (listed.data ?? []) as { id: string; slug: string; display_name: string }[];
+
+  const selected = project === null ? null : projects.find((p) => p.slug === project);
+  if (selected === undefined) return null;
+  const filter = selected && { slug: selected.slug, display_name: selected.display_name };
+
+  let anchorQuery = getSupabase()
+    .from("daily_summary")
+    .select("day")
+    .order("day", { ascending: false })
+    .limit(1);
+  if (selected) anchorQuery = anchorQuery.eq("project_id", selected.id);
+  const anchor = await anchorQuery;
+  if (anchor.error) {
+    throw new Error(`daily_summary: ${anchor.error.message}`);
+  }
+  // One selected column, asserted here.
+  const to = ((anchor.data ?? []) as { day: string }[])[0]?.day ?? null;
+  if (to === null) {
+    return toSummaryReport([], projects, { days, project: filter, from: null, to: null });
+  }
+
+  const from = summaryWindowStart(to, days);
+  let rowsQuery = getSupabase()
+    .from("daily_summary")
+    .select(DAILY_SUMMARY_COLUMNS)
+    .gte("day", from)
+    .order("day", { ascending: false });
+  if (selected) rowsQuery = rowsQuery.eq("project_id", selected.id);
+  const rows = await rowsQuery;
+  if (rows.error) {
+    throw new Error(`daily_summary: ${rows.error.message}`);
+  }
+  // The selected columns are exactly the fields of DailySummary, so this cast
+  // is the one place the view's shape is asserted.
+  return toSummaryReport((rows.data ?? []) as DailySummary[], projects, {
+    days,
+    project: filter,
+    from,
+    to,
+  });
 }
