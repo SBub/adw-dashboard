@@ -232,6 +232,9 @@ It changes only when the server is told to re-render it.
 Each run row shows the issue title (`adw.runs.issue_title`, published by the
 toolkit) after the issue number, on one line truncated with an ellipsis; runs
 published before the toolkit wrote it have no title and show the number alone.
+The title keeps a 10rem flex basis, so on a narrow screen the issue class badge
+and the `adw_id` wrap to the next line instead of squeezing the title to a
+single character; the full text is in the span's `title` attribute.
 
 The prefetch and hydration of Active follow the sidebar's pattern, one cache
 entry per slug:
