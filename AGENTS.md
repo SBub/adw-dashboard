@@ -121,9 +121,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   section copy lives in the page, which builds all three headings and passes
   Queue's and Active's into `QueueView` and `ActiveRunsView` as `heading`
   slots; do not import `SectionHeading` into a client component or move the
-  copy into one. History's heading takes the search and pagination
-  boundaries in its `actions` slot, so the `<h2>` stays outside every
-  `SectionBoundary`.
+  copy into one. History's heading takes the search boundary in its
+  `controls` slot and the pagination boundary in its `actions` slot, so the
+  `<h2>` stays outside every `SectionBoundary`. The heading row owns that
+  layout (search next to the title, pagination at the right edge, both
+  independent of the results), so do not put both in one slot or
+  reintroduce `justify-between`.
 - The project route is `projects/[owner]/[repo]`. The slug is assembled from
   `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
   file splits or joins it, and everything below the page (data boundary,

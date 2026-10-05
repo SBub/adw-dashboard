@@ -361,9 +361,12 @@ History is rendered below that, by the same page:
    clock read, no React Query. The page renders the History heading row
    itself, statically: a `SectionHeading` whose `<h2>History</h2>`,
    description and info button sit outside every boundary, and whose
-   `actions` slot holds the `HistorySearchBox` island in a `SectionBoundary` (fallback the same box, disabled; detail
-   "Search did not load.") and the `HistoryPagination` island in another
-   (fallback `null`, detail "Pagination did not load."). Below the row, the
+   `controls` slot holds the `HistorySearchBox` island, right after the
+   title, in a `SectionBoundary` (fallback the same box, disabled; detail
+   "Search did not load."), and whose `actions` slot holds the
+   `HistoryPagination` island in another (fallback `null`, detail
+   "Pagination did not load."), at the right edge of the row and, below
+   `md`, on a second line, right-aligned. Below the row, the
    `CompletedRuns` island sits in a third `SectionBoundary` (fallback
    "Loading history...", detail "This project's history did not load.").
    The islands are async server components in the page file; each awaits the

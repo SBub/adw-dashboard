@@ -348,8 +348,9 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
 
       {/* Server-rendered, not hydrated: no query, so not a QueryBoundary but a
           SectionBoundary, whose Retry refreshes the route instead of resetting
-          a query. The heading (SectionHeading, with the search and pagination
-          boundaries in its actions slot) is static and in the prerendered
+          a query. The heading (SectionHeading, with the search boundary in
+          its controls slot and the pagination boundary in its actions slot)
+          is static and in the prerendered
           shell, outside every boundary. Each
           island awaits searchParams, so the Suspense inside its boundary is a
           real streaming boundary: the shell carries the fallback (nothing for
@@ -371,15 +372,15 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
             title="History"
             description="Completed runs, newest first. A run completes when its pull request was merged by the merge gate: tests green, review without blockers, CI green."
             detail="Completed runs never change, so this list is cached and only refreshed when a new run completes."
+            controls={
+              <SectionBoundary fallback={<HistorySearchFallback />} detail="Search did not load.">
+                <HistorySearchBox slug={slug} searchParams={searchParams} />
+              </SectionBoundary>
+            }
             actions={
-              <>
-                <SectionBoundary fallback={<HistorySearchFallback />} detail="Search did not load.">
-                  <HistorySearchBox slug={slug} searchParams={searchParams} />
-                </SectionBoundary>
-                <SectionBoundary fallback={null} detail="Pagination did not load.">
-                  <HistoryPagination slug={slug} searchParams={searchParams} />
-                </SectionBoundary>
-              </>
+              <SectionBoundary fallback={null} detail="Pagination did not load.">
+                <HistoryPagination slug={slug} searchParams={searchParams} />
+              </SectionBoundary>
             }
           />
           <HistoryResults>

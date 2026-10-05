@@ -6,7 +6,9 @@ interface SectionHeadingProps {
   description: ReactNode;
   /** A longer sentence behind the info button: hover, keyboard focus, screen readers. */
   detail?: string;
-  /** Rendered on the right of the title row (History's search box and pagination). */
+  /** Rendered right after the title and info button, in the left group (History's search box). */
+  controls?: ReactNode;
+  /** Rendered at the right edge of the row; below `md` on its own line, right-aligned (History's pagination). */
   actions?: ReactNode;
 }
 
@@ -26,40 +28,56 @@ interface SectionHeadingProps {
  * and the group stretches to that row's full height (`self-stretch`), so the
  * hover area runs without a gap from the button through the wrapper's `pt-2`
  * bridge onto the popover.
+ *
+ * The row owns the layout: `controls` stays next to the title and `actions`
+ * stays at the right edge, whatever either renders.
  */
-export function SectionHeading({ title, description, detail, actions }: SectionHeadingProps) {
+export function SectionHeading({
+  title,
+  description,
+  detail,
+  controls,
+  actions,
+}: SectionHeadingProps) {
   const detailId = `section-${title.toLowerCase()}-detail`;
 
   return (
     <div className="mb-3">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="relative flex items-center gap-2">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          {detail && (
-            <span className="group inline-flex items-center self-stretch">
-              <button
-                type="button"
-                aria-label={`About ${title}`}
-                aria-describedby={detailId}
-                className="inline-flex size-5 items-center justify-center rounded-full text-neutral-500 hover:text-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 dark:text-neutral-400 dark:hover:text-neutral-100"
-              >
-                <InfoIcon />
-              </button>
-              <span className="absolute top-full left-0 z-10 pt-2">
-                <span
-                  id={detailId}
-                  role="tooltip"
-                  className="sr-only group-focus-within:not-sr-only group-hover:not-sr-only"
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="relative flex items-center gap-2">
+            <h2 className="text-lg font-semibold">{title}</h2>
+            {detail && (
+              <span className="group inline-flex items-center self-stretch">
+                <button
+                  type="button"
+                  aria-label={`About ${title}`}
+                  aria-describedby={detailId}
+                  className="inline-flex size-5 items-center justify-center rounded-full text-neutral-500 hover:text-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500 dark:text-neutral-400 dark:hover:text-neutral-100"
                 >
-                  <span className="block w-72 max-w-[calc(100vw-2rem)] rounded-md border border-neutral-200 bg-white p-3 text-sm font-normal text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
-                    {detail}
+                  <InfoIcon />
+                </button>
+                <span className="absolute top-full left-0 z-10 pt-2">
+                  <span
+                    id={detailId}
+                    role="tooltip"
+                    className="sr-only group-focus-within:not-sr-only group-hover:not-sr-only"
+                  >
+                    <span className="block w-72 max-w-[calc(100vw-2rem)] rounded-md border border-neutral-200 bg-white p-3 text-sm font-normal text-neutral-700 shadow-lg dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-200">
+                      {detail}
+                    </span>
                   </span>
                 </span>
               </span>
-            </span>
-          )}
+            )}
+          </div>
+          {controls}
         </div>
-        {actions}
+        {actions && (
+          <div className="ml-auto flex shrink-0 justify-end empty:hidden max-md:basis-full">
+            {actions}
+          </div>
+        )}
       </div>
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">{description}</p>
     </div>
