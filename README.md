@@ -8,6 +8,10 @@ projects. One two-pane screen:
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
+  Every run and queue state has one colour wherever it appears (queued
+  amber, running emerald with a pulsing dot, completed sky, failed rose, a
+  zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
+  the header's connection pill keeps its own colours.
 - The right pane shows the selected project's queue and runs: a Queue
   section for the issues waiting in the project's queue ledger, in the order
   they will run, then an Active section for

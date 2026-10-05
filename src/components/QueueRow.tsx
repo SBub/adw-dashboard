@@ -1,5 +1,6 @@
 import { queueSource } from "@/lib/queue-source";
 import type { QueueItem } from "@/types/adw";
+import { StatusBadge } from "./StatusBadge";
 import { Timestamp } from "./Timestamp";
 
 interface QueueRowProps {
@@ -15,7 +16,8 @@ const BADGE =
  * One queued item, as stored. The source is parsed from the row's own column
  * by queueSource; everything else is a column. Nothing here reads the clock.
  * A manual item carries a visible hint (a title alone is invisible on touch):
- * removing the issue's label does not take it out of the queue.
+ * removing the issue's label does not take it out of the queue. The queued
+ * badge uses the same colour map as run rows.
  */
 export function QueueRow({ item, projectSlug }: QueueRowProps) {
   const source = queueSource(item.source);
@@ -58,6 +60,7 @@ export function QueueRow({ item, projectSlug }: QueueRowProps) {
             <span className="text-neutral-400 dark:text-neutral-600">none</span>
           )}
         </span>
+        <StatusBadge status="queued" />
       </div>
     </li>
   );
