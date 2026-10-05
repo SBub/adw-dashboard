@@ -61,7 +61,7 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
             <span className="text-sm text-neutral-400 dark:text-neutral-600">no issue</span>
           )}
           {run.issue_title !== null && (
-            <span className="min-w-0 flex-1 basis-0 truncate text-sm" title={run.issue_title}>
+            <span className="min-w-0 flex-1 basis-40 truncate text-sm" title={run.issue_title}>
               {run.issue_title}
             </span>
           )}
