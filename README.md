@@ -776,12 +776,14 @@ a pure function from the cached `ProjectSummary[]` and one
 `RealtimePostgresChangesPayload<Project>` to the next list. INSERT prepends
 the row as a summary with zero counts and `last_run_at: null` (and is a no-op
 if the id is already present); UPDATE merges the row into the matching entry,
-keeping its counts, which are not table columns and so are not in the event;
+keeping its counts (`queued` included), which are not table columns and so
+are not in the event;
 DELETE removes by `ev.old.id`, the only field Supabase guarantees in `old`
 unless the table's replica identity is FULL. It never mutates its input.
 
 It is covered by `src/data/apply-project-change.test.ts` (vitest): the three
-events, a duplicate insert and an update for an unknown id. Run with
+events, a duplicate insert, an update that keeps `queued` and an update for an
+unknown id. Run with
 `yarn test`; `vitest.config.ts` maps the `@/` alias and picks up
 `src/**/*.test.ts`.
 
@@ -817,7 +819,8 @@ covered by `src/data/apply-run-change.test.ts`:
   view's `max(runs.updated_at)`, so INSERT and UPDATE move it forward to
   `ev.new.updated_at` when that is later (compared as instants, since the view
   and the event may format the same moment differently); DELETE never moves it
-  back. The list keeps its order so projects do not jump under the pointer.
+  back. `queued` is not a run status and is never moved by a run event. The
+  list keeps its order so projects do not jump under the pointer.
 
   `oldStatus` is a parameter because the event does not have it: Supabase
   sends `old` with the primary key columns only unless the table's replica
