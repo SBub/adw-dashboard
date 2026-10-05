@@ -6,8 +6,14 @@
 import { REALTIME_SUBSCRIBE_STATES, type RealtimeChannel } from "@supabase/supabase-js";
 import type { QueryClient } from "@tanstack/react-query";
 import { ConnectionStatus, setConnectionStatus } from "@/components/ConnectionIndicator";
-import type { Project, ProjectSummary, Run } from "@/types/adw";
+import type { Project, ProjectSummary, QueueItem, Run } from "@/types/adw";
 import { applyProjectChange } from "./apply-project-change";
+import {
+  applyQueueChange,
+  applyQueueChangeToSummaries,
+  type QueueChange,
+  queuedIn,
+} from "./apply-queue-change";
 import {
   applyRunChange,
   applyRunChangeToSummaries,
@@ -15,7 +21,7 @@ import {
   type RunChange,
   runStatusIn,
 } from "./apply-run-change";
-import { type ActiveRuns, getActiveRuns, getProjects } from "./index";
+import { type ActiveRuns, getActiveRuns, getProjects, getQueue } from "./index";
 import { queryKeys } from "./query-keys";
 import { getSupabase } from "./supabase";
 
@@ -32,9 +38,10 @@ export interface RealtimeOptions {
 }
 
 /**
- * Opens the "adw" channel and subscribes to every change on adw.projects and
- * adw.runs. Each event is folded into the cache with setQueryData through a
- * pure reducer (apply-project-change.ts, apply-run-change.ts), which is the
+ * Opens the "adw" channel and subscribes to every change on adw.projects,
+ * adw.runs and adw.queue_items. Each event is folded into the cache with
+ * setQueryData through a pure reducer (apply-project-change.ts,
+ * apply-run-change.ts, apply-queue-change.ts), which is the
  * update path for a static query (invalidation would skip it). Every updater
  * is written `current => current && reducer(current, ev)`: an entry that is
  * not in the cache stays absent (setQueryData ignores an undefined result),
@@ -59,6 +66,13 @@ export function startRealtime(queryClient: QueryClient, options: RealtimeOptions
     .on<Run>("postgres_changes", { event: "*", schema: "adw", table: "runs" }, (ev) => {
       applyRunEvent(queryClient, ev, options);
     })
+    .on<QueueItem>(
+      "postgres_changes",
+      { event: "*", schema: "adw", table: "queue_items" },
+      (ev) => {
+        applyQueueEvent(queryClient, ev);
+      },
+    )
     .subscribe((state) => {
       switch (state) {
         case REALTIME_SUBSCRIBE_STATES.SUBSCRIBED:
@@ -132,6 +146,50 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: Realtim
 }
 
 /**
+ * One adw.queue_items event into the two entries it touches: the project's
+ * queue and the project list's queued count. Same shape as applyRunEvent: the
+ * slug comes from the cached project list, and an event for a project that
+ * list does not hold is dropped.
+ *
+ * Order matters for the same reason. Whether the item was queued is read from
+ * the queue cache BEFORE that entry is rewritten (`old` carries only
+ * project_id and issue_number), then the queue entry, then the project list,
+ * each through its reducer and `current && ...`. There is no history callback:
+ * the queue is not history.
+ */
+function applyQueueEvent(queryClient: QueryClient, ev: QueueChange) {
+  const key = ev.eventType === "DELETE" ? ev.old : ev.new;
+  const { project_id: projectId, issue_number: issueNumber } = key;
+  if (projectId === undefined || issueNumber === undefined) return;
+
+  const project = queryClient
+    .getQueryData<ProjectSummary[]>(queryKeys.projects)
+    ?.find((candidate) => candidate.id === projectId);
+  if (!project) return;
+
+  const queueKey = queryKeys.queue(project.slug);
+  const wasQueued = queuedIn(queryClient.getQueryData<QueueItem[]>(queueKey), issueNumber);
+
+  queryClient.setQueryData<QueueItem[]>(
+    queueKey,
+    (current) => current && applyQueueChange(current, ev),
+  );
+  queryClient.setQueryData<ProjectSummary[]>(
+    queryKeys.projects,
+    (current) => current && applyQueueChangeToSummaries(current, ev, wasQueued),
+  );
+}
+
+/** The slugs of the cached entries whose key starts with `prefix`. */
+function cachedSlugs(queryClient: QueryClient, prefix: readonly string[]): string[] {
+  return queryClient
+    .getQueryCache()
+    .findAll({ queryKey: prefix })
+    .map((query) => query.queryKey[1])
+    .filter((slug): slug is string => typeof slug === "string");
+}
+
+/**
  * Refreshes every cached entry from the database, on every SUBSCRIBED.
  *
  * Why on every SUBSCRIBED and not only after a drop. Events that happen while
@@ -155,10 +213,10 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: Realtim
  * missed while disconnected leaves that page's History as the server has it,
  * which is refilled on the cache lifetime or the next completion anyone sees.
  *
- * Cost: one project_summaries read plus one getActiveRuns (two reads) per
- * runs entry in the cache, per (re)connect. The cache holds the project list
- * and the active runs of each project visited this session, so this is a
- * handful of small reads. In development React's strict mode connects twice on
+ * Cost: one project_summaries read, plus one getActiveRuns (two reads) per
+ * runs entry and one getQueue (two reads) per queue entry in the cache, per
+ * (re)connect. The cache holds the project list and the active runs and queue
+ * of each project visited this session, so this is a handful of small reads. In development React's strict mode connects twice on
  * mount, so it runs twice there.
  *
  * Failures are logged and swallowed: a failed refresh leaves the cache as it
@@ -173,15 +231,16 @@ async function catchUp(queryClient: QueryClient) {
     const projects = await getProjects();
     queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, projects);
 
-    const slugs = queryClient
-      .getQueryCache()
-      .findAll({ queryKey: queryKeys.allRuns })
-      .map((query) => query.queryKey[1])
-      .filter((slug): slug is string => typeof slug === "string");
     await Promise.all(
-      slugs.map(async (slug) => {
+      cachedSlugs(queryClient, queryKeys.allRuns).map(async (slug) => {
         const runs = await getActiveRuns(slug);
         queryClient.setQueryData<ActiveRuns | null>(queryKeys.runs(slug), runs);
+      }),
+    );
+    await Promise.all(
+      cachedSlugs(queryClient, queryKeys.allQueues).map(async (slug) => {
+        const items = await getQueue(slug);
+        queryClient.setQueryData<QueueItem[]>(queryKeys.queue(slug), items);
       }),
     );
   } catch (error) {

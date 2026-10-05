@@ -19,4 +19,16 @@ export const queryKeys = {
    * passes it as is.
    */
   runs: (slug: string) => ["runs", slug] as const,
+  /**
+   * The prefix every queue key starts with. Like allRuns, nothing is stored
+   * under it; realtime.ts hands it to queryCache.findAll in the catch-up to
+   * enumerate the queue entries present in the cache.
+   */
+  allQueues: ["queue"] as const,
+  /**
+   * One project's queued items, by slug: prefetched by the page, read by
+   * QueueView, written by the queue_items listener and the catch-up. Same slug
+   * rule as runs: passed as is.
+   */
+  queue: (slug: string) => ["queue", slug] as const,
 } as const;

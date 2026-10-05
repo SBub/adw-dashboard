@@ -8,7 +8,9 @@ projects. One two-pane screen:
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail.
-- The right pane shows the selected project's runs: an Active section for
+- The right pane shows the selected project's queue and runs: a Queue
+  section for the issues waiting in the project's queue ledger, in the order
+  they will run, then an Active section for
   live runs, status `running` or `failed` (a failed run can be resumed, so it
   is still live), with phase, branch and the absolute time of the last update,
   and a History section for `completed` runs (final phase, timings, duration).
@@ -28,8 +30,19 @@ is ordered by `last_run_at` descending with projects that have no runs yet
 last. Realtime (below) then patches that list in the browser as `adw.projects`
 rows change. The view also carries `queued`, the number of issues waiting in
 the project's queue ledger (the toolkit's), shown in the sidebar as the first
-count and emphasised when above zero; it is refreshed by a page load or the
-realtime catch-up, not live.
+count and emphasised when above zero. It moves live with the queue listener
+(see "Event to cache" below) and is corrected by a page load or the realtime
+catch-up.
+
+A project's queue is read by `getQueue(slug)`: the project row by slug (an
+unknown slug is an empty list, the page has already decided not-found from
+the runs), then the rows of `adw.queue_items` (the toolkit's mirror of the
+queue ledger, one row per ledger item, primary key `(project_id,
+issue_number)`) where `project_id` matches **and `state` is `queued`**,
+ordered `position asc, issue_number asc` (ledger order, with a deterministic
+tie-break while a move is in flight). Every other state is a run, which shows
+in Active or History. It selects `QUEUE_COLUMNS`, exactly the fields of
+`QueueItem`, and reads no clock.
 
 A project's runs are read in two halves, because they have two lifetimes:
 
@@ -68,8 +81,9 @@ The rows are the raw `Run` type; no label is derived on the server (see
 "Labels" below). There are no fixtures any more; `src/data/fixtures.ts` is
 gone.
 
-`src/data/index.ts` is the single boundary the screens read through. It
-exports three functions and the shape the second one returns:
+`src/data/index.ts` is the single boundary the screens read through. Its
+screen-facing reads are four functions (plus the shape the second one
+returns):
 
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(slug): Promise<ActiveRuns | null>`, where `ActiveRuns` is
@@ -77,19 +91,21 @@ exports three functions and the shape the second one returns:
 - `getCompletedRuns(slug, bookmark): Promise<HistoryPage>`, where
   `HistoryPage` is `{ items: Run[]; nextCursor: string | null }` (from
   `src/lib/history-bookmark.ts`)
+- `getQueue(slug): Promise<QueueItem[]>`
 
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
 data; the query keys and the `QueryClient` factory (next section) are cache
 plumbing, not data, and the server action in `src/app/actions/` touches no
 data at all (it drops cache tags). The Supabase client is untyped (no
 generated `Database` type yet), so the boundary casts rows once: the view's
-rows to `ProjectSummary` and the table's rows to `Run[]` (the shared
-`RUN_COLUMNS` select is exactly the fields of `Run`). Generating types for the
+rows to `ProjectSummary`, the runs rows to `Run[]` (the shared `RUN_COLUMNS`
+select is exactly the fields of `Run`) and the queue rows to `QueueItem[]`
+(`QUEUE_COLUMNS`, exactly the fields of `QueueItem`). Generating types for the
 `adw` schema is a follow-up.
 
 Because the layout prefetch and `generateStaticParams` both call
-`getProjects()`, and the page calls `getActiveRuns()` and `getCompletedRuns()`
-for every slug, the database is read at **build time** as well as at request
+`getProjects()`, and the page calls `getActiveRuns()`, `getQueue()` and
+`getCompletedRuns()` for every slug, the database is read at **build time** as well as at request
 time. `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 must therefore be present for `yarn build`, which reads `.env.local` (not
 `.env.development`); without them `getSupabase()` throws and the build fails
@@ -103,14 +119,17 @@ to `notFound()` at request time.
 `src/data/query-keys.ts` and `src/data/query-client.ts` sit beside the boundary
 and are the query layer over it: what the server and the browser share so the
 two sides of the React Query cache cannot drift apart. There are no fetcher
-wrappers; the boundary functions `getProjects` and `getActiveRuns` are the
-`queryFn`s themselves, passed straight from `@/data` at every call site.
+wrappers; the boundary functions `getProjects`, `getActiveRuns` and `getQueue`
+are the `queryFn`s themselves, passed straight from `@/data` at every call site.
 `getCompletedRuns` is not a `queryFn`: history is server-rendered and never
 enters the query cache.
 
 - `queryKeys` in `query-keys.ts`, the single home of every query key:
   `queryKeys.projects` (`["projects"]`) for the project list and
-  `queryKeys.runs(slug)` (`["runs", slug]`) for a project's active runs. A key is
+  `queryKeys.runs(slug)` (`["runs", slug]`) for a project's active runs,
+  `queryKeys.queue(slug)` (`["queue", slug]`) for its queued items, and the two
+  prefixes `queryKeys.allRuns` (`["runs"]`) and `queryKeys.allQueues`
+  (`["queue"]`) that the catch-up enumerates cached entries with. A key is
   imported from there wherever a resource is prefetched, read or written by the
   Realtime listener; no key is ever built inline, and no key literal exists
   anywhere else.
@@ -121,8 +140,9 @@ enters the query cache.
 - `prefetch(queryKey, queryFn)` in the same file, the one server prefetch:
   it builds a client from the factory, awaits `queryClient.query()` and
   returns `{ data, state }`, the resolved value next to `dehydrate()` of the
-  client. Both `"use cache"` state functions (the layout's `getProjectsState`,
-  the page's `getRunsState`) are one-liners around it, so the two prefetches
+  client. Every `"use cache"` state function (the layout's `getProjectsState`,
+  the page's `getRunsState` and `getQueueState`) is a one-liner around it, so
+  the prefetches
   cannot drift apart, and a caller that needs the value (the page's not-found
   decision) reads `data` instead of searching the dehydrated queries by hash.
   (`prefetchQuery` is deprecated in React Query 5.104; `query()` is its
@@ -266,6 +286,21 @@ entry per slug:
    That boundary does not nest inside the layout's, which is scoped to the
    sidebar; the two are siblings in effect, and React Query hydrates both
    dehydrated states into the one client `Providers` holds.
+
+   The queue is a second entry beside it. A third `"use cache"` function,
+   `getQueueState(slug)`, returns
+   `prefetch(queryKeys.queue(slug), () => getQueue(slug))`, untagged (no server
+   writer drops it; like Active it lives in the static shell and the browser
+   keeps it current). The page awaits it together with `getRunsState` in one
+   `Promise.all`, so the two reads do not waterfall; the not-found decision
+   still reads only the runs `data`. The queue gets its own
+   `<HydrationBoundary state={queue.state}>` around its own
+   `<QueryBoundary fallback="Loading queue..."><QueueView slug={slug} /></QueryBoundary>`,
+   passed to `ActiveRunsView` as its `queue` slot, which renders it between the
+   header and Active: the Queue sits above Active, and a failed queue read shows
+   its panel in that slot while the header and Active stay up. It is never
+   rendered in the not-found branch.
+
 4. `src/components/ActiveRunsView.tsx` is a client component that reads
    `useSuspenseQuery` under `queryKeys.runs(slug)` with `staleTime: "static"`
    and `refetchOnMount: false` (same two reasons as the sidebar) and renders
@@ -273,6 +308,16 @@ entry per slug:
    rows as stored; no view model is built and no clock is read. It renders the
    not-found panel for `null` data as a guard only; the server has already
    excluded that case.
+   `src/components/QueueView.tsx` is its counterpart for the queue: the same
+   `useSuspenseQuery` options under `queryKeys.queue(slug)`, a `Queue` heading,
+   and either the dashed `Nothing queued.` panel or an ordered list of
+   `QueueRow` (`src/components/QueueRow.tsx`): the issue number as a GitHub
+   link, the title, the source and `Queued <time>`. The source is parsed from
+   the stored `source` column by `queueSource` in `src/lib/queue-source.ts`
+   (`label:<name>` renders a `label: <name>` badge, `manual` a `manual` badge
+   plus a visible hint that removing the label does not remove the item, since
+   a manually queued item is not taken out by unlabelling the issue; anything
+   else, or `null`, renders no badge).
 
 History is rendered below that, by the same page:
 
@@ -691,6 +736,9 @@ change. Because the query is static, `setQueryData` is the update path (not
 data. The active runs follow suit: the runs listener writes with
 `queryClient.setQueryData(queryKeys.runs(slug), ...)`, and the `runs` or
 `runs:<slug>` tag refreshes the page prefetch for every project or for one.
+The queue too: the queue listener writes with
+`queryClient.setQueryData(queryKeys.queue(slug), ...)`; its prefetch scope has
+no tag.
 History is not a cache entry: its one update path is the server action
 dropping `history:<slug>` followed by a route refresh (see "The move" above).
 
@@ -732,9 +780,9 @@ on the server no channel is ever subscribed, so no socket is opened there.
 
 `src/data/realtime.ts` exports `startRealtime(queryClient, options)`, where
 `options.onHistoryChange?: (slug) => void` is the hook `Providers` uses to
-start the move (above). It opens one channel named `adw` with two
-`postgres_changes` listeners, every event on `adw.projects` and every event on
-`adw.runs`. A projects event goes through
+start the move (above). It opens one channel named `adw` with three
+`postgres_changes` listeners, every event on `adw.projects`, `adw.runs` and
+`adw.queue_items`. A projects event goes through
 `applyProjectChange` (next section) and the result is written under
 `queryKeys.projects`. A runs event is resolved to a project first: the event
 names the project by `project_id` (on DELETE from `ev.old`, which carries the
@@ -747,7 +795,11 @@ the active entry under `queryKeys.runs(slug)` and `applyRunChangeToSummaries`
 for the counts in the project list, in that order, because the second one needs
 the run's previous status and the event does not carry it (see "Event to
 cache"); last, if `isHistoryChange` says the event touched the project's
-completed runs, `onHistoryChange(slug)` is called.
+completed runs, `onHistoryChange(slug)` is called. A queue event is resolved
+to a project the same way (`ev.old` carries `(project_id, issue_number)` only),
+then goes through `applyQueueChange` for `queryKeys.queue(slug)` and
+`applyQueueChangeToSummaries` for the project's `queued` count, with no
+history callback: the queue is not history.
 Every write is `setQueryData`, and every updater has the form
 `current => current && reducer(current, ev)`: **an entry that is not in the
 cache stays absent.** `setQueryData` ignores an `undefined` result, so a single
@@ -838,6 +890,30 @@ covered by `src/data/apply-run-change.test.ts`:
   that project's counts until then; and the DELETE of a completed run does not
   lower the `completed` count until the next catch-up.
 
+`src/data/apply-queue-change.ts` holds the two reducers for an
+`adw.queue_items` event (type `QueueChange`), both pure and covered by
+`src/data/apply-queue-change.test.ts`:
+
+- `applyQueueChange(current: QueueItem[], ev): QueueItem[]` holds the queued
+  items only. INSERT or UPDATE with state `queued` adds or replaces the item by
+  `issue_number` and re-sorts by `position, issue_number` (a move changes
+  positions); an UPDATE to any other state removes it (the item started or was
+  stopped); DELETE removes the `issue_number` in `ev.old`. A duplicate INSERT
+  or a non-queued INSERT is a no-op, and the input is returned by identity
+  when nothing changed.
+- `applyQueueChangeToSummaries(current, ev, wasQueued)` moves the project's
+  `queued` by `(queued now) - (queued before)`, never below 0, touching no
+  other count. UPDATE is included, not only INSERT and DELETE, because the
+  toolkit upserts every item on every ledger save: an item starting (`queued`
+  to `running`) or being re-queued arrives as an UPDATE, and the unchanged
+  upsert (`queued` to `queued`) is a zero delta. `wasQueued` is read with
+  `queuedIn(current, issue_number)` from the cached queue entry **before** it
+  is rewritten, for the same replica-identity reason as `oldStatus`. It is
+  `undefined` when the queue is not cached; an INSERT then counts as not
+  queued before, an UPDATE or DELETE leaves the count alone. Known gap: an
+  UPDATE or DELETE for a project whose queue was not loaded this session does
+  not move its sidebar count until the next catch-up or page load.
+
 ### Catch-up on SUBSCRIBED
 
 Events that happen while the channel is down are never delivered, so after a
@@ -849,7 +925,9 @@ handled by one path: on **every** `SUBSCRIBED`, `realtime.ts` calls
 `getProjects()` and writes the result under `queryKeys.projects`, then for
 every runs entry in the cache (`queryClient.getQueryCache().findAll({ queryKey:
 queryKeys.allRuns })`, the `["runs"]` prefix exported from `query-keys.ts`)
-calls `getActiveRuns(slug)` and writes the result under `queryKeys.runs(slug)`.
+calls `getActiveRuns(slug)` and writes the result under `queryKeys.runs(slug)`,
+then for every queue entry (`queryKeys.allQueues`, the `["queue"]` prefix)
+calls `getQueue(slug)` and writes the result under `queryKeys.queue(slug)`.
 There is no "was I disconnected" flag to keep in step; the first `SUBSCRIBED`
 and a reconnect are the same case. History needs no catch-up: it is not in the
 cache, and a completion this browser missed is the "unwatched completion"
@@ -862,9 +940,10 @@ themselves, so the refreshed entries have exactly the shape the prefetch put
 there. `getActiveRuns` stamps a fresh `fetched_at`, which nothing in the UI
 reads today.
 
-Cost: one `project_summaries` read plus one `getActiveRuns` (two reads) per
-cached runs entry, per (re)connect. The cache holds the project list and the
-active runs of each project visited this session, so this is a handful of small reads;
+Cost: one `project_summaries` read, plus one `getActiveRuns` (two reads) per
+cached runs entry and one `getQueue` (two reads) per cached queue entry, per
+(re)connect. The cache holds the project list and the active runs and queue of
+each project visited this session, so this is a handful of small reads;
 in development React's strict mode connects twice on mount, so it runs twice
 there. A failed catch-up is logged with `console.warn` and swallowed: the cache
 stays as it was and the next event or reconnect tries again. An event that
@@ -897,11 +976,12 @@ live updates (above) go through the query cache, not this store.
 
 ## Types
 
-`src/types/adw.ts` has two sections. `Project` and `Run` mirror the database
-tables column for column. `ProjectSummary` is the one view model the screens
+`src/types/adw.ts` has two sections. `Project`, `Run` and `QueueItem` (with
+`QueueState`, the table's state check constraint) mirror the database tables
+column for column. `ProjectSummary` is the one view model the screens
 need that the database does not store (the counts and `last_run_at`); it comes
-from the data layer (the `project_summaries` view computes them). Runs have no
-view model: the screens take `Run` rows as stored, and a finished run's
+from the data layer (the `project_summaries` view computes them). Runs and
+queue items have no view model: the screens take `Run` rows as stored, and a finished run's
 duration is formatted at render time by `durationLabel` in
 `src/lib/run-view.ts`.
 

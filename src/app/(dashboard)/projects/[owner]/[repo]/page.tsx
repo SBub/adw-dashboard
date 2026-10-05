@@ -5,9 +5,10 @@ import { notFound } from "next/navigation";
 import { ActiveRunsView } from "@/components/ActiveRunsView";
 import { HistoryLinks } from "@/components/HistoryLinks";
 import { QueryBoundary } from "@/components/QueryBoundary";
+import { QueueView } from "@/components/QueueView";
 import { RunHistoryList } from "@/components/RunHistoryList";
 import { SectionBoundary } from "@/components/SectionBoundary";
-import { getActiveRuns, getCompletedRuns, getProjects } from "@/data";
+import { getActiveRuns, getCompletedRuns, getProjects, getQueue } from "@/data";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
 import {
@@ -106,6 +107,22 @@ async function getRunsState(slug: string) {
   cacheTag("runs", runsTag(slug));
 
   return prefetch(queryKeys.runs(slug), () => getActiveRuns(slug));
+}
+
+/**
+ * One project's queued items, prefetched and dehydrated through the same
+ * helper as getRunsState, and inside a "use cache" scope for the same reason:
+ * React Query's query() and dehydrate read the clock. getQueue itself reads no
+ * clock. No tag: no server writer drops it (the queue is not part of the
+ * completion move, and the action and the route handler drop
+ * historyTags(slug) only). Like the Active scope it lives in the static shell,
+ * and the browser keeps it current through Realtime, the hydration rule and
+ * the catch-up on every SUBSCRIBED.
+ */
+async function getQueueState(slug: string) {
+  "use cache";
+
+  return prefetch(queryKeys.queue(slug), () => getQueue(slug));
 }
 
 /**
@@ -217,23 +234,42 @@ async function CompletedRuns({ slug, searchParams }: HistoryIslandProps) {
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const slug = projectSlug(await params);
 
-  const { data, state } = await getRunsState(slug);
+  // Both prefetches at once, so the queue read does not wait on the runs read.
+  const [{ data, state }, queue] = await Promise.all([getRunsState(slug), getQueueState(slug)]);
 
   // The not-found decision is made here, before any boundary renders, from the
   // very data that was prefetched: getActiveRuns returns null for an unknown
-  // slug, so the data layer is read once per slug, not twice. notFound()
+  // slug, so the data layer is read once per slug, not twice. The queue is not
+  // consulted (getQueue returns an empty list for an unknown slug, never shown). notFound()
   // renders the segment's not-found.tsx inside the two-pane shell. Caveat kept
   // from before: for a slug outside generateStaticParams the static shell has
   // already been sent with a 200 before this runs, so the not-found panel
   // streams in as a soft 404 (the body says not found, the status does not).
   if (data === null) notFound();
 
+  // The queue's own entry, under its own boundaries, slotted into
+  // ActiveRunsView between the header and Active: a failed queue read shows
+  // its panel in this slot while the header and Active stay up.
+  const queueSection = (
+    <HydrationBoundary state={queue.state}>
+      <QueryBoundary
+        fallback={
+          <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading queue...</p>
+        }
+        detail="This project's queue did not load."
+      >
+        <QueueView slug={slug} />
+      </QueryBoundary>
+    </HydrationBoundary>
+  );
+
   return (
     <>
-      {/* Not nested inside the layout's HydrationBoundary: that one is scoped
-          to the sidebar, and this page renders outside it. Both still hydrate
-          into the one client Providers holds, so the sidebar's entry and this
-          project's entry sit side by side in the same cache. On a
+      {/* Two HydrationBoundary elements here, one per entry (the runs below,
+          the queue in queueSection). Neither is nested inside the layout's:
+          that one is scoped to the sidebar, and this page renders outside it.
+          All hydrate into the one client Providers holds, so the sidebar's
+          entry and this project's entries sit side by side in the same cache. On a
           router.refresh() the boundary receives a state again; React Query
           only overwrites the entry when the incoming dataUpdatedAt is newer
           (src/data/hydration.test.ts), so a live entry is never set back. */}
@@ -247,7 +283,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           }
           detail="This project's runs did not load."
         >
-          <ActiveRunsView slug={slug} />
+          <ActiveRunsView slug={slug} queue={queueSection} />
         </QueryBoundary>
       </HydrationBoundary>
 
