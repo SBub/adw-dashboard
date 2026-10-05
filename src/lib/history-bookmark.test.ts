@@ -20,6 +20,7 @@ function run(adw_id: string, updated_at: string): Run {
     project_id: "00000000-0000-0000-0000-000000000001",
     adw_id,
     issue_number: 1,
+    issue_title: null,
     issue_class: "feature",
     branch_name: "feat/x",
     phase: "document",
