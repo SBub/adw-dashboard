@@ -67,7 +67,9 @@ A project's runs are read in two halves, because they have two lifetimes:
   first row the next page showed) reads the rows strictly newer than it,
   oldest first, reversed for display. Beside the rows it reads two counts on
   the same filter, the total and the rows strictly newer than the first shown
-  row, which give the page number and the page count. It reads no clock.
+  row (than the bookmark itself when a bookmarked page comes back empty, so
+  the left arrow still leads back), which give the page number and the page
+  count. It reads no clock.
 
 In SQL terms:
 
