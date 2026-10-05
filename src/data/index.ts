@@ -9,10 +9,18 @@
 // - Active (status running or failed; a failed run can be resumed, so it is
 //   still live) is a React Query entry, prefetched on the server, hydrated,
 //   and patched in the browser by the Realtime listener. getActiveRuns.
-// - History (status completed) is immutable. It is rendered on the server
-//   inside a "use cache" scope tagged per project and never enters the query
-//   cache; a completion in the browser asks the server to drop that tag and
+// - History (status completed) is immutable. It is read one keyset page at a
+//   time and rendered on the server inside a "use cache" scope; every page of
+//   a project shares the one per-project tag, never enters the query cache,
+//   and a completion in the browser asks the server to drop that tag and
 //   re-render. getCompletedRuns.
+import {
+  HISTORY_PAGE_SIZE,
+  type HistoryBookmark,
+  type HistoryPage,
+  historyKeysetFilter,
+  toHistoryPage,
+} from "@/lib/history-bookmark";
 import type { ProjectSummary, Run } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
@@ -158,33 +166,48 @@ export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
 }
 
 /**
- * A project's completed runs, most recently updated first; an empty list for
- * an unknown slug (the page has already decided not-found from getActiveRuns
- * by the time this is called).
+ * One page of a project's completed runs, `HISTORY_PAGE_SIZE` at a time in the
+ * order `updated_at desc, adw_id desc`, with the cursor of the next (older)
+ * page; an empty page for an unknown slug (the page has already decided
+ * not-found from getActiveRuns by the time this is called).
+ *
+ * Keyset, not offset: `bookmark` is the last row the previous page showed
+ * (null for page one), already decoded and validated by the caller outside
+ * the cache scope (readHistoryBookmark in src/lib/history-bookmark.ts), and
+ * the read returns only rows strictly older than it. A run completing at the
+ * head therefore never shifts a later page. adw_id is unique within a project,
+ * so the order is total. One row more than a page is fetched so toHistoryPage
+ * can tell whether a next page exists.
  *
  * Server only, and only from inside the page's "use cache" scope for history
- * (tagged history:<slug>). It never enters the React Query cache and reads no
- * clock: there is no fetched_at here, and nothing in it needs the current
- * time, so the result is the plain rows. A completed run never changes, so the
- * cached list is only refilled when the browser asks the server to drop the
- * tag after a completion (revalidateHistory), or when the cache lifetime ends.
- *
- * Pagination goes here later: this is the one read that grows without bound
- * (the active list is a handful of rows), so a range on the query and a cursor
- * in the signature would be the change, with nothing elsewhere.
+ * (tagged history:<slug>, shared by every page). It never enters the React
+ * Query cache and reads no clock: there is no fetched_at here, and nothing in
+ * it needs the current time. A completed run never changes, so the cached
+ * pages are only refilled when the browser asks the server to drop the tag
+ * after a completion (revalidateHistory), when the database webhook does, or
+ * when the cache lifetime ends.
  */
-export async function getCompletedRuns(slug: string): Promise<Run[]> {
+export async function getCompletedRuns(
+  slug: string,
+  bookmark: HistoryBookmark | null,
+): Promise<HistoryPage> {
   const project = await getProjectBySlug(slug);
-  if (project === null) return [];
+  if (project === null) return { items: [], nextCursor: null };
 
-  const { data, error } = await getSupabase()
+  let query = getSupabase()
     .from("runs")
     .select(RUN_COLUMNS)
     .eq("project_id", project.id)
-    .eq("status", "completed")
-    .order("updated_at", { ascending: false });
+    .eq("status", "completed");
+  if (bookmark) query = query.or(historyKeysetFilter(bookmark));
+  const { data, error } = await query
+    .order("updated_at", { ascending: false })
+    .order("adw_id", { ascending: false })
+    .limit(HISTORY_PAGE_SIZE + 1);
   if (error) {
     throw new Error(`runs: ${error.message}`);
   }
-  return (data ?? []) as Run[];
+  // The selected columns are exactly the fields of Run, the same cast as in
+  // getActiveRuns: the one place the table's shape is asserted.
+  return toHistoryPage((data ?? []) as Run[], slug);
 }
