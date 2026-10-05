@@ -2,10 +2,10 @@ import { HydrationBoundary } from "@tanstack/react-query";
 import type { Metadata } from "next";
 import { cacheLife, cacheTag } from "next/cache";
 import { notFound } from "next/navigation";
-import { connection } from "next/server";
 import { ActiveRunsView } from "@/components/ActiveRunsView";
+import { HistoryLinks } from "@/components/HistoryLinks";
 import { QueryBoundary } from "@/components/QueryBoundary";
-import { RunHistory } from "@/components/RunHistory";
+import { RunHistoryList } from "@/components/RunHistoryList";
 import { SectionBoundary } from "@/components/SectionBoundary";
 import { getActiveRuns, getCompletedRuns, getProjects } from "@/data";
 import { prefetch } from "@/data/query-client";
@@ -109,8 +109,8 @@ async function getRunsState(slug: string) {
  * Realtime event touches them. A completed run is immutable, so the entry is
  * only wrong when a run completes (or a completed run is deleted), and that is
  * when the browser calls the revalidateHistory action (dropping this tag) and
- * then refreshes the route, which re-renders HistorySection from the database,
- * or, for a completion no browser saw, when the database trigger posts to
+ * then refreshes the route, which re-renders the two History islands from the
+ * database, or, for a completion no browser saw, when the database trigger posts to
  * /api/revalidate, which drops the same tag. Its spelling comes from
  * src/lib/history-tags.ts, shared with both.
  */
@@ -122,68 +122,83 @@ async function getHistory(slug: string, bookmark: HistoryBookmark | null): Promi
   return getCompletedRuns(slug, bookmark);
 }
 
-// The History half of the pane, an async server component. It reads through
-// the cached getHistory and hands the rows to RunHistory as stored. It renders
-// under its own SectionBoundary (Suspense plus an error boundary) so the Active
-// half above never waits on it and never falls with it.
+// The History half of the pane: two async server components, the Newer/Older
+// links (HistoryPagination) and the list (CompletedRuns), each under its own
+// SectionBoundary (Suspense plus an error boundary) so the Active half above
+// never waits on them and never falls with them. The History heading is not
+// part of either: it sits in the page, above both boundaries, in the static
+// shell.
 //
-// `await connection()` comes first so this section is a request-time hole in
-// the prerendered page rather than part of its static shell. A "use cache"
-// scope that is prerendered into the shell is read, on every later request,
-// from the shell's embedded Resume Data Cache (debug log: "use-cache: Resume
-// Data Cache entry found"), which is frozen at build time; updateTag expires
-// the live cache entry and re-executes getHistory, but a resumed render never
-// consults the live handler for that scope, so the new rows are never served.
-// Made a hole, the scope is resolved per request from the live cache handler,
-// and the tag reaches it. The scope keeps its long explicit cacheLife, so
-// history is still cached between completions (observed: getHistory runs at build and
-// once after the tag update, not per request). The documented alternative is
-// a cacheLife with `expire` under 5 minutes, which also excludes the scope
-// from prerenders (node_modules/next/dist/docs/01-app/03-api-reference/
-// 04-functions/cacheLife.md, "Prerendering behavior"); connection() is
-// preferred because it keeps the long lifetime (connection.md: "prerendering
-// stops here"). The SectionBoundary below is therefore a real streaming
-// boundary: the shell ships the fallback and this section streams in.
+// Each island awaits the page's searchParams first. That is a request-time
+// read, so under cacheComponents prerendering stops there and the hole is cut
+// at the nearest Suspense, which is the island's own SectionBoundary. A
+// hole is needed at all because a "use cache" scope that is prerendered into
+// the shell is read, on every later request, from the shell's embedded Resume
+// Data Cache (debug log: "use-cache: Resume Data Cache entry found"), which is
+// frozen at build time; updateTag expires the live cache entry and re-executes
+// getHistory, but a resumed render never consults the live handler for that
+// scope, so the new rows are never served. Made a hole, the scope is resolved
+// per request from the live cache handler, and the tag reaches it. The scope
+// keeps its long explicit cacheLife, so history is still cached between
+// completions (getHistory runs at build and once after the tag update, not per
+// request). There is no connection() call: after the searchParams read it
+// would be a redundant second marker. The documented alternative, a cacheLife
+// with `expire` under 5 minutes (node_modules/next/dist/docs/01-app/
+// 03-api-reference/04-functions/cacheLife.md, "Prerendering behavior"), is
+// rejected because it gives up the long lifetime.
 //
-// The same limitation applies to the Active prefetch scope (runs:<slug>),
-// which IS prerendered into the shell: updateTag("runs:<slug>") does not
-// refresh it on a resumed render. That is left as is on purpose. The browser
-// patches Active through Realtime, hydration skips a dehydrated state older
-// than the live entry (src/data/hydration.test.ts), and the catch-up on every
-// SUBSCRIBED re-reads it. The action keeps dropping the tag because it is
-// correct on a full regeneration of the page and on hosts whose cache handler
-// behaves differently.
+// Two islands are one read: getHistory is keyed by its arguments (the slug and
+// a plain bookmark object with the same values in both), and Next joins an
+// identical invocation within one request instead of running it twice
+// (use-cache-wrapper.js, debug line "joining intra-request invocation" on a
+// ?after page; on page one the second call logs nothing and still reads
+// nothing).
 //
-// It is also the one reader of searchParams, after connection(), so the shell
-// stays prerendered. `?after` is decoded here, outside the cache scope (an
-// error thrown inside "use cache" loses its class); an invalid or foreign
-// bookmark is page one, never an error.
-async function HistorySection({
-  slug,
-  searchParams,
-}: {
-  slug: string;
-  searchParams: Promise<SearchParams>;
-}) {
-  await connection();
+// The same Resume Data Cache limitation applies to the Active prefetch scope
+// (runs:<slug>), which IS prerendered into the shell: updateTag("runs:<slug>")
+// does not refresh it on a resumed render. That is left as is on purpose. The
+// browser patches Active through Realtime, hydration skips a dehydrated state
+// older than the live entry (src/data/hydration.test.ts), and the catch-up on
+// every SUBSCRIBED re-reads it. The action keeps dropping the tag because it
+// is correct on a full regeneration of the page and on hosts whose cache
+// handler behaves differently.
+//
+// `?after` is decoded here, outside the cache scope (an error thrown inside
+// "use cache" loses its class); an invalid or foreign bookmark is page one,
+// never an error. readHistory is neither cached nor a boundary function; it
+// only keeps the two islands from repeating the same three lines.
+async function readHistory(slug: string, searchParams: Promise<SearchParams>) {
   const { after } = await searchParams;
   const bookmark = readHistoryBookmark(after, slug);
-  const { items, nextCursor } = await getHistory(slug, bookmark);
+  const page = await getHistory(slug, bookmark);
+  return { bookmark, ...page };
+}
+
+interface HistoryIslandProps {
+  slug: string;
+  searchParams: Promise<SearchParams>;
+}
+
+async function HistoryPagination({ slug, searchParams }: HistoryIslandProps) {
+  const { bookmark, nextCursor } = await readHistory(slug, searchParams);
   return (
-    <RunHistory
-      runs={items}
-      projectSlug={slug}
+    <HistoryLinks
       newerHref={bookmark ? historyHref(slug, null) : null}
       olderHref={nextCursor ? historyHref(slug, nextCursor) : null}
     />
   );
 }
 
+async function CompletedRuns({ slug, searchParams }: HistoryIslandProps) {
+  const { items } = await readHistory(slug, searchParams);
+  return <RunHistoryList runs={items} projectSlug={slug} />;
+}
+
 // Awaiting params makes this page request-time for slugs outside
 // generateStaticParams. The sibling loading.tsx is the Suspense boundary for
 // the segment, so the layout and sidebar above it still prerender.
-// searchParams is handed to HistorySection unawaited: only that request-time
-// hole reads it.
+// searchParams is handed to HistoryPagination and CompletedRuns unawaited:
+// only those request-time holes read it.
 export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const { slug: parts } = await params;
   const slug = parts.join("/");
@@ -224,28 +239,33 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
 
       {/* Server-rendered, not hydrated: no query, so not a QueryBoundary but a
           SectionBoundary, whose Retry refreshes the route instead of resetting
-          a query. HistorySection awaits connection(), so the Suspense inside
-          it is a real streaming boundary: the prerendered shell carries the
-          fallback and the section streams in at request time (from the cached
-          scope, or from the database on a miss after a completion or the
-          lifetime). If getHistory throws (database down, an RLS change), the
-          error lands in this boundary's panel and the Active list above stays
-          on screen, instead of the segment's error.tsx replacing the pane. A
-          server component is a fine child of this client boundary; the hole
+          a query. The heading is static and in the prerendered shell. Each
+          island awaits searchParams, so the Suspense inside its boundary is a
+          real streaming boundary: the shell carries the fallback (nothing for
+          the links, a loading line for the list) and the island streams in at
+          request time (from the cached scope, or from the database on a miss
+          after a completion or the lifetime). If getHistory throws (database
+          down, an RLS change), the error lands in that island's panel, in its
+          slot, and the Active list above and the other island stay on screen,
+          instead of the segment's error.tsx replacing the pane. A server
+          component is a fine child of this client boundary; the hole
           semantics are unchanged. */}
-      <SectionBoundary
-        fallback={
-          <section>
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <h2 className="text-lg font-semibold">History</h2>
-            </div>
+      <section>
+        <div className="mb-3 flex items-center justify-between gap-4">
+          <h2 className="text-lg font-semibold">History</h2>
+          <SectionBoundary fallback={null} detail="Pagination did not load.">
+            <HistoryPagination slug={slug} searchParams={searchParams} />
+          </SectionBoundary>
+        </div>
+        <SectionBoundary
+          fallback={
             <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading history...</p>
-          </section>
-        }
-        detail="This project's history did not load."
-      >
-        <HistorySection slug={slug} searchParams={searchParams} />
-      </SectionBoundary>
+          }
+          detail="This project's history did not load."
+        >
+          <CompletedRuns slug={slug} searchParams={searchParams} />
+        </SectionBoundary>
+      </section>
     </>
   );
 }

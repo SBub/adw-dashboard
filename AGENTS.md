@@ -28,10 +28,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 ## Architecture
 
 - Components take typed props only. They never fetch, compute or count
-  business values; they render what they are given. `RunRow` and `RunHistory`
-  take `Run` rows as stored (the page's `HistorySection` is the one async
-  component that awaits data, and it lives in the page file, not under
-  `src/components/`). The one formatting a component may do is call a
+  business values; they render what they are given. `RunRow` and
+  `RunHistoryList` take `Run` rows as stored (the page's `HistoryPagination`
+  and `CompletedRuns` are the async components that await data, and they live
+  in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
   anywhere for runs.
@@ -125,12 +125,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - A project page's not-found decision is read off the `data` half of
   `getRunsState`'s result (`data === null`), not from a second
   `getActiveRuns` call and not by searching the dehydrated state's queries by
-  hash; `HistorySection` renders only after that decision, so
+  hash; the History islands render only after that decision, so
   `getCompletedRuns` returning an empty page for an unknown slug is never shown.
 - Two boundaries, never a bare `Suspense`. Any `useSuspenseQuery` is rendered
   inside `QueryBoundary` (`src/components/QueryBoundary.tsx`); any
   server-rendered section that can fail independently of its siblings (the
-  page's `HistorySection`) is rendered inside `SectionBoundary`
+  page's `HistoryPagination` and `CompletedRuns`, one boundary each) is
+  rendered inside `SectionBoundary`
   (`src/components/SectionBoundary.tsx`). Without an error boundary a failed
   read escapes to the segment's `error.tsx` and unmounts the whole pane,
   Active included. The two differ in their Retry and must not be swapped:
@@ -172,12 +173,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   hold state (the React Query provider in `src/app/providers.tsx`,
   `ProjectNav`, which reads the pathname and the query cache,
   `ActiveRunsView`, which reads the active runs from the query cache, and
-  `ConnectionIndicator`, which subscribes to its store). `RunHistory` is a
-  server component with no state; do not put `"use client"` back on it or
-  give it a filter that needs one. Its `Newer` and `Older` links are plain
-  `next/link` hrefs that `HistorySection` builds with `historyHref` and passes
-  in (`null` hides the link); do not decode a bookmark or build a URL in the
-  component. `src/lib/run-view.ts` is plain and
+  `ConnectionIndicator`, which subscribes to its store). `HistoryLinks` and
+  `RunHistoryList` are server components with no state; do not put
+  `"use client"` on them or give them a filter that needs one. The `Newer`
+  and `Older` links of `HistoryLinks` are plain `next/link` hrefs that
+  `HistoryPagination` builds with `historyHref` and passes in (`null` hides
+  the link); do not decode a bookmark or build a URL in the component. `src/lib/run-view.ts` is plain and
   importable from anywhere.
 - The visible text of every timestamp comes from `formatTimestamp` in
   `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
@@ -199,24 +200,27 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   Do not move failed runs into History or add a status toggle to it.
 - History is server-rendered and never enters the React Query cache. It is
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
-  `cacheTag(\`history:${slug}\`)`) and rendered by the async `HistorySection`under its own`SectionBoundary`. No `queryKeys`entry, no`useSuspenseQuery`, no
+  `cacheTag(\`history:${slug}\`)`) and rendered by the page's two async
+islands, `HistoryPagination`and`CompletedRuns`, each under its own
+`SectionBoundary`. No `queryKeys`entry, no`useSuspenseQuery`, no
 `setQueryData`, no realtime reducer and no catch-up read may touch completed
   runs. If a component needs history rows, it gets them as props from the
   page.
 - Any `"use cache"` scope that must reflect on-demand revalidation on a
-  prerendered route awaits `connection()` (from `next/server`) before the
-  cached call, as `HistorySection` does before `getHistory`. A scope that is
-  prerendered into the static shell is read from the shell's embedded Resume
-  Data Cache on every resumed request, frozen at build time, and no
+  prerendered route is called only after a request-time read, under a
+  `SectionBoundary`: here the islands' `await searchParams` (through
+  `readHistory`), the first thing each does before `getHistory`. A scope that
+  is prerendered into the static shell is read from the shell's embedded
+  Resume Data Cache on every resumed request, frozen at build time, and no
   `updateTag`, `revalidateTag` or `revalidatePath` reaches it; a request-time
   hole is resolved from the live cache handler and keeps its lifetime (see
-  README, "What is prerendered and what is not"). The `await connection()`
-  stays the first statement of `HistorySection`, the `SectionBoundary` (whose
-  inner `Suspense` is the streaming boundary) stays around it, and
-  `getHistory` stays out of the page body and `generateMetadata`,
-  where it would be prerendered again. Do not swap it
-  for a short `cacheLife` (`expire` under 5 minutes also makes a hole but
-  gives up the long lifetime). The Active scope (`runs:<slug>`) stays in the
+  README, "What is prerendered and what is not"). Do not add `connection()`
+  back as a redundant second marker. The `SectionBoundary` (whose inner
+  `Suspense` is the streaming boundary) stays around each island, and
+  `getHistory` stays out of the page body and `generateMetadata`, where it
+  would be prerendered again. Do not swap the hole for a short `cacheLife`
+  (`expire` under 5 minutes also makes a hole but gives up the long
+  lifetime). The Active scope (`runs:<slug>`) stays in the
   shell on purpose; the browser keeps it current.
 - History is paged by a keyset bookmark. Everything that decides a page lives
   in `src/lib/history-bookmark.ts` (pure, tested in
@@ -224,15 +228,23 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   nowhere else), the base64url codec, `readHistoryBookmark`,
   `historyKeysetFilter`, `toHistoryPage` and `historyHref`. Every change to the
   bookmark, the filter or the page split goes with a test case.
-- `HistorySection` is the only reader of `searchParams`, and it awaits them
-  after `connection()`. The page body, `getRunsState` and `generateMetadata`
-  never touch them (the page passes the promise down unawaited), or the shell
-  stops being prerendered. `?after` is decoded by `readHistoryBookmark` there,
+- A static heading sits outside the boundary of the hole it labels: the
+  `History` `<h2>` is rendered by the page, above both islands, never inside a
+  `SectionBoundary` or its fallback, so it is in the static shell.
+- `HistoryPagination` and `CompletedRuns` are the only readers of
+  `searchParams`, and each awaits it itself. The page passes the promise down
+  unawaited and never awaits it, nor do `getRunsState` or `generateMetadata`,
+  or the whole page turns request-time. `?after` is decoded by
+  `readHistoryBookmark` in the islands,
   outside the cache scope (an error thrown inside `"use cache"` loses its
   class), and never surfaces an error: anything invalid or foreign is page one.
 - Every page of a project shares `historyTag(slug)`; never add a per-page tag.
   The bookmark is a `getHistory` argument, so it is already part of the cache
   key, and one tag drop must expire every page a completion changes.
+- Two islands calling `getHistory` with the same arguments are one cache read
+  per request: Next joins an identical `"use cache"` invocation within the
+  request (debug line `joining intra-request invocation`). Do not add a React
+  `cache()` wrapper or pass one island's result to the other.
   `getHistory` keeps its explicit
   `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`; never an
   `expire` under 5 minutes.

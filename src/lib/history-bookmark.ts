@@ -116,7 +116,7 @@ export function decodeHistoryBookmark(cursor: string, slug: string): HistoryBook
  * absent, repeated, empty, malformed or foreign (another project's) all mean
  * page one, never an error.
  *
- * Call it outside any "use cache" scope (the page's HistorySection does): an
+ * Call it outside any "use cache" scope (the page's History islands do): an
  * error thrown inside a cache scope loses its class on the way out, so the
  * caller could not tell a bad cursor from a real failure.
  */
