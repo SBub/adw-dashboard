@@ -40,8 +40,10 @@ the runs), then the rows of `adw.queue_items` (the toolkit's mirror of the
 queue ledger, one row per ledger item, primary key `(project_id,
 issue_number)`) where `project_id` matches **and `state` is `queued`**,
 ordered `position asc, issue_number asc` (ledger order, with a deterministic
-tie-break while a move is in flight). Every other state is a run, which shows
-in Active or History. It selects `QUEUE_COLUMNS`, exactly the fields of
+tie-break while a move is in flight). Every other state (`QueueState` in
+`src/types/adw.ts`: `running`, `merged`, `failed`, `held`, `skipped` and the
+rest) means the item has left the queue: a started item is a run and shows in
+Active or History, a held or skipped one is not shown. It selects `QUEUE_COLUMNS`, exactly the fields of
 `QueueItem`, and reads no clock.
 
 A project's runs are read in two halves, because they have two lifetimes:
@@ -312,7 +314,8 @@ entry per slug:
    `useSuspenseQuery` options under `queryKeys.queue(slug)`, a `Queue` heading,
    and either the dashed `Nothing queued.` panel or an ordered list of
    `QueueRow` (`src/components/QueueRow.tsx`): the issue number as a GitHub
-   link, the title, the source and `Queued <time>`. The source is parsed from
+   link, the title (omitted when `null`), the source and `Queued <time>` (`none`
+   when `queued_at` is `null`). The source is parsed from
    the stored `source` column by `queueSource` in `src/lib/queue-source.ts`
    (`label:<name>` renders a `label: <name>` badge, `manual` a `manual` badge
    plus a visible hint that removing the label does not remove the item, since
