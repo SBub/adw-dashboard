@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { QueueItem, Run } from "@/types/adw";
-import {
-  byQueuePosition,
-  hasRunningRun,
-  queuePositions,
-  queueStartHint,
-  waitLabel,
-} from "./queue-order";
+import type { QueueItem } from "@/types/adw";
+import { byQueuePosition, queuePositions } from "./queue-order";
 
 function item(issue: number, position: number, overrides: Partial<QueueItem> = {}): QueueItem {
   return {
@@ -21,24 +15,6 @@ function item(issue: number, position: number, overrides: Partial<QueueItem> = {
     note: null,
     updated_at: "2026-10-05T09:00:00Z",
     ...overrides,
-  };
-}
-
-function run(adwId: string, status: Run["status"]): Run {
-  return {
-    project_id: "11111111-1111-1111-1111-111111111111",
-    adw_id: adwId,
-    issue_number: 1,
-    issue_title: "Issue 1",
-    issue_class: null,
-    branch_name: null,
-    phase: null,
-    status,
-    state: {},
-    toolkit_version: null,
-    started_at: "2026-10-05T09:00:00Z",
-    updated_at: "2026-10-05T09:00:00Z",
-    finished_at: null,
   };
 }
 
@@ -93,55 +69,5 @@ describe("queuePositions", () => {
     const items = Object.freeze([item(3, 2), item(1, 0)]);
     queuePositions(items);
     expect(items.map((i) => i.issue_number)).toEqual([3, 1]);
-  });
-});
-
-describe("waitLabel", () => {
-  const now = Date.parse("2026-10-06T12:00:00Z");
-
-  it("is null without a parseable queued_at", () => {
-    expect(waitLabel(null, now)).toBeNull();
-    expect(waitLabel("not a date", now)).toBeNull();
-  });
-
-  it.each([
-    ["2026-10-06T12:00:00Z", "waiting under 1 min"],
-    ["2026-10-06T11:59:01Z", "waiting under 1 min"],
-    ["2026-10-06T11:59:00Z", "waiting 1 min"],
-    ["2026-10-06T11:48:00Z", "waiting 12 min"],
-    ["2026-10-06T11:00:01Z", "waiting 59 min"],
-    ["2026-10-06T11:00:00Z", "waiting 1 h 00 min"],
-    ["2026-10-06T09:55:00Z", "waiting 2 h 05 min"],
-    ["2026-10-05T12:01:00Z", "waiting 23 h 59 min"],
-    ["2026-10-05T12:00:00Z", "waiting 1 d 00 h"],
-    ["2026-10-03T08:00:00Z", "waiting 3 d 04 h"],
-    ["2026-10-06T12:05:00Z", "waiting under 1 min"],
-  ])("formats queued_at %s as %s", (queuedAt, label) => {
-    expect(waitLabel(queuedAt, now)).toBe(label);
-  });
-
-  it("reads an offset the same as its UTC equal", () => {
-    expect(waitLabel("2026-10-06T13:48:00+02:00", now)).toBe(
-      waitLabel("2026-10-06T11:48:00Z", now),
-    );
-  });
-});
-
-describe("hasRunningRun", () => {
-  it("is false for no entry, no runs or failed runs only", () => {
-    expect(hasRunningRun(null)).toBe(false);
-    expect(hasRunningRun({ active: [] })).toBe(false);
-    expect(hasRunningRun({ active: [run("a", "failed")] })).toBe(false);
-  });
-
-  it("is true for a running run among failed ones", () => {
-    expect(hasRunningRun({ active: [run("a", "failed"), run("b", "running")] })).toBe(true);
-  });
-});
-
-describe("queueStartHint", () => {
-  it("pins both hints", () => {
-    expect(queueStartHint(true)).toBe("starts when the running run finishes");
-    expect(queueStartHint(false)).toBe("starts with the next runner");
   });
 });

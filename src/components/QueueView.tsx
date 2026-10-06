@@ -2,9 +2,9 @@
 
 import { useSuspenseQuery } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { getActiveRuns, getQueue } from "@/data";
+import { getQueue } from "@/data";
 import { queryKeys } from "@/data/query-keys";
-import { hasRunningRun, queuePositions } from "@/lib/queue-order";
+import { queuePositions } from "@/lib/queue-order";
 import { QueueRow } from "./QueueRow";
 
 /**
@@ -37,18 +37,6 @@ export function QueueView({ slug, heading }: { slug: string; heading: ReactNode 
     refetchOnMount: false,
   });
 
-  // The head row's hint needs to know whether a run is running. The page's runs
-  // HydrationBoundary encloses the queue slot, so this is a cache hit on the
-  // entry Active renders, with the same options, and the runs listener keeps
-  // it live. Only the flag is selected; the queue is never merged into it.
-  const { data: hasRunning } = useSuspenseQuery({
-    queryKey: queryKeys.runs(slug),
-    queryFn: () => getActiveRuns(slug),
-    staleTime: "static",
-    refetchOnMount: false,
-    select: hasRunningRun,
-  });
-
   // Live updates do not live here: the queue_items listener in
   // src/data/realtime.ts writes each change into this same cache entry.
 
@@ -70,7 +58,6 @@ export function QueueView({ slug, heading }: { slug: string; heading: ReactNode 
               projectSlug={slug}
               // Every item is in the map; the fallback only satisfies the type.
               position={positions.get(item.issue_number) ?? 0}
-              hasRunning={hasRunning}
             />
           ))}
         </ol>
