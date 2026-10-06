@@ -35,13 +35,18 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
   anywhere for runs.
-- No clock reads outside the cached boundary. There is exactly one
-  argument-less `new Date()` / `Date.now()` site in the codebase
+- No clock reads outside the cached boundary. There are exactly two
+  argument-less `new Date()` / `Date.now()` sites in the codebase
   (`new Date(ms)` on a parsed input, as in `formatTimestamp`, is not a clock
   read): `getActiveRuns`'s `fetched_at` stamp, which
   on the server only ever executes inside the page's `"use cache"` scope (in
   the browser it runs as a `queryFn` on a cache miss and in the realtime
-  catch-up, where a clock read is fine). A future time-dependent label is a
+  catch-up, where a clock read is fine), and `utcDay(Date.now())` in the
+  summary page's `requestToday` (`src/app/page.tsx`, a plain function, not a
+  component body, which `react-hooks/purity` forbids), directly after its
+  `await connection()`, so only at request time, never in a prerender pass and
+  never in client render. Its day is passed down as an argument; nothing below
+  it reads the clock again. Do not add a third. A future time-dependent label is a
   new client leaf with a `useSyncExternalStore` store whose server snapshot
   does not read the clock (issue #3), never a clock read in `QueueRow`,
   `QueueView` or `RunRow`. `getQueue` reads no clock either and
@@ -69,8 +74,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `@/data` and nothing else for data. The fifth export, `getProjectSlug(projectId)`, is
   read only by the `/api/revalidate` route handler (it turns a webhook's
   `project_id` into the slug the tags are keyed by); never call it from a
-  page, a component or a `queryFn`. The sixth, `getDailySummary(days)`, is called only from the summary page's `getSummary` scope (see
-  "Summary"), never a `queryFn`. `getProjects`, `getActiveRuns` and
+  page, a component or a `queryFn`. The sixth, `getSummaryPast(today, days)`,
+  is called only from the summary page's `getPastDays` scope (see "Summary"),
+  never a `queryFn`. The seventh, `getSummaryToday(today)`, is called on the
+  server only from the summary page's `getTodayState` scope and is the
+  `queryFn` of `TodaySummary`; it reads no clock (`today` always comes from
+  the caller). `getProjects`, `getActiveRuns` and
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
@@ -160,19 +169,21 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Every query key is defined in `src/data/query-keys.ts` (`queryKeys.projects`,
   `queryKeys.runs(slug)`, the active runs, `queryKeys.queue(slug)`, the queued
   items, and the catch-up prefixes `queryKeys.allRuns` and
-  `queryKeys.allQueues`) and imported from there: in the layout's and the
-  page's prefetches, in `ProjectNav`'s, `ActiveRunsView`'s and `QueueView`'s
-  `useSuspenseQuery`,
+  `queryKeys.allQueues`, and `queryKeys.summaryToday(day)`, the summary
+  page's today card) and imported from there: in the layout's and the
+  pages' prefetches, in `ProjectNav`'s, `ActiveRunsView`'s, `QueueView`'s and
+  `TodaySummary`'s `useSuspenseQuery`,
   and in every `setQueryData` the Realtime listeners do. Never build a key inline and never
   add a key literal elsewhere: a key that differs by one element is a cache
   miss, which means a second fetch in the browser. The slug is part of the runs
   key's hash; the slug is assembled once in the page; pass it as is.
 - `makeQueryClient()` in `src/data/query-client.ts` is the one `QueryClient`
-  factory. Every server prefetch and `Providers` build from it; do not call
+  factory. Every server prefetch, `Providers` and `SummaryProviders` build from it; do not call
   `new QueryClient()` anywhere else, or the dehydrate rule drifts between sides.
 - `prefetch(queryKey, queryFn)` in the same file is the one server prefetch.
   Every `"use cache"` state function (the layout's `getProjectsState`, the
-  page's `getRunsState` and `getQueueState`) is a one-liner around it that adds only its
+  project page's `getRunsState` and `getQueueState`, the summary page's
+  `getTodayState`) is a one-liner around it that adds only its
   `cacheTag`s; do not inline `makeQueryClient` + `query()` + `dehydrate()`
   again in a page or layout, and do not add a `.catch` to the helper (an empty
   dehydrated cache ships the fallback silently). Whatever it returns must stay
@@ -246,11 +257,16 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   reads the pathname to mark the header's current section, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
-  `HistoryResults` share). `HistoryLinks`,
+  `HistoryResults` share, `SummaryProviders` in `src/app/summary-providers.tsx`,
+  the summary page's bare query client, and `TodaySummary`, which reads today's
+  card from the query cache and refetches it). `HistoryLinks`,
   `RunHistoryList`, `SectionNav`,
-  `DailySummaryList`, `ClassDistributionBar` and `ProjectBreakdownTable` are
-  server components with no state; do not put
-  `"use client"` on them or give them a filter that needs one. The left and
+  `DailySummaryList`, `SummaryDayCard`, `ClassDistributionBar` and
+  `ProjectBreakdownTable` are components with no state; do not put
+  `"use client"` on them or give them a filter that needs one.
+  `SummaryDayCard`, `ClassDistributionBar` and `ProjectBreakdownTable` are
+  also rendered by the client `TodaySummary`, so they must stay stateless and
+  free of server-only imports. The left and
   right arrows of `HistoryLinks` are plain `next/link` hrefs that
   `HistoryPagination` builds with `historyHref` and passes in with `page` and
   `pageCount` (`null` hides an arrow); do not decode a bookmark, build a URL
@@ -307,7 +323,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   inside `Providers` (beside the sidebar's `Projects` heading), never in the
   root layout or in the summary page `src/app/page.tsx`; a route without the
   channel shows no pill. Do not mount `Providers` or start Realtime on `/`
-  (the summary) to make one appear.
+  (the summary) to make one appear. `SummaryProviders` is the only provider
+  on `/`, mounted only around the today island.
 
 ## Runs: active and history
 
@@ -426,9 +443,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   otherwise; for a valid slug it calls `updateTag` on each tag of
   `historyTags(slug)` and does nothing else. Do not add a database read or
   write, a parameter beyond the slug, a return value, or a fourth tag without
-  deciding what an anonymous caller can do with it. The third, `summary`, was
-  decided: an anonymous caller can make the next render of the summary (`/`) read the
-  database once, nothing else. `updateTag`, not
+  deciding what an anonymous caller can do with it. The third, `summary:today`,
+  was decided: an anonymous caller can make the next render of the summary's
+  (`/`) today card read the database once, nothing else. `updateTag`, not
   `revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
   refresh would be served the old history (see
   `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`).
@@ -439,12 +456,13 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   completed run. Know that on a resumed prerender the tag does not reach that
   scope (it is in the static shell); Realtime, the hydration rule and the
   catch-up cover Active there. All three tag spellings live in one place,
-  `src/lib/history-tags.ts` (`historyTag`, `runsTag`, `summaryTag`, and
-  `historyTags`, which returns the three, history first): the pages'
+  `src/lib/history-tags.ts` (`historyTag`, `runsTag`, `summaryPastTag`,
+  `summaryTodayTag`, and `historyTags`, which returns history, runs and
+  today, history first, and never the past days tag): the pages'
   `cacheTag` calls, the action's `updateTag` calls
   and the route handler's `revalidateTag` calls all import from it, and
   `src/lib/history-tags.test.ts` pins the strings. Never write
-  `history:`/`runs:`/`"summary"` inline anywhere.
+  `history:`/`runs:`/`summary:` inline anywhere.
 - Hydration after a refresh is safe because React Query only overwrites an
   existing entry when the incoming `dataUpdatedAt` is strictly newer
   (`src/data/hydration.test.ts` pins this against the installed
@@ -486,15 +504,24 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 ## Summary
 
 - The summary is the root route `/`, `src/app/page.tsx`, outside
-  `(dashboard)`. `getSummary`
-  is `"use cache"`, tagged `summaryTag()`, with an explicit
-  `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`, and is called
-  only from the `SummaryContent` island after its `await connection()`, under
-  a `SectionBoundary`; never from the page body or metadata (it would be
-  prerendered into the shell and frozen). The island reads no `searchParams`,
-  so `connection()` is its one request-time marker and is required (the
-  History rule against it does not apply here). One report, one tag; never a
-  per-project or per-window summary tag.
+  `(dashboard)`. Its report is split on today's UTC date, read once by the
+  `SummaryContent` island through `requestToday` (`await connection()`, then
+  the clock) and passed to both
+  halves, each under its own `SectionBoundary`, today first:
+  - `getTodayState(today)` is `"use cache"`, tagged `summaryTodayTag()`, with
+    `cacheLife({ stale: 60, revalidate: 60, expire: 300 })`, a one-liner
+    around `prefetch(queryKeys.summaryToday(today), ...)`. Its state is
+    hydrated into `SummaryProviders` and read by `TodaySummary`.
+  - `getPastDays(today)` is `"use cache"`, tagged `summaryPastTag()`, with
+    `cacheLife({ stale: 300, revalidate: 86400, expire: 172800 })`. `today`
+    in its key is the midnight rollover; no completion drops this tag, and
+    no cron or tag drop is added for the rollover.
+    Both are called only below that `connection()`; never from the page body
+    or metadata (they would be prerendered into the shell and frozen). The
+    island reads no `searchParams`, so `connection()` is its one request-time
+    marker and is required (the History rule against it does not apply here).
+    One tag per half; never a per-project, per-day or per-window summary tag,
+    and never an `expire` under 5 minutes.
 - The `h1` and the intro paragraph of `/` are static copy in the page body
   (the shell), and the title comes from `metadata`; none of them reads the
   report. The reading note about UTC and metrics is a `<p>` in the page body
@@ -514,8 +541,11 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `BrandLink` from the same file, links to `/`.
 - `/` has no filters (issue #97): it always shows every public project over
   `SUMMARY_DEFAULT_DAYS` days and reads no search parameter.
-- The window is anchored on the newest `day` in `adw.daily_summary`, never
-  on a clock read. If a calendar window is ever wanted, the clock rule above must be amended in the same change.
+- The window is anchored on today's UTC date (`utcDay` of the island's one
+  clock read), not on the newest row in `adw.daily_summary`: the past days are
+  the `SUMMARY_DEFAULT_DAYS` days strictly before today (`pastDaysWindow`),
+  today is the card above them. The two halves always take the same `today`;
+  never compute it twice or in a client component.
 - The summary shows sums only. A day's totals are the sum of its project
   rows (`dayTotals` in `src/lib/daily-summary.ts`), and no median is read,
   assembled or shown; a median cannot be combined across projects, so do not
@@ -530,9 +560,18 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Charts are inline SVG with their values also as text; no charting library.
   Class hues match `IssueClassBadge`; completed and failed counts use
   `STATUS_COLORS`.
-- The summary is not a live section: no React Query entry, no Realtime
-  reducer and no catch-up read touch it. It follows completions only through
-  the `summary` tag in `historyTags(slug)`.
+- The today card is a React Query entry under `SummaryProviders`, but not a
+  live section: no Realtime reducer, no catch-up read and no `setQueryData`
+  touch it. Its Refresh button calls `refetch()` on that query only; never
+  `router.refresh()`, a server action or a navigation from it. A failed
+  refetch keeps the last figures (no error boundary takes over). The past
+  days never enter the query cache. Completions reach the page only through
+  the `summary:today` tag in `historyTags(slug)`; the past days tag is never
+  dropped.
+- `staleTimes.dynamic` (300 seconds) is above `getTodayState`'s `stale` (60)
+  on purpose: the rule tying them is for History, which has no in-place
+  refresh. A revisit within five minutes may show the router-cached today
+  card, and Refresh is the remedy. Leave `staleTimes` unchanged for it.
 
 ## Realtime and Supabase
 

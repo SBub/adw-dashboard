@@ -1,9 +1,11 @@
-// Everything that shapes the summary page (`/`), pure: the window, the report
-// assembled from adw.daily_summary rows, the class bar's segments and the
-// number labels. No clock, no cache, no IO, so every case is unit-tested with
-// fixed inputs (src/lib/daily-summary.test.ts). The data boundary
-// (getDailySummary in src/data/index.ts) reads the rows and calls
-// toSummaryReport; the components only call the label helpers.
+// Everything that shapes the summary page (`/`), pure: today's UTC day from a
+// time the caller read, the past window that ends the day before it, the
+// report and the today card assembled from adw.daily_summary rows, the class
+// bar's segments and the number labels. No clock, no cache, no IO, so every
+// case is unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The
+// data boundary (getSummaryPast and getSummaryToday in src/data/index.ts)
+// reads the rows and calls toSummaryReport or toSummaryDay; the components
+// only call the label helpers.
 import type {
   DailySummary,
   SummaryDay,
@@ -22,14 +24,34 @@ function pad2(value: number): string {
 }
 
 /**
+ * The UTC calendar day (`YYYY-MM-DD`) of an epoch in milliseconds. Pure: the
+ * caller passes the time. It is the one place the summary page's request-time
+ * clock read (SummaryContent in src/app/page.tsx) becomes a day, so the past
+ * days and the today card split on the same UTC midnight.
+ */
+export function utcDay(ms: number): string {
+  const date = new Date(ms);
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+}
+
+/**
  * The first day (`YYYY-MM-DD`) of a window of `days` days ending on `anchor`
  * (also `YYYY-MM-DD`), both included. A date-only string parses as UTC
  * midnight, and whole UTC days carry no daylight saving shift, so month, year
  * and leap-day boundaries are the calendar's. No clock is read.
  */
 export function summaryWindowStart(anchor: string, days: number): string {
-  const date = new Date(Date.parse(anchor) - (days - 1) * DAY_MS);
-  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+  return utcDay(Date.parse(anchor) - (days - 1) * DAY_MS);
+}
+
+/**
+ * The `days` days strictly before `today` (`YYYY-MM-DD`): `to` is the day
+ * before today, `from` is `days` days before it, both included. Today is
+ * never inside it; the today card shows it. The data layer's read mirrors it
+ * with `day >= from and day < today`.
+ */
+export function pastDaysWindow(today: string, days: number): { from: string; to: string } {
+  return { from: summaryWindowStart(today, days + 1), to: summaryWindowStart(today, 2) };
 }
 
 /** Adds one numeric field across a day's project rows. */
@@ -91,6 +113,26 @@ export function toSummaryReport(
       return { day, totals: dayTotals(day, list), projects: list };
     }),
   };
+}
+
+/**
+ * One day's SummaryDay from the view's rows, assembled by toSummaryReport (so
+ * the same naming, hidden-project drop, ordering and totals), or null when no
+ * visible project finished a run that day. Rows of other days are ignored.
+ * The today card's server prefetch and its browser refetch both return this,
+ * so the two cannot drift. Never mutates its inputs.
+ */
+export function toSummaryDay(
+  rows: readonly DailySummary[],
+  projects: readonly (SummaryProject & { id: string })[],
+  day: string,
+): SummaryDay | null {
+  const report = toSummaryReport(
+    rows.filter((row) => row.day === day),
+    projects,
+    { days: 1, from: day, to: day },
+  );
+  return report.rows[0] ?? null;
 }
 
 export type ClassKey = "/feature" | "/bug" | "/chore" | "/patch" | "other";

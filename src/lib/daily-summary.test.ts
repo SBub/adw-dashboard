@@ -4,9 +4,12 @@ import { secondsLabel } from "./run-view";
 import {
   classSegments,
   costLabel,
+  pastDaysWindow,
   summaryWindowStart,
   tokensLabel,
+  toSummaryDay,
   toSummaryReport,
+  utcDay,
 } from "./daily-summary";
 
 // The module under test reads no clock; every case is a fixed input.
@@ -63,6 +66,110 @@ describe("summaryWindowStart", () => {
 
   it("crosses a year boundary", () => {
     expect(summaryWindowStart("2026-01-05", 7)).toBe("2025-12-30");
+  });
+});
+
+describe("utcDay", () => {
+  it("is the day of a time one minute before UTC midnight", () => {
+    expect(utcDay(Date.parse("2026-10-05T23:59:00Z"))).toBe("2026-10-05");
+  });
+
+  it("is the next day one minute after UTC midnight", () => {
+    expect(utcDay(Date.parse("2026-10-06T00:01:00Z"))).toBe("2026-10-06");
+  });
+
+  it("places UTC midnight itself on the new day", () => {
+    expect(utcDay(Date.parse("2026-10-06T00:00:00.000Z"))).toBe("2026-10-06");
+  });
+
+  it("keeps the last millisecond of a year in that year", () => {
+    expect(utcDay(Date.parse("2025-12-31T23:59:59.999Z"))).toBe("2025-12-31");
+  });
+
+  it("places an offset timestamp on its UTC day", () => {
+    expect(utcDay(Date.parse("2026-10-06T01:30:00+02:00"))).toBe("2026-10-05");
+  });
+});
+
+describe("pastDaysWindow", () => {
+  it("is the 30 days before today, today excluded", () => {
+    expect(pastDaysWindow("2026-10-06", 30)).toEqual({ from: "2026-09-06", to: "2026-10-05" });
+  });
+
+  it("is the day before today for a one-day window", () => {
+    expect(pastDaysWindow("2026-10-06", 1)).toEqual({ from: "2026-10-05", to: "2026-10-05" });
+  });
+
+  it("crosses into February of a common year", () => {
+    expect(pastDaysWindow("2026-03-01", 1)).toEqual({ from: "2026-02-28", to: "2026-02-28" });
+  });
+
+  it("crosses into February of a leap year", () => {
+    expect(pastDaysWindow("2024-03-01", 1)).toEqual({ from: "2024-02-29", to: "2024-02-29" });
+  });
+
+  it("crosses a year boundary", () => {
+    expect(pastDaysWindow("2026-01-01", 7)).toEqual({ from: "2025-12-25", to: "2025-12-31" });
+  });
+
+  it("splits a run at 23:59 yesterday into the past and one at 00:01 into today", () => {
+    const today = utcDay(Date.parse("2026-10-06T12:00:00Z"));
+    const window = pastDaysWindow(today, 30);
+    const before = utcDay(Date.parse("2026-10-05T23:59:00Z"));
+    const after = utcDay(Date.parse("2026-10-06T00:01:00Z"));
+    expect(before).toBe(window.to);
+    expect(before < today).toBe(true);
+    expect(after).toBe(today);
+    expect(after < today).toBe(false);
+  });
+});
+
+describe("toSummaryDay", () => {
+  it("is null for no rows", () => {
+    expect(toSummaryDay([], PROJECTS, "2026-10-06")).toBeNull();
+  });
+
+  it("is null when the only rows are of another day", () => {
+    expect(toSummaryDay([row({ day: "2026-10-05", runs: 1 })], PROJECTS, "2026-10-06")).toBeNull();
+  });
+
+  it("is null when the only rows are of a hidden project", () => {
+    expect(
+      toSummaryDay(
+        [row({ day: "2026-10-06", project_id: "hidden", runs: 1 })],
+        PROJECTS,
+        "2026-10-06",
+      ),
+    ).toBeNull();
+  });
+
+  it("equals the report's day for that day's rows", () => {
+    const rows = [
+      row({ day: "2026-10-06", project_id: "p1", runs: 1, completed: 1 }),
+      row({ day: "2026-10-06", project_id: "p2", runs: 3, failed: 1 }),
+    ];
+    const expected = at(toSummaryReport(rows, PROJECTS, ALL).rows, 0);
+    expect(toSummaryDay(rows, PROJECTS, "2026-10-06")).toEqual(expected);
+  });
+
+  it("ignores rows of other days", () => {
+    const day = toSummaryDay(
+      [row({ day: "2026-10-06", runs: 2 }), row({ day: "2026-10-05", runs: 9 })],
+      PROJECTS,
+      "2026-10-06",
+    );
+    expect(day?.day).toBe("2026-10-06");
+    expect(day?.totals.runs).toBe(2);
+  });
+
+  it("does not mutate its inputs", () => {
+    const rows = Object.freeze([
+      Object.freeze(row({ day: "2026-10-06", project_id: "p2", runs: 1 })),
+      Object.freeze(row({ day: "2026-10-06", project_id: "p1", runs: 2 })),
+    ]);
+    const projects = Object.freeze(PROJECTS.map((p) => Object.freeze({ ...p })));
+    expect(() => toSummaryDay(rows, projects, "2026-10-06")).not.toThrow();
+    expect(rows.map((r) => r.project_id)).toEqual(["p2", "p1"]);
   });
 });
 

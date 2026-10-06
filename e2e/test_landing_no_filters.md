@@ -18,8 +18,8 @@ So that the report reads straight through and old filtered links still land on i
    by the intro paragraph starting `ADW is an autonomous pipeline`.
 3. **Verify** the text `Times are UTC. Tokens and cost count runs that published metrics.` follows
    the intro paragraph and precedes the first day card.
-4. **Verify** at least one day card is present (an `article` with a level-2 date heading) and that
-   it holds a per-project table whose `Project` cells are plain text (no links in the Project
+4. **Verify** at least one past day card is present (an `article` with a level-2 date heading,
+   below the today card whose heading starts `Today,`) and that it holds a per-project table whose `Project` cells are plain text (no links in the Project
    column).
 5. **Verify** the window line above the day cards ends with `all projects`.
 6. **Verify** the snapshot contains no `combobox`, no `button` named `Apply` and no `form`.

@@ -17,9 +17,12 @@
 //   re-render. getCompletedRuns.
 //
 // The summary page (`/`) reads the adw.daily_summary view (finished runs per
-// project per UTC day) through getDailySummary, server only, from that page's
-// own "use cache" scope; it never enters the query cache either.
-import { summaryWindowStart, toSummaryReport } from "@/lib/daily-summary";
+// project per UTC day) in two halves split on today's UTC date, which the page
+// passes in: getSummaryPast (the days before today, server only, from the
+// page's long-lived "use cache" scope, never in the query cache) and
+// getSummaryToday (today only, prefetched by a short-lived scope and refetched
+// in the browser as the today card's queryFn).
+import { pastDaysWindow, toSummaryDay, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
   type HistoryBookmark,
@@ -31,7 +34,14 @@ import {
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
-import type { DailySummary, ProjectSummary, QueueItem, Run, SummaryReport } from "@/types/adw";
+import type {
+  DailySummary,
+  ProjectSummary,
+  QueueItem,
+  Run,
+  SummaryDay,
+  SummaryReport,
+} from "@/types/adw";
 import { getSupabase } from "./supabase";
 
 export interface ActiveRuns {
@@ -317,61 +327,79 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
 }
 
 /**
- * The summary page's (`/`) report: the finished runs per UTC day over a window of
- * `days` days, for every visible project.
- *
- * The window ends on the newest day in adw.daily_summary, not on today:
- * "today" would be a second clock read in the data layer, and the one
- * permitted is getActiveRuns's fetched_at. On an active installation the
- * newest day is today anyway; on a quiet one it is the last day with a
- * finished run, which is the more useful window. The page states the range.
- *
- * Three reads: the projects (to name the rows and drop the hidden ones), the
- * newest day (the anchor), and the view's rows from the window's first day on.
- * The view runs with security_invoker, so only public projects are seen.
- * Assembly is toSummaryReport's (src/lib/daily-summary.ts): every count and
- * sum is added across projects.
- *
- * Server only, and only from the summary page's "use cache" scope (getSummary,
- * tagged summary). Never a queryFn, never in the React Query cache. `days` is
- * the page's fixed SUMMARY_DEFAULT_DAYS.
+ * Every project the publishable key can see, by slug, with the two columns
+ * the summary names its rows by. RLS hides private projects, so a summary row
+ * whose project is not here is dropped. Shared by both summary reads.
  */
-export async function getDailySummary(days: number): Promise<SummaryReport> {
-  const listed = await getSupabase()
+async function getSummaryProjects(): Promise<{ id: string; slug: string; display_name: string }[]> {
+  const { data, error } = await getSupabase()
     .from("projects")
     .select("id, slug, display_name")
     .order("slug", { ascending: true });
-  if (listed.error) {
-    throw new Error(`projects: ${listed.error.message}`);
+  if (error) {
+    throw new Error(`projects: ${error.message}`);
   }
   // Same untyped client as everywhere in this file; the three selected
   // columns are asserted here, at the boundary.
-  const projects = (listed.data ?? []) as { id: string; slug: string; display_name: string }[];
+  return (data ?? []) as { id: string; slug: string; display_name: string }[];
+}
 
-  const anchor = await getSupabase()
-    .from("daily_summary")
-    .select("day")
-    .order("day", { ascending: false })
-    .limit(1);
-  if (anchor.error) {
-    throw new Error(`daily_summary: ${anchor.error.message}`);
-  }
-  // One selected column, asserted here.
-  const to = ((anchor.data ?? []) as { day: string }[])[0]?.day ?? null;
-  if (to === null) {
-    return toSummaryReport([], projects, { days, from: null, to: null });
-  }
-
-  const from = summaryWindowStart(to, days);
-  const rows = await getSupabase()
-    .from("daily_summary")
-    .select(DAILY_SUMMARY_COLUMNS)
-    .gte("day", from)
-    .order("day", { ascending: false });
+/**
+ * The summary page's (`/`) past days: the finished runs per UTC day over the
+ * `days` days strictly before `today` (`YYYY-MM-DD`), for every visible
+ * project. Today is never in it; the today card shows it (getSummaryToday).
+ *
+ * `today` comes from the caller, the page's one request-time clock read; this
+ * function reads no clock. Two reads in parallel: the projects (to name the
+ * rows and drop the hidden ones) and the view's rows in the window
+ * (pastDaysWindow in src/lib/daily-summary.ts, mirrored here as
+ * `day >= from and day < today`). Assembly is toSummaryReport's.
+ *
+ * Server only, and only from the summary page's past days "use cache" scope
+ * (getPastDays). Never a queryFn, never in the React Query cache. `days` is
+ * the page's fixed SUMMARY_DEFAULT_DAYS.
+ */
+export async function getSummaryPast(today: string, days: number): Promise<SummaryReport> {
+  const { from, to } = pastDaysWindow(today, days);
+  const [projects, rows] = await Promise.all([
+    getSummaryProjects(),
+    getSupabase()
+      .from("daily_summary")
+      .select(DAILY_SUMMARY_COLUMNS)
+      .gte("day", from)
+      .lt("day", today)
+      .order("day", { ascending: false }),
+  ]);
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
   }
   // The selected columns are exactly the fields of DailySummary, so this cast
-  // is the one place the view's shape is asserted.
+  // is the one place the view's shape is asserted for this read.
   return toSummaryReport((rows.data ?? []) as DailySummary[], projects, { days, from, to });
+}
+
+/**
+ * The summary page's (`/`) today card: the finished runs of the UTC day
+ * `today` (`YYYY-MM-DD`) across every visible project, or null when none has
+ * finished a run yet. Two reads in parallel (projects and that day's rows),
+ * assembled by toSummaryDay, so the server prefetch and the browser refetch
+ * return the same shape.
+ *
+ * Also the queryFn for queryKeys.summaryToday(today). On the server it runs
+ * only inside the page's today "use cache" scope (getTodayState); in the
+ * browser when TodaySummary's Refresh button refetches, through the same
+ * Supabase client with the publishable key and RLS. It reads no clock;
+ * `today` always comes from the caller.
+ */
+export async function getSummaryToday(today: string): Promise<SummaryDay | null> {
+  const [projects, rows] = await Promise.all([
+    getSummaryProjects(),
+    getSupabase().from("daily_summary").select(DAILY_SUMMARY_COLUMNS).eq("day", today),
+  ]);
+  if (rows.error) {
+    throw new Error(`daily_summary: ${rows.error.message}`);
+  }
+  // The selected columns are exactly the fields of DailySummary, the same cast
+  // as in getSummaryPast.
+  return toSummaryDay((rows.data ?? []) as DailySummary[], projects, today);
 }

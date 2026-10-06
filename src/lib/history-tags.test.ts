@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { historyTag, historyTags, runsTag, summaryTag } from "./history-tags";
+import { historyTag, historyTags, runsTag, summaryPastTag, summaryTodayTag } from "./history-tags";
 
 // The spellings are a contract between the page's cacheTag calls and the two
 // places that expire them (the server action and the route handler). Pinning
@@ -13,15 +13,23 @@ describe("history tags", () => {
     expect(runsTag("SBub/adw-toolkit")).toBe("runs:SBub/adw-toolkit");
   });
 
-  it("spells the summary scope tag as summary", () => {
-    expect(summaryTag()).toBe("summary");
+  it("spells the summary past days tag as summary:past", () => {
+    expect(summaryPastTag()).toBe("summary:past");
+  });
+
+  it("spells the summary today tag as summary:today", () => {
+    expect(summaryTodayTag()).toBe("summary:today");
   });
 
   it("returns all three tags for a completion, history first", () => {
     expect(historyTags("SBub/adw-toolkit")).toEqual([
       "history:SBub/adw-toolkit",
       "runs:SBub/adw-toolkit",
-      "summary",
+      "summary:today",
     ]);
+  });
+
+  it("never drops the summary past days tag on a completion", () => {
+    expect(historyTags("SBub/adw-toolkit")).not.toContain(summaryPastTag());
   });
 });
