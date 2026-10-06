@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DailySummary } from "@/types/adw";
+import { secondsLabel } from "./run-view";
 import {
   classSegments,
   costLabel,
@@ -175,6 +176,78 @@ describe("toSummaryReport", () => {
       expect(value).toBe(projects.reduce((total, p) => total + p[field], 0));
     }
     expect(projects.map((p) => p.slug)).toEqual(["SBub/alpha", "SBub/beta"]);
+  });
+
+  it("the Total row equals the column sums of a day with three projects", () => {
+    const three = [...PROJECTS, { id: "p3", slug: "SBub/gamma", display_name: "Gamma" }];
+    const report = toSummaryReport(
+      [
+        row({
+          project_id: "p1",
+          runs: 5,
+          completed: 3,
+          failed: 2,
+          features: 2,
+          bugs: 1,
+          chores: 1,
+          patches: 1,
+          duration_sum_s: 610,
+          tokens_in_sum: 1200,
+          tokens_cache_read_sum: 1_500_000,
+          tokens_out_sum: 3400,
+          cost_usd_sum: 0.1,
+        }),
+        row({
+          project_id: "p2",
+          runs: 4,
+          completed: 3,
+          failed: 1,
+          features: 1,
+          bugs: 1,
+          chores: 1,
+          patches: 1,
+          duration_sum_s: 1250,
+          tokens_in_sum: 800,
+          tokens_cache_read_sum: 2_250_000,
+          tokens_out_sum: 2100,
+          cost_usd_sum: 0.2,
+        }),
+        row({
+          project_id: "p3",
+          runs: 6,
+          completed: 4,
+          failed: 2,
+          features: 2,
+          bugs: 2,
+          chores: 1,
+          patches: 1,
+          duration_sum_s: 2000,
+          tokens_in_sum: 500,
+          tokens_cache_read_sum: 950_000,
+          tokens_out_sum: 1500,
+          cost_usd_sum: 0.35,
+        }),
+      ],
+      three,
+      ALL,
+    );
+    const { totals, projects } = at(report.rows, 0);
+    expect(projects).toHaveLength(3);
+    for (const [key, value] of Object.entries(totals)) {
+      if (key === "day" || key === "cost_usd_sum") continue;
+      const field = key as Exclude<keyof typeof totals, "day">;
+      expect(value).toBe(projects.reduce((total, p) => total + p[field], 0));
+    }
+    expect(totals.cost_usd_sum).toBeCloseTo(
+      projects.reduce((total, p) => total + p.cost_usd_sum, 0),
+      4,
+    );
+    expect(totals.cost_usd_sum).toBe(0.65);
+    expect(secondsLabel(totals.duration_sum_s)).toBe("1h 04m");
+    expect(tokensLabel(totals.tokens_in_sum)).toBe("2.5k");
+    expect(tokensLabel(totals.tokens_cache_read_sum)).toBe("4.7M");
+    expect(tokensLabel(totals.tokens_out_sum)).toBe("7.0k");
+    expect(costLabel(totals.cost_usd_sum)).toBe("$0.65");
   });
 
   it("a single project's totals equal its row", () => {

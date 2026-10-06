@@ -1159,11 +1159,11 @@ summary's old address, is a permanent (308) redirect to `/` in
 
 `/` shows what the toolkit finished per UTC day, newest first: runs
 completed and failed (halted when there are any), the split by issue class as
-an inline-SVG stacked bar with its counts as text, and five totals: total
-duration, tokens in, cache read, tokens out and cost. By default it covers 30
+an inline-SVG stacked bar with its counts as text. By default it covers 30
 days across every public project, with a per-project table under each day
 (Project, Runs, Completed, Failed, Classes, Total duration, Tokens in, Cache
-read, Tokens out, Cost).
+read, Tokens out, Cost) that ends in a Total row with the column sums. With a
+project selected, the table holds that project's single row plus Total.
 
 **Data.** The toolkit's `adw.daily_summary` view (its migration
 `supabase/migrations/*_run_metrics.sql`) holds one row per project per UTC day
@@ -1190,9 +1190,10 @@ view for the selection, and the page states it ("30 days to 05.10.2026"). On
 an active installation that is today; on a quiet one it is the last day with a
 finished run.
 
-**Totals.** Every value on the page is a sum. A day's strip is the sum of its
-project rows in the table below (`dayTotals` in `src/lib/daily-summary.ts`);
-with a project selected it is that project's row. Nothing is a median.
+**Totals.** Every value on the page is a sum. The day header's counts and the
+table's Total row are `day.totals`, the sum of the table's own rows
+(`dayTotals` in `src/lib/daily-summary.ts`), passed to `ProjectBreakdownTable`
+as a prop. Nothing is a median.
 
 **Filters.** A plain GET form, no client state: `?days` (1 to 90, default 30;
 the form offers 7, 30 and 90) and `?project=owner/repo`. Both are normalised
