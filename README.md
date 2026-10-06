@@ -1191,7 +1191,10 @@ with a project selected it is that project's row. Nothing is a median.
 the form offers 7, 30 and 90) and `?project=owner/repo`. Both are normalised
 by `readSummaryDays` and `readSummaryProject` outside the cache scope; an
 invalid value is the default, never an error. A valid slug the publishable key
-cannot see renders a "No public project" panel.
+cannot see renders a "No public project" panel. The selects reset the native
+appearance and draw their own chevron, and share one height, border and font
+with Apply through `src/lib/form-controls.ts`, so the row looks the same in
+Safari and Chrome.
 
 **Cache.** `getSummary` in `src/app/summary/page.tsx` is `"use cache"`, tagged
 `summary` (`summaryTag()` in `src/lib/history-tags.ts`; one tag for every

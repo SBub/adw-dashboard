@@ -503,6 +503,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
 - Charts are inline SVG with their values also as text; no charting library.
   Class hues match `IssueClassBadge`; completed and failed counts use
   `STATUS_COLORS`.
+- The filter controls take their classes only from
+  `src/lib/form-controls.ts`: the selects are `appearance-none` (plus the
+  `-webkit-` reset), share one explicit height with the button, and get a
+  chevron drawn by the component; the `<select>` elements stay native. Every
+  change to it goes with a test case in `src/lib/form-controls.test.ts`.
 - The summary is not a live section: no React Query entry, no Realtime
   reducer and no catch-up read touch it. It follows completions only through
   the `summary` tag in `historyTags(slug)`.
