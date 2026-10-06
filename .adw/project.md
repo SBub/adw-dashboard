@@ -104,8 +104,7 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 - Feature docs: none. Documentation is exactly two files, edited in place to describe the current
   code: `README.md` (what the app is and how it works) and `AGENTS.md` (behavioural rules; a new
   invariant goes there as a rule). No `docs/` hub, no `app_docs/`, no per-feature file, no dated
-  changelog entries. A change to `specs/`, `docs/agentic-kpis.md`, tests alone or a dependency bump
-  needs no documentation.
+  changelog entries. A change to `specs/`, tests alone or a dependency bump needs no documentation.
 - Index to update: none. `CLAUDE.md` is an include of `AGENTS.md`.
 - Read before planning: `AGENTS.md` in full, the `README.md` sections for the area touched, and the
   installed Next docs under `node_modules/next/dist/docs/` for anything about caching or Realtime.
@@ -113,7 +112,6 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
   `chore: ...`). No trailers of any kind: no `Co-Authored-By`, no `Signed-off-by`, no "Generated
   with". The `adw: <agent> <id>` body line is a body line, not a trailer.
 - Required trailer: none.
-- KPI table: `docs/agentic-kpis.md`.
 
 ## Review
 
