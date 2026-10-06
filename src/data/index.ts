@@ -17,9 +17,8 @@
 //   re-render. getCompletedRuns.
 //
 // The /summary page reads the adw.daily_summary view (finished runs per
-// project per UTC day) and the window's finished runs from adw.runs with their
-// adw.run_metrics row embedded, through getDailySummary, server only, from
-// that page's own "use cache" scope; it never enters the query cache either.
+// project per UTC day) through getDailySummary, server only, from that page's
+// own "use cache" scope; it never enters the query cache either.
 import { summaryWindowStart, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
@@ -32,7 +31,6 @@ import {
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
-import { type SummaryRun, toSummaryCharts } from "@/lib/summary-charts";
 import type { DailySummary, ProjectSummary, QueueItem, Run, SummaryReport } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
@@ -60,10 +58,6 @@ const QUEUE_COLUMNS =
 /** The columns of adw.daily_summary the summary page reads, which are exactly the fields of DailySummary. */
 const DAILY_SUMMARY_COLUMNS =
   "project_id, day, runs, completed, failed, halted, features, bugs, chores, patches, median_duration_s, tokens_in_sum, tokens_in_median, tokens_out_sum, tokens_out_median, cost_usd_sum, cost_usd_median";
-
-/** The columns of adw.run_metrics the summary page reads, which are exactly the fields of RunMetrics. */
-const RUN_METRICS_COLUMNS =
-  "project_id, adw_id, tokens_in, tokens_out, tokens_cache_read, tokens_cache_creation, cost_usd, attempts, gate_outcome, phases, plan_lines, diff_added, diff_removed, diff_files, computed_at, updated_at";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -333,14 +327,11 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
  * the newest day is today anyway; on a quiet one it is the last day with a
  * finished run, which is the more useful window. The page states the range.
  *
- * Four reads: the projects (to name the rows and offer the filter), the
- * newest day (the anchor), then together the view's rows from the window's
- * first day on and the runs finished since that day with their run_metrics
- * row embedded (the charts' marks and per-model stacks). The view runs with
- * security_invoker and the tables with RLS, so only public projects are seen.
+ * Three reads: the projects (to name the rows and offer the filter), the
+ * newest day (the anchor), and the view's rows from the window's first day on.
+ * The view runs with security_invoker, so only public projects are seen.
  * Assembly is toSummaryReport's (src/lib/daily-summary.ts): counts and sums
- * are added across projects, medians never are; the charts are
- * toSummaryCharts's (src/lib/summary-charts.ts).
+ * are added across projects, medians never are.
  *
  * Server only, and only from the summary page's "use cache" scope (getSummary,
  * tagged summary). Never a queryFn, never in the React Query cache. `days` is
@@ -378,8 +369,7 @@ export async function getDailySummary(
   // One selected column, asserted here.
   const to = ((anchor.data ?? []) as { day: string }[])[0]?.day ?? null;
   if (to === null) {
-    const report = toSummaryReport([], projects, { days, project: filter, from: null, to: null });
-    return { ...report, charts: toSummaryCharts([], report, projects) };
+    return toSummaryReport([], projects, { days, project: filter, from: null, to: null });
   }
 
   const from = summaryWindowStart(to, days);
@@ -389,35 +379,16 @@ export async function getDailySummary(
     .gte("day", from)
     .order("day", { ascending: false });
   if (selected) rowsQuery = rowsQuery.eq("project_id", selected.id);
-  let runsQuery = getSupabase()
-    .from("runs")
-    .select(`${RUN_COLUMNS}, run_metrics(${RUN_METRICS_COLUMNS})`)
-    .not("finished_at", "is", null)
-    .gte("finished_at", `${from}T00:00:00Z`)
-    .order("finished_at", { ascending: true });
-  if (selected) runsQuery = runsQuery.eq("project_id", selected.id);
-  const [rows, runs] = await Promise.all([rowsQuery, runsQuery]);
+  const rows = await rowsQuery;
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
   }
-  if (runs.error) {
-    throw new Error(`runs: ${runs.error.message}`);
-  }
   // The selected columns are exactly the fields of DailySummary, so this cast
   // is the one place the view's shape is asserted.
-  const report = toSummaryReport((rows.data ?? []) as DailySummary[], projects, {
+  return toSummaryReport((rows.data ?? []) as DailySummary[], projects, {
     days,
     project: filter,
     from,
     to,
   });
-  // The select lists exactly the fields of Run plus the embedded RunMetrics
-  // row, one to one through the (project_id, adw_id) foreign key, so an
-  // object or null: the one place this shape is asserted. Through unknown
-  // because the untyped client cannot know the relationship and infers an
-  // array for every embed.
-  return {
-    ...report,
-    charts: toSummaryCharts((runs.data ?? []) as unknown as SummaryRun[], report, projects),
-  };
 }

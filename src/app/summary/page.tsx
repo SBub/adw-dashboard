@@ -1,15 +1,12 @@
 import type { Metadata } from "next";
 import { cacheLife, cacheTag } from "next/cache";
 import Link from "next/link";
-import { ChartSkeleton } from "@/components/ChartSkeleton";
+import { DailySummaryList } from "@/components/DailySummaryList";
 import { SectionBoundary } from "@/components/SectionBoundary";
-import { SummaryCharts } from "@/components/SummaryCharts";
 import { SummaryFilters } from "@/components/SummaryFilters";
 import { getDailySummary } from "@/data";
 import { readSummaryDays, readSummaryProject } from "@/lib/daily-summary";
-import { formatDay } from "@/lib/format-date";
 import { summaryTag } from "@/lib/history-tags";
-import { readSummaryAggregate, readSummaryMetric } from "@/lib/summary-charts";
 
 export const metadata: Metadata = {
   title: "Summary | ADW Dashboard",
@@ -37,9 +34,6 @@ interface SummaryPageProps {
  * and tokens and cost written after a completion, reach the view without any
  * tag drop, and this bounds how long they wait. `expire` is a day, well above
  * the 5 minutes under which the scope would stop being a cached hole.
- *
- * `?metric` and `?agg` are deliberately not arguments: they change no data
- * (the report carries every series), so they must not multiply cache entries.
  */
 async function getSummary(days: number, project: string | null) {
   "use cache";
@@ -52,14 +46,12 @@ async function getSummary(days: number, project: string | null) {
 // The request-time island. It awaits searchParams first, which stops the
 // prerender here and makes its SectionBoundary the hole; there is no
 // connection() call, which after that read would be a redundant second marker
-// (the History rule in AGENTS.md). `?days`, `?project`, `?metric` and `?agg`
-// are normalised here, outside the cache scope, and never surface an error.
+// (the History rule in AGENTS.md). `?days` and `?project` are normalised here,
+// outside the cache scope, and never surface an error.
 async function SummaryContent({ searchParams }: SummaryPageProps) {
-  const params = await searchParams;
-  const days = readSummaryDays(params.days);
-  const project = readSummaryProject(params.project);
-  const metric = readSummaryMetric(params.metric);
-  const agg = readSummaryAggregate(params.agg);
+  const { days: rawDays, project: rawProject } = await searchParams;
+  const days = readSummaryDays(rawDays);
+  const project = readSummaryProject(rawProject);
   const report = await getSummary(days, project);
 
   if (report === null) {
@@ -79,23 +71,7 @@ async function SummaryContent({ searchParams }: SummaryPageProps) {
   return (
     <div className="mt-6 space-y-6">
       <SummaryFilters projects={report.projects} project={project} days={days} />
-      {report.to !== null && (
-        <p className="text-sm text-neutral-500 dark:text-neutral-400">
-          {report.days === 1 ? "1 day" : `${report.days} days`} to{" "}
-          <time dateTime={report.to}>{formatDay(report.to)}</time>
-          {report.project ? `, ${report.project.display_name}` : ", all projects"}
-        </p>
-      )}
-      {/* Keyed by every parameter, so a navigation that brings new ones
-          (a filter submit, back and forward) remounts the selectors' state. */}
-      <SummaryCharts
-        key={`${days}|${project ?? ""}|${metric}|${agg}`}
-        charts={report.charts}
-        days={days}
-        project={project}
-        metric={metric}
-        agg={agg}
-      />
+      <DailySummaryList report={report} />
     </div>
   );
 }
@@ -107,16 +83,12 @@ export default function SummaryPage({ searchParams }: SummaryPageProps) {
     <div className="mx-auto max-w-6xl px-4 py-6">
       <h1 className="text-2xl font-semibold tracking-tight">Summary</h1>
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        Every finished run on its UTC day, by the measure you pick and coloured by issue class, and
-        a daily aggregate: runs, class mix, median duration per project, tokens and cost per model.
+        Finished runs per UTC day: what kind of work, how long, and what it cost. Medians are over
+        runs that published metrics.
       </p>
       <SectionBoundary
         fallback={
-          <div className="mt-6 space-y-6">
-            <div className="h-12" />
-            <ChartSkeleton />
-            <ChartSkeleton />
-          </div>
+          <p className="mt-6 text-sm text-neutral-500 dark:text-neutral-400">Loading summary...</p>
         }
         detail="The summary did not load."
       >
