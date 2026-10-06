@@ -3,3 +3,39 @@
 html {
   scrollbar-gutter: stable;
 }
+
+/* The charts' colours (axis, grid, tooltip, the issue classes, the model
+   series and the unattributed series), referenced as var(--chart-...) by the
+   recharts props, which take colours as strings; the names are mapped in
+   src/lib/class-colors.ts. Referencing Tailwind's theme variables here keeps
+   them in the built CSS. Dark mode follows prefers-color-scheme, like
+   Tailwind's default dark: variant. */
+:root {
+  --chart-class-feature: var(--color-violet-500);
+  --chart-class-bug: var(--color-fuchsia-500);
+  --chart-class-chore: var(--color-neutral-400);
+  --chart-class-patch: var(--color-lime-500);
+  --chart-model-1: var(--color-indigo-500);
+  --chart-model-2: var(--color-teal-500);
+  --chart-model-3: var(--color-orange-500);
+  --chart-model-4: var(--color-cyan-600);
+  --chart-model-5: var(--color-pink-500);
+  --chart-model-6: var(--color-yellow-600);
+  --chart-axis: var(--color-neutral-500);
+  --chart-grid: var(--color-neutral-200);
+  --chart-tooltip-bg: var(--color-white);
+  --chart-tooltip-border: var(--color-neutral-200);
+  --chart-class-other: var(--color-neutral-300);
+  --chart-unattributed: var(--color-neutral-400);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --chart-axis: var(--color-neutral-400);
+    --chart-grid: var(--color-neutral-800);
+    --chart-tooltip-bg: var(--color-neutral-900);
+    --chart-tooltip-border: var(--color-neutral-700);
+    --chart-class-other: var(--color-neutral-600);
+    --chart-unattributed: var(--color-neutral-500);
+  }
+}
