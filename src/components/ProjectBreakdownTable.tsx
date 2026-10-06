@@ -20,8 +20,8 @@ function countClass(n: number, status: "completed" | "failed") {
 }
 
 /**
- * One day's rows per project, with each project's exact medians. Scrolls
- * horizontally inside its card on a narrow screen.
+ * One day's rows per project, each value that project's sum for the day.
+ * Scrolls horizontally inside its card on a narrow screen.
  */
 export function ProjectBreakdownTable({ rows, days, label }: ProjectBreakdownTableProps) {
   return (
@@ -46,16 +46,19 @@ export function ProjectBreakdownTable({ rows, days, label }: ProjectBreakdownTab
               Classes
             </th>
             <th scope="col" className={`${HEAD} text-right`}>
-              Median duration
+              Total duration
             </th>
             <th scope="col" className={`${HEAD} text-right`}>
-              Tokens in (sum / median)
+              Tokens in
             </th>
             <th scope="col" className={`${HEAD} text-right`}>
-              Tokens out (sum / median)
+              Cache read
             </th>
             <th scope="col" className={`${HEAD} text-right`}>
-              Cost (sum / median)
+              Tokens out
+            </th>
+            <th scope="col" className={`${HEAD} text-right`}>
+              Cost
             </th>
           </tr>
         </thead>
@@ -78,16 +81,11 @@ export function ProjectBreakdownTable({ rows, days, label }: ProjectBreakdownTab
               <td className="px-2 py-1.5">
                 <ClassDistributionBar counts={row} compact />
               </td>
-              <td className={NUM}>{secondsLabel(row.median_duration_s) ?? "n/a"}</td>
-              <td className={NUM}>
-                {tokensLabel(row.tokens_in_sum)} / {tokensLabel(row.tokens_in_median)}
-              </td>
-              <td className={NUM}>
-                {tokensLabel(row.tokens_out_sum)} / {tokensLabel(row.tokens_out_median)}
-              </td>
-              <td className={NUM}>
-                {costLabel(row.cost_usd_sum)} / {costLabel(row.cost_usd_median)}
-              </td>
+              <td className={NUM}>{secondsLabel(row.duration_sum_s)}</td>
+              <td className={NUM}>{tokensLabel(row.tokens_in_sum)}</td>
+              <td className={NUM}>{tokensLabel(row.tokens_cache_read_sum)}</td>
+              <td className={NUM}>{tokensLabel(row.tokens_out_sum)}</td>
+              <td className={NUM}>{costLabel(row.cost_usd_sum)}</td>
             </tr>
           ))}
         </tbody>

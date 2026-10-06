@@ -66,7 +66,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - `durationLabel` in `src/lib/run-view.ts` is pure (two timestamps in, reads no
   clock, `null` while `finished_at` is `null`) and unit-tested in
   `src/lib/run-view.test.ts` with fixed timestamps; `secondsLabel` in the same
-  file formats the summary's `median_duration_s` in the same format through
+  file formats the summary's `duration_sum_s` in the same format through
   the same helper. Every change to the label format goes with a test case; do
   not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
@@ -492,9 +492,10 @@ project)`, is called only from the summary page's `getSummary` scope (see
 - The window is anchored on the newest `day` in `adw.daily_summary` for the
   selection, never on a clock read. If a calendar window is ever wanted, the
   clock rule above must be amended in the same change.
-- Medians across projects are never combined: a day's all-projects median is
-  the one project's exact value or `per project`. Never show a median of
-  medians.
+- The summary shows sums only. A day's totals are the sum of its project
+  rows (`dayTotals` in `src/lib/daily-summary.ts`), and no median is read,
+  assembled or shown; a median cannot be combined across projects, so do not
+  reintroduce one without a per-project-only display.
 - Everything that shapes the report lives in `src/lib/daily-summary.ts`
   (`SUMMARY_DEFAULT_DAYS`, `SUMMARY_MAX_DAYS`, `SUMMARY_DAY_OPTIONS` defined
   there and nowhere else), pure and tested in
