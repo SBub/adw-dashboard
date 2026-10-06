@@ -288,14 +288,15 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       title="Queue"
       description={
         <>
-          Issues waiting for their turn. An issue joins when its repository labels it{" "}
+          First in, first out. The top item starts when the running one finishes. An issue joins
+          when its repository labels it{" "}
           <code className="rounded bg-neutral-100 px-1 py-0.5 font-mono text-xs text-neutral-700 dark:bg-neutral-800 dark:text-neutral-200">
             adw:queued
           </code>
-          ; removing the label withdraws it. Runs start one at a time per project, in this order.
+          ; removing the label withdraws it.
         </>
       }
-      detail="Items added by hand show a manual marker; those stay until removed by hand."
+      detail="Items added by hand show a manual marker; those stay until removed by hand. The numbers follow the queue ledger's order, so moving an item changes them."
     />
   );
   const activeHeading = (

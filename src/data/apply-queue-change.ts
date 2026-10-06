@@ -6,6 +6,7 @@
 // makes them unit-testable without a socket. The realtime module hands their
 // results to queryClient.setQueryData.
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { byQueuePosition } from "@/lib/queue-order";
 import type { ProjectSummary, QueueItem } from "@/types/adw";
 
 /** One change event on adw.queue_items, as the channel delivers it. */
@@ -22,11 +23,6 @@ export type QueueChange = RealtimePostgresChangesPayload<QueueItem>;
 export function queuedIn(current: QueueItem[] | undefined, issueNumber: number) {
   if (!current) return undefined;
   return current.some((item) => item.issue_number === issueNumber);
-}
-
-/** Ledger order: position, then issue_number, so equal positions sort deterministically. */
-function byPosition(a: QueueItem, b: QueueItem): number {
-  return a.position - b.position || a.issue_number - b.issue_number;
 }
 
 function without(items: QueueItem[], issueNumber: number): QueueItem[] {
@@ -58,13 +54,13 @@ export function applyQueueChange(current: QueueItem[], ev: QueueChange): QueueIt
     case "INSERT": {
       if (ev.new.state !== "queued") return current;
       if (queuedIn(current, ev.new.issue_number)) return current;
-      return [...current, ev.new].sort(byPosition);
+      return [...current, ev.new].sort(byQueuePosition);
     }
     case "UPDATE": {
       const issueNumber = ev.new.issue_number;
       if (ev.new.state !== "queued") return without(current, issueNumber);
       return [...current.filter((item) => item.issue_number !== issueNumber), ev.new].sort(
-        byPosition,
+        byQueuePosition,
       );
     }
     case "DELETE": {
