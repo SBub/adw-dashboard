@@ -27,13 +27,11 @@ function row(overrides: Partial<DailySummary>): DailySummary {
     bugs: 0,
     chores: 0,
     patches: 0,
-    median_duration_s: null,
+    duration_sum_s: 0,
     tokens_in_sum: 0,
-    tokens_in_median: null,
+    tokens_cache_read_sum: 0,
     tokens_out_sum: 0,
-    tokens_out_median: null,
     cost_usd_sum: 0,
-    cost_usd_median: null,
     ...overrides,
   };
 }
@@ -121,7 +119,7 @@ describe("summaryWindowStart", () => {
 });
 
 describe("toSummaryReport", () => {
-  it("adds counts and sums across projects and shows no median of medians", () => {
+  it("the day's totals are the sum of its project rows", () => {
     const report = toSummaryReport(
       [
         row({
@@ -130,22 +128,24 @@ describe("toSummaryReport", () => {
           completed: 2,
           failed: 1,
           features: 3,
-          median_duration_s: 600,
+          duration_sum_s: 600,
           tokens_in_sum: 100,
-          tokens_in_median: 30,
+          tokens_cache_read_sum: 1_200_000,
+          tokens_out_sum: 40,
           cost_usd_sum: 1.5,
-          cost_usd_median: 0.5,
         }),
         row({
           project_id: "p2",
           runs: 2,
-          completed: 2,
-          bugs: 2,
-          median_duration_s: 900,
+          completed: 1,
+          halted: 1,
+          bugs: 1,
+          chores: 1,
+          duration_sum_s: 4200,
           tokens_in_sum: 50,
-          tokens_in_median: 25,
+          tokens_cache_read_sum: 3_400_000,
+          tokens_out_sum: 60,
           cost_usd_sum: 0.25,
-          cost_usd_median: 0.1,
         }),
       ],
       PROJECTS,
@@ -153,43 +153,67 @@ describe("toSummaryReport", () => {
     );
     expect(report.rows).toHaveLength(1);
     const { totals, projects } = at(report.rows, 0);
-    expect(totals).toMatchObject({
+    expect(totals).toEqual({
+      day: "2026-10-05",
       runs: 5,
-      completed: 4,
+      completed: 3,
       failed: 1,
+      halted: 1,
       features: 3,
-      bugs: 2,
+      bugs: 1,
+      chores: 1,
+      patches: 0,
+      duration_sum_s: 4800,
       tokens_in_sum: 150,
+      tokens_cache_read_sum: 4_600_000,
+      tokens_out_sum: 100,
       cost_usd_sum: 1.75,
     });
-    expect(totals.median_duration_s).toBeNull();
-    expect(totals.tokens_in_median).toBeNull();
-    expect(totals.tokens_out_median).toBeNull();
-    expect(totals.cost_usd_median).toBeNull();
+    for (const [key, value] of Object.entries(totals)) {
+      if (key === "day") continue;
+      const field = key as Exclude<keyof typeof totals, "day">;
+      expect(value).toBe(projects.reduce((total, p) => total + p[field], 0));
+    }
     expect(projects.map((p) => p.slug)).toEqual(["SBub/alpha", "SBub/beta"]);
-    expect(at(projects, 0).median_duration_s).toBe(600);
   });
 
-  it("keeps the exact medians when one project contributed", () => {
-    const report = toSummaryReport(
-      [
-        row({
-          runs: 1,
-          median_duration_s: 780,
-          tokens_in_median: 10,
-          tokens_out_median: 5,
-          cost_usd_median: 0.2,
-        }),
-      ],
-      PROJECTS,
-      ALL,
-    );
-    expect(at(report.rows, 0).totals).toMatchObject({
-      median_duration_s: 780,
-      tokens_in_median: 10,
-      tokens_out_median: 5,
-      cost_usd_median: 0.2,
+  it("a single project's totals equal its row", () => {
+    const only = row({
+      runs: 2,
+      completed: 1,
+      failed: 1,
+      features: 2,
+      duration_sum_s: 970,
+      tokens_in_sum: 12,
+      tokens_cache_read_sum: 345_678,
+      tokens_out_sum: 9,
+      cost_usd_sum: 0.42,
     });
+    const report = toSummaryReport([only], PROJECTS, ALL);
+    const { project_id: _, ...expected } = only;
+    expect(at(report.rows, 0).totals).toEqual(expected);
+  });
+
+  it("carries only the day, counts and sums", () => {
+    const report = toSummaryReport([row({ runs: 1 })], PROJECTS, ALL);
+    expect(Object.keys(at(report.rows, 0).totals).sort()).toEqual(
+      [
+        "day",
+        "runs",
+        "completed",
+        "failed",
+        "halted",
+        "features",
+        "bugs",
+        "chores",
+        "patches",
+        "duration_sum_s",
+        "tokens_in_sum",
+        "tokens_cache_read_sum",
+        "tokens_out_sum",
+        "cost_usd_sum",
+      ].sort(),
+    );
   });
 
   it("orders days newest first and a day's projects by runs, then slug", () => {

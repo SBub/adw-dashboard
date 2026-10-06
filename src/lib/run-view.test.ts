@@ -30,8 +30,9 @@ describe("durationLabel", () => {
 });
 
 describe("secondsLabel", () => {
-  it("is null for null", () => {
-    expect(secondsLabel(null)).toBeNull();
+  it("formats the summary's summed seconds like durationLabel", () => {
+    expect(secondsLabel(4800)).toBe("1h 20m");
+    expect(secondsLabel(970)).toBe("16m 10s");
   });
 
   it("drops the fraction of a second under an hour", () => {

@@ -24,7 +24,8 @@ projects. One two-pane screen:
   panel; `/projects/<owner>/<repo>` selects a project and is the deep link.
 
 Beside it, a second section, `/summary`, shows finished runs per UTC day
-across projects: issue classes, median duration, tokens and cost (see
+across projects: issue classes, total duration, tokens (fresh input, cache
+read, output) and cost (see
 "Summary" below). The header's "Projects" and "Summary" links switch between
 them.
 
@@ -1151,22 +1152,27 @@ so `/summary` shows no connection pill: the pill is rendered by the
 
 `/summary` shows what the toolkit finished per UTC day, newest first: runs
 completed and failed (halted when there are any), the split by issue class as
-an inline-SVG stacked bar with its counts as text, the median run duration,
-and tokens in, tokens out and cost, each as a sum and a median. By default it
-covers 30 days across every public project, with a per-project table under
-each day.
+an inline-SVG stacked bar with its counts as text, and five totals: total
+duration, tokens in, cache read, tokens out and cost. By default it covers 30
+days across every public project, with a per-project table under each day
+(Project, Runs, Completed, Failed, Classes, Total duration, Tokens in, Cache
+read, Tokens out, Cost).
 
 **Data.** The toolkit's `adw.daily_summary` view (its migration
 `supabase/migrations/*_run_metrics.sql`) holds one row per project per UTC day
-of `runs.finished_at`, left-joined to `adw.run_metrics`; the token and cost
-medians are over the runs that published metrics and are `n/a` when none did.
+of `runs.finished_at`, left-joined to `adw.run_metrics`. The page reads its
+sums: `duration_sum_s`, `tokens_in_sum`, `tokens_cache_read_sum`,
+`tokens_out_sum` and `cost_usd_sum`. The token and cost sums are over the runs
+that published metrics and are 0 when none did. Since the toolkit split token
+usage four ways, `tokens_in` is fresh (uncached) input only and small; cache
+read is the large figure, which is why it has its own column.
 `getDailySummary(days, project)` in `src/data/index.ts` reads the projects, the
 newest `day` in the view and the rows of the window, casts them to
 `DailySummary` (`src/types/adw.ts`), and hands them to `toSummaryReport` in
 `src/lib/daily-summary.ts`, which groups and adds them. Everything that shapes
 the report (the parameters, the window, the totals, the bar's segments, the
 labels) lives in that file, pure and unit-tested. A day is shown as
-`DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and a median duration
+`DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
 by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
 `durationLabel`); both are pure and read no clock.
 
@@ -1177,12 +1183,9 @@ view for the selection, and the page states it ("30 days to 05.10.2026"). On
 an active installation that is today; on a quiet one it is the last day with a
 finished run.
 
-**Medians across projects.** A median cannot be combined from per-project
-medians. In the all-projects view a day's counts and sums are added; a median
-is shown only when exactly one project contributed that day (it is then that
-project's exact value), and reads `per project` otherwise, where the table
-below carries each project's exact medians. With a project selected every
-median is exact.
+**Totals.** Every value on the page is a sum. A day's strip is the sum of its
+project rows in the table below (`dayTotals` in `src/lib/daily-summary.ts`);
+with a project selected it is that project's row. Nothing is a median.
 
 **Filters.** A plain GET form, no client state: `?days` (1 to 90, default 30;
 the form offers 7, 30 and 90) and `?project=owner/repo`. Both are normalised

@@ -83,8 +83,8 @@ export default function SummaryPage({ searchParams }: SummaryPageProps) {
     <div className="mx-auto max-w-6xl px-4 py-6">
       <h1 className="text-2xl font-semibold tracking-tight">Summary</h1>
       <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        Finished runs per UTC day: what kind of work, how long, and what it cost. Medians are over
-        runs that published metrics.
+        Finished runs per UTC day: what kind of work, how long, and what it cost. Totals per day;
+        tokens and cost count runs that published metrics.
       </p>
       <SectionBoundary
         fallback={
