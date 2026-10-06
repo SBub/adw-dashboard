@@ -1,6 +1,7 @@
 import { HydrationBoundary } from "@tanstack/react-query";
 import { cacheTag } from "next/cache";
 import type { ReactNode } from "react";
+import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 import { ProjectNav } from "@/components/ProjectNav";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { getProjects } from "@/data";
@@ -53,9 +54,16 @@ export default async function DashboardLayout({ children }: { children: ReactNod
     <Providers>
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:items-start md:gap-8">
         <aside className="shrink-0 md:sticky md:top-6 md:max-h-[calc(100vh-5.5rem)] md:w-72 md:overflow-y-auto">
-          <h2 className="mb-2 px-1 text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
-            Projects
-          </h2>
+          {/* The connection pill lives here, not in the root header, because
+              the channel it describes is opened by Providers in this layout.
+              /summary has no channel and no pill. It reads no query, so it
+              sits outside the sidebar's boundaries and their fallbacks. */}
+          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+            <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+              Projects
+            </h2>
+            <ConnectionIndicator />
+          </div>
           {/* The HydrationBoundary is scoped to the sidebar because ProjectNav
               is the only consumer of the dehydrated project list; the page's
               own boundary hydrates its runs into the same client Providers

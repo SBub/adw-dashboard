@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 import { SectionNav } from "@/components/SectionNav";
 
 import "./globals.css";
@@ -27,7 +26,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span className="hidden text-xs text-neutral-500 sm:inline dark:text-neutral-400">
                 AI Developer Workflow runs
               </span>
-              <ConnectionIndicator />
             </div>
           </div>
         </header>

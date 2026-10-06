@@ -1,6 +1,6 @@
 // The Realtime subscription: one channel on the Supabase client, started once
 // per browser session from Providers, that patches the React Query cache and
-// drives the header's connection indicator. The data itself still comes from
+// drives the connection indicator. The data itself still comes from
 // the data boundary; this module only applies changes to it, and refreshes it
 // through the boundary when the channel (re)connects.
 import { REALTIME_SUBSCRIBE_STATES, type RealtimeChannel } from "@supabase/supabase-js";
