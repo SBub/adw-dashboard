@@ -502,6 +502,10 @@ project)`, is called only from the summary page's `getSummary` scope (see
   rows (`dayTotals` in `src/lib/daily-summary.ts`), and no median is read,
   assembled or shown; a median cannot be combined across projects, so do not
   reintroduce one without a per-project-only display.
+- The per-project table's `<tfoot>` Total row renders `day.totals`, passed
+  in as `ProjectBreakdownTable`'s `totals` prop; the table adds nothing
+  itself. The table shows for every day with projects, filtered or not. Do
+  not reintroduce a separate totals strip.
 - Everything that shapes the report lives in `src/lib/daily-summary.ts`
   (`SUMMARY_DEFAULT_DAYS`, `SUMMARY_MAX_DAYS`, `SUMMARY_DAY_OPTIONS` defined
   there and nowhere else), pure and tested in

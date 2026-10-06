@@ -120,7 +120,7 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 - Open at `http://localhost:$PORT`: `/` (the summary: heading, filters, day cards with class
   bars, per-project tables; no sidebar, no pill), `/?project=SBub/issebya-homes-ai-system` (or the
-  first listed project; one row per day, no table), `/projects` (project sidebar plus the "Select a
+  first listed project; each day's table holds one project row plus Total), `/projects` (project sidebar plus the "Select a
   project" panel) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
   section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.

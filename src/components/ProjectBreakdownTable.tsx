@@ -2,11 +2,13 @@ import Link from "next/link";
 import { costLabel, summaryHref, tokensLabel } from "@/lib/daily-summary";
 import { secondsLabel } from "@/lib/run-view";
 import { STATUS_COLORS } from "@/lib/status-colors";
-import type { SummaryProjectDay } from "@/types/adw";
+import type { SummaryDay, SummaryProjectDay } from "@/types/adw";
 import { ClassDistributionBar } from "./ClassDistributionBar";
 
 interface ProjectBreakdownTableProps {
   rows: SummaryProjectDay[];
+  /** The day's sums over `rows` (`day.totals` from the report); rendered as the Total row, never recomputed here. */
+  totals: SummaryDay["totals"];
   days: number;
   /** The day's display date, for the table's caption. */
   label: string;
@@ -20,10 +22,10 @@ function countClass(n: number, status: "completed" | "failed") {
 }
 
 /**
- * One day's rows per project, each value that project's sum for the day.
- * Scrolls horizontally inside its card on a narrow screen.
+ * One day's rows per project, each value that project's sum for the day,
+ * and a last Total row with the day's sums as given. Scrolls horizontally inside its card on a narrow screen.
  */
-export function ProjectBreakdownTable({ rows, days, label }: ProjectBreakdownTableProps) {
+export function ProjectBreakdownTable({ rows, totals, days, label }: ProjectBreakdownTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[44rem] text-sm">
@@ -89,6 +91,26 @@ export function ProjectBreakdownTable({ rows, days, label }: ProjectBreakdownTab
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr className="border-t border-neutral-300 font-medium dark:border-neutral-700">
+            <th scope="row" className="px-2 py-1.5 text-left">
+              Total
+            </th>
+            <td className={NUM}>{totals.runs}</td>
+            <td className={`${NUM} ${countClass(totals.completed, "completed")}`}>
+              {totals.completed}
+            </td>
+            <td className={`${NUM} ${countClass(totals.failed, "failed")}`}>{totals.failed}</td>
+            <td className="px-2 py-1.5">
+              <ClassDistributionBar counts={totals} compact />
+            </td>
+            <td className={NUM}>{secondsLabel(totals.duration_sum_s)}</td>
+            <td className={NUM}>{tokensLabel(totals.tokens_in_sum)}</td>
+            <td className={NUM}>{tokensLabel(totals.tokens_cache_read_sum)}</td>
+            <td className={NUM}>{tokensLabel(totals.tokens_out_sum)}</td>
+            <td className={NUM}>{costLabel(totals.cost_usd_sum)}</td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );
