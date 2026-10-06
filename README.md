@@ -659,7 +659,7 @@ below). They are the only readers of `searchParams` (for
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
-The summary (`/`) is built the same way: its heading and description are the static
+The summary (`/`) is built the same way: its heading and intro are the static
 shell, and the report island awaits `searchParams` before its `"use cache"`
 scope (`getSummary`, tag `summary`), so the report is a request-time hole and
 the route is a partial prerender too.
