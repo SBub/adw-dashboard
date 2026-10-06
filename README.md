@@ -28,7 +28,10 @@ see "Summary" below). `/projects` is a two-pane screen:
 The summary at `/` shows finished runs per UTC day across projects: issue
 classes, total duration, tokens (fresh input, cache read, output) and cost (see
 "Summary" below). The header's brand links to `/`, its "Projects" link to
-`/projects`. The old address `/summary` is a permanent redirect to `/` that
+`/projects`. The link of the current section carries `aria-current="page"`, and
+"Projects" is emphasised on `/projects` and on every project page. On a project
+page added after the deploy (not among the pre-rendered slugs) the shell carries
+the unmarked link and the highlight arrives with the streamed pathname. The old address `/summary` is a permanent redirect to `/` that
 keeps its query string.
 
 ## Data: projects and runs from the database
