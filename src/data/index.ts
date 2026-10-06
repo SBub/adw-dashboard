@@ -318,16 +318,15 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
 
 /**
  * The summary page's (`/`) report: the finished runs per UTC day over a window of
- * `days` days, for every visible project or for one (`project`, a slug), or
- * null when `project` names no project the publishable key can see.
+ * `days` days, for every visible project.
  *
- * The window ends on the newest day in adw.daily_summary for the selection,
- * not on today: "today" would be a second clock read in the data layer, and
- * the one permitted is getActiveRuns's fetched_at. On an active installation
- * the newest day is today anyway; on a quiet one it is the last day with a
+ * The window ends on the newest day in adw.daily_summary, not on today:
+ * "today" would be a second clock read in the data layer, and the one
+ * permitted is getActiveRuns's fetched_at. On an active installation the
+ * newest day is today anyway; on a quiet one it is the last day with a
  * finished run, which is the more useful window. The page states the range.
  *
- * Three reads: the projects (to name the rows and offer the filter), the
+ * Three reads: the projects (to name the rows and drop the hidden ones), the
  * newest day (the anchor), and the view's rows from the window's first day on.
  * The view runs with security_invoker, so only public projects are seen.
  * Assembly is toSummaryReport's (src/lib/daily-summary.ts): every count and
@@ -335,12 +334,9 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
  *
  * Server only, and only from the summary page's "use cache" scope (getSummary,
  * tagged summary). Never a queryFn, never in the React Query cache. `days` is
- * already normalised by the caller (readSummaryDays), outside the scope.
+ * the page's fixed SUMMARY_DEFAULT_DAYS.
  */
-export async function getDailySummary(
-  days: number,
-  project: string | null = null,
-): Promise<SummaryReport | null> {
+export async function getDailySummary(days: number): Promise<SummaryReport> {
   const listed = await getSupabase()
     .from("projects")
     .select("id, slug, display_name")
@@ -352,43 +348,30 @@ export async function getDailySummary(
   // columns are asserted here, at the boundary.
   const projects = (listed.data ?? []) as { id: string; slug: string; display_name: string }[];
 
-  const selected = project === null ? null : projects.find((p) => p.slug === project);
-  if (selected === undefined) return null;
-  const filter = selected && { slug: selected.slug, display_name: selected.display_name };
-
-  let anchorQuery = getSupabase()
+  const anchor = await getSupabase()
     .from("daily_summary")
     .select("day")
     .order("day", { ascending: false })
     .limit(1);
-  if (selected) anchorQuery = anchorQuery.eq("project_id", selected.id);
-  const anchor = await anchorQuery;
   if (anchor.error) {
     throw new Error(`daily_summary: ${anchor.error.message}`);
   }
   // One selected column, asserted here.
   const to = ((anchor.data ?? []) as { day: string }[])[0]?.day ?? null;
   if (to === null) {
-    return toSummaryReport([], projects, { days, project: filter, from: null, to: null });
+    return toSummaryReport([], projects, { days, from: null, to: null });
   }
 
   const from = summaryWindowStart(to, days);
-  let rowsQuery = getSupabase()
+  const rows = await getSupabase()
     .from("daily_summary")
     .select(DAILY_SUMMARY_COLUMNS)
     .gte("day", from)
     .order("day", { ascending: false });
-  if (selected) rowsQuery = rowsQuery.eq("project_id", selected.id);
-  const rows = await rowsQuery;
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
   }
   // The selected columns are exactly the fields of DailySummary, so this cast
   // is the one place the view's shape is asserted.
-  return toSummaryReport((rows.data ?? []) as DailySummary[], projects, {
-    days,
-    project: filter,
-    from,
-    to,
-  });
+  return toSummaryReport((rows.data ?? []) as DailySummary[], projects, { days, from, to });
 }

@@ -132,15 +132,12 @@ export interface SummaryDay {
 
 /**
  * The summary page's model. `from` and `to` bound the window (both
- * `YYYY-MM-DD`, `to` the newest day in the view for the selection), null when
- * the view has no row for it. `project` is the filtered project or null for
- * all; `projects` every project the filter can offer; `rows` newest day first.
+ * `YYYY-MM-DD`, `to` the newest day in the view), null when the view has no
+ * row. `rows` newest day first.
  */
 export interface SummaryReport {
   from: string | null;
   to: string | null;
   days: number;
-  project: SummaryProject | null;
-  projects: SummaryProject[];
   rows: SummaryDay[];
 }

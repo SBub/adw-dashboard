@@ -1,10 +1,9 @@
-// Everything that shapes the summary page (`/`), pure: the two search parameters,
-// the window, the report assembled from adw.daily_summary rows, the class bar's
-// segments and the number labels. No clock, no cache, no IO, so every case is
-// unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The data
-// boundary (getDailySummary in src/data/index.ts) reads the rows and calls
+// Everything that shapes the summary page (`/`), pure: the window, the report
+// assembled from adw.daily_summary rows, the class bar's segments and the
+// number labels. No clock, no cache, no IO, so every case is unit-tested with
+// fixed inputs (src/lib/daily-summary.test.ts). The data boundary
+// (getDailySummary in src/data/index.ts) reads the rows and calls
 // toSummaryReport; the components only call the label helpers.
-import { isProjectSlug } from "@/lib/slug";
 import type {
   DailySummary,
   SummaryDay,
@@ -13,43 +12,13 @@ import type {
   SummaryReport,
 } from "@/types/adw";
 
-/** The window when `?days` is absent or invalid. */
+/** The window in days the summary page always shows. */
 export const SUMMARY_DEFAULT_DAYS = 30;
-
-/** The widest window `?days` can ask for. */
-export const SUMMARY_MAX_DAYS = 90;
-
-/** The windows the filter form offers. */
-export const SUMMARY_DAY_OPTIONS = [7, 30, 90] as const;
-
-// Static (not built from input), so the lint rule against non-literal regexps
-// is satisfied. Three digits at most: anything longer clamps to the maximum
-// anyway, and a short pattern cannot be made expensive by a caller.
-const DAYS = /^\d{1,3}$/;
 
 const DAY_MS = 86_400_000;
 
 function pad2(value: number): string {
   return String(value).padStart(2, "0");
-}
-
-/**
- * The window in days from `?days`: decimal digits only, clamped to
- * [1, SUMMARY_MAX_DAYS]. Anything else (absent, repeated, empty, signed,
- * fractional, not a number) is SUMMARY_DEFAULT_DAYS. Never throws.
- */
-export function readSummaryDays(raw: string | string[] | undefined): number {
-  if (typeof raw !== "string" || !DAYS.test(raw)) return SUMMARY_DEFAULT_DAYS;
-  return Math.min(SUMMARY_MAX_DAYS, Math.max(1, Number.parseInt(raw, 10)));
-}
-
-/**
- * The project filter from `?project`: the slug when it is one (isProjectSlug),
- * otherwise null, which is all projects (absent, the form's empty "All
- * projects" value, repeated, malformed). Never throws.
- */
-export function readSummaryProject(raw: string | string[] | undefined): string | null {
-  return isProjectSlug(raw) ? raw : null;
 }
 
 /**
@@ -98,7 +67,7 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
 export function toSummaryReport(
   rows: readonly DailySummary[],
   projects: readonly (SummaryProject & { id: string })[],
-  options: { days: number; project: SummaryProject | null; from: string | null; to: string | null },
+  options: { days: number; from: string | null; to: string | null },
 ): SummaryReport {
   const byId = new Map(projects.map((project) => [project.id, project]));
   const byDay = new Map<string, SummaryProjectDay[]>();
@@ -115,8 +84,6 @@ export function toSummaryReport(
     from: options.from,
     to: options.to,
     days: options.days,
-    project: options.project,
-    projects: projects.map(({ slug, display_name }) => ({ slug, display_name })),
     rows: days.map((day) => {
       const list = (byDay.get(day) ?? []).sort(
         (a, b) => b.runs - a.runs || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0),
@@ -190,16 +157,4 @@ export function costLabel(usd: number | null): string {
   if (usd === null) return "n/a";
   if (usd > 0 && usd < 0.01) return "<$0.01";
   return `$${(Math.round(usd * 100) / 100).toFixed(2)}`;
-}
-
-/**
- * The summary URL (`/`) for a window and a project filter, the default window and
- * "all projects" left out of the query string.
- */
-export function summaryHref(days: number, project: string | null): string {
-  const params = new URLSearchParams();
-  if (days !== SUMMARY_DEFAULT_DAYS) params.set("days", String(days));
-  if (project !== null) params.set("project", project);
-  const query = params.toString();
-  return query ? `/?${query}` : "/";
 }

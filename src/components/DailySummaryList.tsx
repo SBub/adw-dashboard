@@ -18,8 +18,7 @@ export function DailySummaryList({ report }: { report: SummaryReport }) {
     <div className="space-y-4">
       <p className="text-sm text-neutral-500 dark:text-neutral-400">
         {report.days === 1 ? "1 day" : `${report.days} days`} to{" "}
-        <time dateTime={report.to}>{formatDay(report.to)}</time>
-        {report.project ? `, ${report.project.display_name}` : ", all projects"}
+        <time dateTime={report.to}>{formatDay(report.to)}</time>, all projects
       </p>
       {report.rows.map((day) => {
         const { totals } = day;
@@ -54,12 +53,7 @@ export function DailySummaryList({ report }: { report: SummaryReport }) {
             </header>
             <ClassDistributionBar counts={totals} />
             {day.projects.length > 0 && (
-              <ProjectBreakdownTable
-                rows={day.projects}
-                totals={totals}
-                days={report.days}
-                label={label}
-              />
+              <ProjectBreakdownTable rows={day.projects} totals={totals} label={label} />
             )}
           </article>
         );
