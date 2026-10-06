@@ -11,7 +11,7 @@ projects. One two-pane screen:
   Every run and queue state has one colour wherever it appears (queued
   amber, running emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
-  the header's connection pill keeps its own colours.
+  the sidebar's connection pill keeps its own colours.
 - The right pane shows the selected project's runs and queue: an Active
   section for live runs, status `running` or `failed` (a failed run can be
   resumed, so it is still live), with phase, branch and the absolute time of
@@ -1038,13 +1038,18 @@ the next event for that row corrects it.
 
 ### The indicator
 
-The header shows a connection indicator, `src/components/ConnectionIndicator.tsx`:
+The dashboard's sidebar shows a connection indicator, beside the Projects
+heading, `src/components/ConnectionIndicator.tsx`:
 a pill with a dot and one of three labels, `connecting` (amber, pulsing), `live`
 (green) or `reconnecting` (red). It has `role="status"` and `aria-live="polite"`
 so a screen reader announces changes. The three states are the string enum
 `ConnectionStatus` (`Connecting = "connecting"`, `Live = "live"`,
 `Reconnecting = "reconnecting"`) exported from the same file; the enum value is
-the rendered label, and the style table is keyed by it.
+the rendered label, and the style table is keyed by it. It is rendered only in
+the `(dashboard)` layout, beside `Providers`, so it exists exactly where the
+channel does: leaving the group (to `/summary`) unmounts both, and returning
+remounts both (the closer resets the store to `Connecting`, the next
+`SUBSCRIBED` sets `Live`).
 
 The store for that state lives in the same file, deliberately: a module-level
 `status` variable, a `Set` of listeners, and the `subscribe` / `getSnapshot` /
@@ -1104,7 +1109,8 @@ slug lookup happens.
 
 `/summary` (`src/app/summary/`) sits outside the `(dashboard)` group: no
 project sidebar, no project prefetch, no `Providers` and no Realtime channel,
-so the header's connection pill stays at `connecting` there.
+so `/summary` shows no connection pill: the pill is rendered by the
+`(dashboard)` layout beside `Providers`, where the channel is.
 
 ## Summary
 

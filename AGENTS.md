@@ -272,6 +272,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
   enum member, never a bare string. Do not export the `status` variable, add a
   second setter, or mirror the value into React state or the query cache; the
   channel status callback in `src/data/realtime.ts` is its one caller.
+- `ConnectionIndicator` is rendered only in `src/app/(dashboard)/layout.tsx`,
+  inside `Providers` (beside the sidebar's `Projects` heading), never in the
+  root layout or under `src/app/summary/`; a route without the channel shows
+  no pill. Do not mount `Providers` or start Realtime on `/summary` to make
+  one appear.
 
 ## Runs: active and history
 

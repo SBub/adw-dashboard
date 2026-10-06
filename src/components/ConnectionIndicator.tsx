@@ -3,7 +3,8 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The Realtime connection indicator in the site header, and the store it reads.
+ * The Realtime connection indicator in the dashboard sidebar, and the store it
+ * reads. It is rendered only by the (dashboard) layout, beside Providers.
  *
  * The store is a module-level variable, not React state, on purpose. There is
  * exactly one writer (the realtime module's channel status callback, which
