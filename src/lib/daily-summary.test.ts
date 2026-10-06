@@ -352,18 +352,16 @@ describe("costLabel", () => {
 
 describe("summaryHref", () => {
   it("is the bare path for the defaults", () => {
-    expect(summaryHref(SUMMARY_DEFAULT_DAYS, null)).toBe("/summary");
+    expect(summaryHref(SUMMARY_DEFAULT_DAYS, null)).toBe("/");
   });
 
   it("carries a non-default window", () => {
-    expect(summaryHref(7, null)).toBe("/summary?days=7");
+    expect(summaryHref(7, null)).toBe("/?days=7");
   });
 
   it("encodes the project slug", () => {
     const encoded = "SBub%2Fadw-toolkit";
-    expect(summaryHref(SUMMARY_DEFAULT_DAYS, "SBub/adw-toolkit")).toBe(
-      `/summary?project=${encoded}`,
-    );
-    expect(summaryHref(90, "SBub/adw-toolkit")).toBe(`/summary?days=90&project=${encoded}`);
+    expect(summaryHref(SUMMARY_DEFAULT_DAYS, "SBub/adw-toolkit")).toBe(`/?project=${encoded}`);
+    expect(summaryHref(90, "SBub/adw-toolkit")).toBe(`/?days=90&project=${encoded}`);
   });
 });

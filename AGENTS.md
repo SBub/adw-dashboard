@@ -297,9 +297,9 @@ project)`, is called only from the summary page's `getSummary` scope (see
   channel status callback in `src/data/realtime.ts` is its one caller.
 - `ConnectionIndicator` is rendered only in `src/app/(dashboard)/layout.tsx`,
   inside `Providers` (beside the sidebar's `Projects` heading), never in the
-  root layout or under `src/app/summary/`; a route without the channel shows
-  no pill. Do not mount `Providers` or start Realtime on `/summary` to make
-  one appear.
+  root layout or in the summary page `src/app/page.tsx`; a route without the
+  channel shows no pill. Do not mount `Providers` or start Realtime on `/`
+  (the summary) to make one appear.
 
 ## Runs: active and history
 
@@ -419,7 +419,7 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `historyTags(slug)` and does nothing else. Do not add a database read or
   write, a parameter beyond the slug, a return value, or a fourth tag without
   deciding what an anonymous caller can do with it. The third, `summary`, was
-  decided: an anonymous caller can make the next `/summary` render read the
+  decided: an anonymous caller can make the next render of the summary (`/`) read the
   database once, nothing else. `updateTag`, not
   `revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
   refresh would be served the old history (see
@@ -477,7 +477,8 @@ project)`, is called only from the summary page's `getSummary` scope (see
 
 ## Summary
 
-- `/summary` lives in `src/app/summary/`, outside `(dashboard)`. `getSummary`
+- The summary is the root route `/`, `src/app/page.tsx`, outside
+  `(dashboard)`. `getSummary`
   is `"use cache"`, tagged `summaryTag()`, with an explicit
   `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`, and is called
   only from the `SummaryContent` island after its `await searchParams`, under
@@ -485,6 +486,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
   prerendered into the shell and frozen). No `connection()` call, as in
   History. One tag for every window and filter; never a per-project or
   per-window summary tag.
+- `/summary` is a permanent redirect to `/` in `next.config.ts` `redirects()`,
+  query string passed through; do not add a page under `src/app/summary/`.
+  The project overview (sidebar plus the "Select a project" panel) is
+  `/projects`, `src/app/(dashboard)/projects/page.tsx`; the header's
+  `SectionNav` links to `/projects` only and the brand links to `/`.
 - `?days` and `?project` are normalised by `readSummaryDays` and
   `readSummaryProject` outside the scope and never surface an error: an
   invalid value is the default. An unknown or private project renders a

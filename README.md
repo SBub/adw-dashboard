@@ -1,7 +1,8 @@
 # ADW Dashboard
 
 A public dashboard for runs of the AI Developer Workflow (ADW) toolkit across
-projects. One two-pane screen:
+projects, in two sections. `/`, the landing page, is the summary (full width,
+see "Summary" below). `/projects` is a two-pane screen:
 
 - The left pane is a persistent sidebar listing every project with its
   queued, running, completed and failed counts and the time its last run started. It
@@ -20,14 +21,15 @@ projects. One two-pane screen:
   for `completed` runs (final phase, timings, duration).
   Active is a React Query entry patched by Realtime; History is rendered on
   the server from a cache scope and re-rendered when a run completes (see
-  "Runs: active and history" below). `/` shows an empty "Select a project"
-  panel; `/projects/<owner>/<repo>` selects a project and is the deep link.
+  "Runs: active and history" below). `/projects` shows an empty "Select a
+  project" panel; `/projects/<owner>/<repo>` selects a project and is the deep
+  link.
 
-Beside it, a second section, `/summary`, shows finished runs per UTC day
-across projects: issue classes, total duration, tokens (fresh input, cache
-read, output) and cost (see
-"Summary" below). The header's "Projects" and "Summary" links switch between
-them.
+The summary at `/` shows finished runs per UTC day across projects: issue
+classes, total duration, tokens (fresh input, cache read, output) and cost (see
+"Summary" below). The header's brand links to `/`, its "Projects" link to
+`/projects`. The old address `/summary` is a permanent redirect to `/` that
+keeps its query string.
 
 ## Data: projects and runs from the database
 
@@ -245,7 +247,7 @@ fetches it again on mount:
    (`getProjectsState`, tagged `projects`). The scope is required: React Query
    stamps the settled query with `Date.now()`,
    and with `cacheComponents` on, reading the current time outside a cache
-   scope fails the prerender of `/` (`next-prerender-current-time`). Cached,
+   scope fails the prerender of `/projects` (`next-prerender-current-time`). Cached,
    the stamp is the cache fill time.
 2. The layout renders `<Providers>` around the whole two-pane shell and
    `<HydrationBoundary state={…}>` around the sidebar's `QueryBoundary` only,
@@ -275,7 +277,7 @@ fetches it again on mount:
    two cases: if the server ever hands over a still-pending query, and in the
    partial-prerender shell for a slug outside `generateStaticParams`, where
    `usePathname()` cannot resolve at build time and the sidebar streams in at
-   request time behind the boundary. On `/` and the pre-rendered project pages
+   request time behind the boundary. On `/projects` and the pre-rendered project pages
    the sidebar is in the static HTML.
 
 ### Runs: active and history
@@ -499,7 +501,7 @@ When a run completes, three things happen in the browser, in this order:
    for a valid slug it calls `updateTag` on each tag of `historyTags(slug)`
    (`src/lib/history-tags.ts`: `history:<slug>`, `runs:<slug>` and `summary`,
    the same helpers the pages' `cacheTag` calls use), and nothing else. The
-   third tag is the `/summary` page's scope (see "Summary"). The second tag is
+   third tag is the summary page's (`/`) scope (see "Summary"). The second tag is
    the Active prefetch scope: on a full regeneration of the page it keeps the
    refresh (and the next visitor) from getting an Active list that still holds
    the finished run. On a resumed prerender it does not reach that scope (see
@@ -674,7 +676,7 @@ below). They are the only readers of `searchParams` (for
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
-`/summary` is built the same way: its heading and description are the static
+The summary (`/`) is built the same way: its heading and description are the static
 shell, and the report island awaits `searchParams` before its `"use cache"`
 scope (`getSummary`, tag `summary`), so the report is a request-time hole and
 the route is a partial prerender too.
@@ -751,7 +753,7 @@ Two caveats of the design:
 - The server action is a public endpoint: anyone who can reach the site can
   call it with any string. That is why it validates the slug strictly and does
   nothing but drop three tags; the worst a caller can do is make the next
-  render of one project page, and of `/summary`, read the database once.
+  render of one project page, and of the summary (`/`), read the database once.
 - A completion nobody is watching is not moved by the browser. The move is
   triggered by a browser that received the event; if no browser had the
   channel open when the run completed, nothing calls the action. The database
@@ -1083,7 +1085,7 @@ so a screen reader announces changes. The three states are the string enum
 `Reconnecting = "reconnecting"`) exported from the same file; the enum value is
 the rendered label, and the style table is keyed by it. It is rendered only in
 the `(dashboard)` layout, beside `Providers`, so it exists exactly where the
-channel does: leaving the group (to `/summary`) unmounts both, and returning
+channel does: leaving the group (to the summary at `/`) unmounts both, and returning
 remounts both (the closer resets the store to `Connecting`, the next
 `SUBSCRIBED` sets `Live`).
 
@@ -1143,14 +1145,19 @@ status. That includes a path with one or three segments under `/projects`
 (`/projects/SBub%2Fadw-dashboard`, one segment): the router answers them, no
 slug lookup happens.
 
-`/summary` (`src/app/summary/`) sits outside the `(dashboard)` group: no
-project sidebar, no project prefetch, no `Providers` and no Realtime channel,
-so `/summary` shows no connection pill: the pill is rendered by the
-`(dashboard)` layout beside `Providers`, where the channel is.
+The summary is the root route `/` (`src/app/page.tsx`) and sits outside the
+`(dashboard)` group: no project sidebar, no project prefetch, no `Providers`
+and no Realtime channel, so `/` shows no connection pill: the pill is rendered
+by the `(dashboard)` layout beside `Providers`, where the channel is. The
+project overview ("Select a project") is `src/app/(dashboard)/projects/page.tsx`
+at `/projects`, beside the `projects/[owner]/[repo]` segment. `/summary`, the
+summary's old address, is a permanent (308) redirect to `/` in
+`next.config.ts` `redirects()`; Next passes the query string (`?days`,
+`?project`) through, so old links and bookmarks keep their filters.
 
 ## Summary
 
-`/summary` shows what the toolkit finished per UTC day, newest first: runs
+`/` shows what the toolkit finished per UTC day, newest first: runs
 completed and failed (halted when there are any), the split by issue class as
 an inline-SVG stacked bar with its counts as text, and five totals: total
 duration, tokens in, cache read, tokens out and cost. By default it covers 30
@@ -1196,7 +1203,7 @@ appearance and draw their own chevron, and share one height, border and font
 with Apply through `src/lib/form-controls.ts`, so the row looks the same in
 Safari and Chrome.
 
-**Cache.** `getSummary` in `src/app/summary/page.tsx` is `"use cache"`, tagged
+**Cache.** `getSummary` in `src/app/page.tsx` is `"use cache"`, tagged
 `summary` (`summaryTag()` in `src/lib/history-tags.ts`; one tag for every
 window and filter) with `cacheLife({ stale: 300, revalidate: 900, expire:
 86400 })`. It is called only from the report island after its `searchParams`

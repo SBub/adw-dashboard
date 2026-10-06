@@ -1,4 +1,4 @@
-export default function HomePage() {
+export default function ProjectsPage() {
   return (
     <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
       <div>

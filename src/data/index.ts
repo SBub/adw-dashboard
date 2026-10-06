@@ -16,7 +16,7 @@
 //   and a completion in the browser asks the server to drop that tag and
 //   re-render. getCompletedRuns.
 //
-// The /summary page reads the adw.daily_summary view (finished runs per
+// The summary page (`/`) reads the adw.daily_summary view (finished runs per
 // project per UTC day) through getDailySummary, server only, from that page's
 // own "use cache" scope; it never enters the query cache either.
 import { summaryWindowStart, toSummaryReport } from "@/lib/daily-summary";
@@ -317,7 +317,7 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
 }
 
 /**
- * The /summary page's report: the finished runs per UTC day over a window of
+ * The summary page's (`/`) report: the finished runs per UTC day over a window of
  * `days` days, for every visible project or for one (`project`, a slug), or
  * null when `project` names no project the publishable key can see.
  *

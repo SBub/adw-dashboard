@@ -58,10 +58,7 @@ async function SummaryContent({ searchParams }: SummaryPageProps) {
     return (
       <p className="mt-6 rounded-lg border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
         No public project named {project}.{" "}
-        <Link
-          href="/summary"
-          className="underline hover:text-neutral-900 dark:hover:text-neutral-100"
-        >
+        <Link href="/" className="underline hover:text-neutral-900 dark:hover:text-neutral-100">
           Show all projects
         </Link>
       </p>

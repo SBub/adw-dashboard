@@ -8,12 +8,12 @@
 // completed, or a completed run is deleted, whether or not anyone is watching.
 // It then drops the same three cache tags the action drops (the project's
 // history and Active scopes, and the summary page's), so the project's next
-// render, and the next render of /summary, read the database. See README,
+// render, and the next render of the summary page (`/`), read the database. See README,
 // "Webhook revalidation".
 //
 // It does nothing else. No database write, no second read beyond resolving
 // the slug, no other side effect: an authenticated caller can make the next
-// render of one project page and of /summary read the database once, and that
+// render of one project page and of the summary page (`/`) read the database once, and that
 // is all.
 //
 // Runs on the Node.js runtime, which is the default for route handlers in the

@@ -18,7 +18,7 @@ import { Providers } from "../providers";
  *
  * The cache scope is not optional. React Query stamps the settled query with
  * Date.now(), and under Cache Components reading the current time outside a
- * cache scope fails the prerender of "/" (next-prerender-current-time; the
+ * cache scope fails the prerender of "/projects" (next-prerender-current-time; the
  * build points at the query() line). The other ways out are worse:
  * connection() would make every route dynamic, and a client-side fetch is the
  * duplicate fetch this pattern exists to avoid. Cached, the timestamp is simply
@@ -39,7 +39,7 @@ async function getProjectsState() {
   return prefetch(queryKeys.projects, getProjects);
 }
 
-// Master-detail shell shared by "/" and "/projects/[owner]/[repo]". The project
+// Master-detail shell shared by "/projects" and "/projects/[owner]/[repo]". The project
 // list is prefetched once here, in a server layout, into a React Query cache
 // that is dehydrated into the HTML and hydrated in the browser, so the sidebar
 // renders with its data on the first paint and never fetches it again on
@@ -56,7 +56,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <aside className="shrink-0 md:sticky md:top-6 md:max-h-[calc(100vh-5.5rem)] md:w-72 md:overflow-y-auto">
           {/* The connection pill lives here, not in the root header, because
               the channel it describes is opened by Providers in this layout.
-              /summary has no channel and no pill. It reads no query, so it
+              The summary at / has no channel and no pill. It reads no query, so it
               sits outside the sidebar's boundaries and their fallbacks. */}
           <div className="mb-2 flex items-center justify-between gap-2 px-1">
             <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
