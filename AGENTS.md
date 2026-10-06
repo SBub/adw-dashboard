@@ -35,21 +35,16 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
   anywhere for runs.
-- No clock reads outside the cached boundary. There are exactly two
-  argument-less `new Date()` / `Date.now()` sites in the codebase
+- No clock reads outside the cached boundary. There is exactly one
+  argument-less `new Date()` / `Date.now()` site in the codebase
   (`new Date(ms)` on a parsed input, as in `formatTimestamp`, is not a clock
-  read).
-  The first is `getActiveRuns`'s `fetched_at` stamp, which
+  read): `getActiveRuns`'s `fetched_at` stamp, which
   on the server only ever executes inside the page's `"use cache"` scope (in
   the browser it runs as a `queryFn` on a cache miss and in the realtime
-  catch-up, where a clock read is fine). The second is the `useNow` store in
-  `src/hooks/use-now.ts`, which reads the clock only in its `subscribe` and
-  its interval callback (post-commit, browser only); its `getSnapshot`
-  returns the stored value and its `getServerSnapshot` returns `null`, so
-  neither prerender pass reads the clock. Never read the clock in
-  `getSnapshot`. `QueueWait` is its one consumer; a new time-dependent label
-  is a new leaf like it, never a clock read in `QueueRow`, `QueueView` or
-  `RunRow`. `getQueue` reads no clock either and
+  catch-up, where a clock read is fine). A future time-dependent label is a
+  new client leaf with a `useSyncExternalStore` store whose server snapshot
+  does not read the clock (issue #3), never a clock read in `QueueRow`,
+  `QueueView` or `RunRow`. `getQueue` reads no clock either and
   has no `fetched_at`. `getCompletedRuns` reads no clock and
   must stay that way: it has no `fetched_at`, and its cache scope is there for
   the tag, not for a clock-read permission. No clock read in client render at all:
@@ -66,7 +61,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - `durationLabel` in `src/lib/run-view.ts` is pure (two timestamps in, reads no
   clock, `null` while `finished_at` is `null`) and unit-tested in
   `src/lib/run-view.test.ts` with fixed timestamps; `secondsLabel` in the same
-  file formats the summary's `median_duration_s` in the same format through
+  file formats the summary's `duration_sum_s` in the same format through
   the same helper. Every change to the label format goes with a test case; do
   not move label derivation into SQL.
 - Wiring happens at one boundary, `src/data/`. Pages and components import
@@ -140,7 +135,10 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `<h2>` stays outside every `SectionBoundary`. The heading row owns that
   layout (search next to the title, pagination at the right edge, both
   independent of the results), so do not put both in one slot or
-  reintroduce `justify-between`.
+  reintroduce `justify-between`. The detail popover takes `TOOLTIP_LAYER`
+  from `src/lib/layers.ts` (defined nowhere else), the topmost layer of the
+  page; no other element may take a z-index at or above it, and
+  `src/lib/layers.test.ts` scans `src/` and fails on one.
 - The project route is `projects/[owner]/[repo]`. The slug is assembled from
   `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
   file splits or joins it, and everything below the page (data boundary,
@@ -233,8 +231,7 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `ProjectNav`, which reads the pathname and the query cache,
   `ActiveRunsView`, which reads the active runs from the query cache,
   `QueueView`, which reads the queued items from the query cache,
-  `ConnectionIndicator`, which subscribes to its store, `QueueWait`, which
-  subscribes to the `useNow` store, `HistorySearch`, which
+  `ConnectionIndicator`, which subscribes to its store, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks`,
@@ -261,12 +258,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `queuePositions` in `src/lib/queue-order.ts`: the rank in ledger order
   (`position`, then `issue_number`), never `queued_at` and never the array
   index. `byQueuePosition` in the same file is the one ledger comparator,
-  shared by `queuePositions` and `applyQueueChange`. `waitLabel`,
-  `hasRunningRun` and `queueStartHint` live there too; all are pure and tested
+  shared by `queuePositions` and `applyQueueChange`; both are pure and tested
   in `src/lib/queue-order.test.ts`, and every change to them goes with a test
-  case. For the head row's hint `QueueView` reads `queryKeys.runs(slug)` with
-  the same options as `ActiveRunsView` and `select: hasRunningRun` only; never
-  merge it into the queue entry. Rows stay keyed by `issue_number`, and the
+  case. A row is one line: issue link, title, the manual hint for a manual
+  item, `Queued <time>` and the status pill; it shows no label chip, no wait
+  and no start hint. Rows stay keyed by `issue_number`, and the
   left gutter stays reserved for the marker and the future drag handle. The
   rail line and the `next` marker take their colours from
   `STATUS_COLORS.queued`, the hollow markers from
@@ -297,9 +293,9 @@ project)`, is called only from the summary page's `getSummary` scope (see
   channel status callback in `src/data/realtime.ts` is its one caller.
 - `ConnectionIndicator` is rendered only in `src/app/(dashboard)/layout.tsx`,
   inside `Providers` (beside the sidebar's `Projects` heading), never in the
-  root layout or under `src/app/summary/`; a route without the channel shows
-  no pill. Do not mount `Providers` or start Realtime on `/summary` to make
-  one appear.
+  root layout or in the summary page `src/app/page.tsx`; a route without the
+  channel shows no pill. Do not mount `Providers` or start Realtime on `/`
+  (the summary) to make one appear.
 
 ## Runs: active and history
 
@@ -419,7 +415,7 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `historyTags(slug)` and does nothing else. Do not add a database read or
   write, a parameter beyond the slug, a return value, or a fourth tag without
   deciding what an anonymous caller can do with it. The third, `summary`, was
-  decided: an anonymous caller can make the next `/summary` render read the
+  decided: an anonymous caller can make the next render of the summary (`/`) read the
   database once, nothing else. `updateTag`, not
   `revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
   refresh would be served the old history (see
@@ -477,7 +473,8 @@ project)`, is called only from the summary page's `getSummary` scope (see
 
 ## Summary
 
-- `/summary` lives in `src/app/summary/`, outside `(dashboard)`. `getSummary`
+- The summary is the root route `/`, `src/app/page.tsx`, outside
+  `(dashboard)`. `getSummary`
   is `"use cache"`, tagged `summaryTag()`, with an explicit
   `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`, and is called
   only from the `SummaryContent` island after its `await searchParams`, under
@@ -485,6 +482,16 @@ project)`, is called only from the summary page's `getSummary` scope (see
   prerendered into the shell and frozen). No `connection()` call, as in
   History. One tag for every window and filter; never a per-project or
   per-window summary tag.
+- The `h1` and the intro paragraph of `/` are static copy in the page body
+  (the shell), and the title comes from `metadata`; none of them reads the
+  report. The reading notes about UTC and metrics live under the filters in
+  `SummaryContent`. `e2e/test_connection_indicator_scope.md` asserts the `h1`
+  text, so change both together.
+- `/summary` is a permanent redirect to `/` in `next.config.ts` `redirects()`,
+  query string passed through; do not add a page under `src/app/summary/`.
+  The project overview (sidebar plus the "Select a project" panel) is
+  `/projects`, `src/app/(dashboard)/projects/page.tsx`; the header's
+  `SectionNav` links to `/projects` only and the brand links to `/`.
 - `?days` and `?project` are normalised by `readSummaryDays` and
   `readSummaryProject` outside the scope and never surface an error: an
   invalid value is the default. An unknown or private project renders a
@@ -492,9 +499,14 @@ project)`, is called only from the summary page's `getSummary` scope (see
 - The window is anchored on the newest `day` in `adw.daily_summary` for the
   selection, never on a clock read. If a calendar window is ever wanted, the
   clock rule above must be amended in the same change.
-- Medians across projects are never combined: a day's all-projects median is
-  the one project's exact value or `per project`. Never show a median of
-  medians.
+- The summary shows sums only. A day's totals are the sum of its project
+  rows (`dayTotals` in `src/lib/daily-summary.ts`), and no median is read,
+  assembled or shown; a median cannot be combined across projects, so do not
+  reintroduce one without a per-project-only display.
+- The per-project table's `<tfoot>` Total row renders `day.totals`, passed
+  in as `ProjectBreakdownTable`'s `totals` prop; the table adds nothing
+  itself. The table shows for every day with projects, filtered or not. Do
+  not reintroduce a separate totals strip.
 - Everything that shapes the report lives in `src/lib/daily-summary.ts`
   (`SUMMARY_DEFAULT_DAYS`, `SUMMARY_MAX_DAYS`, `SUMMARY_DAY_OPTIONS` defined
   there and nowhere else), pure and tested in
@@ -502,6 +514,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
 - Charts are inline SVG with their values also as text; no charting library.
   Class hues match `IssueClassBadge`; completed and failed counts use
   `STATUS_COLORS`.
+- The filter controls take their classes only from
+  `src/lib/form-controls.ts`: the selects are `appearance-none` (plus the
+  `-webkit-` reset), share one explicit height with the button, and get a
+  chevron drawn by the component; the `<select>` elements stay native. Every
+  change to it goes with a test case in `src/lib/form-controls.test.ts`.
 - The summary is not a live section: no React Query entry, no Realtime
   reducer and no catch-up read touch it. It follows completions only through
   the `summary` tag in `historyTags(slug)`.

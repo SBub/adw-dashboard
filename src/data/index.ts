@@ -16,7 +16,7 @@
 //   and a completion in the browser asks the server to drop that tag and
 //   re-render. getCompletedRuns.
 //
-// The /summary page reads the adw.daily_summary view (finished runs per
+// The summary page (`/`) reads the adw.daily_summary view (finished runs per
 // project per UTC day) through getDailySummary, server only, from that page's
 // own "use cache" scope; it never enters the query cache either.
 import { summaryWindowStart, toSummaryReport } from "@/lib/daily-summary";
@@ -57,7 +57,7 @@ const QUEUE_COLUMNS =
 
 /** The columns of adw.daily_summary the summary page reads, which are exactly the fields of DailySummary. */
 const DAILY_SUMMARY_COLUMNS =
-  "project_id, day, runs, completed, failed, halted, features, bugs, chores, patches, median_duration_s, tokens_in_sum, tokens_in_median, tokens_out_sum, tokens_out_median, cost_usd_sum, cost_usd_median";
+  "project_id, day, runs, completed, failed, halted, features, bugs, chores, patches, duration_sum_s, tokens_in_sum, tokens_cache_read_sum, tokens_out_sum, cost_usd_sum";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -317,7 +317,7 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
 }
 
 /**
- * The /summary page's report: the finished runs per UTC day over a window of
+ * The summary page's (`/`) report: the finished runs per UTC day over a window of
  * `days` days, for every visible project or for one (`project`, a slug), or
  * null when `project` names no project the publishable key can see.
  *
@@ -330,8 +330,8 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
  * Three reads: the projects (to name the rows and offer the filter), the
  * newest day (the anchor), and the view's rows from the window's first day on.
  * The view runs with security_invoker, so only public projects are seen.
- * Assembly is toSummaryReport's (src/lib/daily-summary.ts): counts and sums
- * are added across projects, medians never are.
+ * Assembly is toSummaryReport's (src/lib/daily-summary.ts): every count and
+ * sum is added across projects.
  *
  * Server only, and only from the summary page's "use cache" scope (getSummary,
  * tagged summary). Never a queryFn, never in the React Query cache. `days` is

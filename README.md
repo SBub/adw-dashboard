@@ -1,7 +1,8 @@
 # ADW Dashboard
 
 A public dashboard for runs of the AI Developer Workflow (ADW) toolkit across
-projects. One two-pane screen:
+projects, in two sections. `/`, the landing page, is the summary (full width,
+see "Summary" below). `/projects` is a two-pane screen:
 
 - The left pane is a persistent sidebar listing every project with its
   queued, running, completed and failed counts and the time its last run started. It
@@ -20,13 +21,15 @@ projects. One two-pane screen:
   for `completed` runs (final phase, timings, duration).
   Active is a React Query entry patched by Realtime; History is rendered on
   the server from a cache scope and re-rendered when a run completes (see
-  "Runs: active and history" below). `/` shows an empty "Select a project"
-  panel; `/projects/<owner>/<repo>` selects a project and is the deep link.
+  "Runs: active and history" below). `/projects` shows an empty "Select a
+  project" panel; `/projects/<owner>/<repo>` selects a project and is the deep
+  link.
 
-Beside it, a second section, `/summary`, shows finished runs per UTC day
-across projects: issue classes, median duration, tokens and cost (see
-"Summary" below). The header's "Projects" and "Summary" links switch between
-them.
+The summary at `/` shows finished runs per UTC day across projects: issue
+classes, total duration, tokens (fresh input, cache read, output) and cost (see
+"Summary" below). The header's brand links to `/`, its "Projects" link to
+`/projects`. The old address `/summary` is a permanent redirect to `/` that
+keeps its query string.
 
 ## Data: projects and runs from the database
 
@@ -206,19 +209,6 @@ a `useSyncExternalStore` hook with a data-derived server snapshot, and the
 first version of that re-rendered the whole pane on every tick. Issue #3
 describes the leaf-level replacement.
 
-That leaf-level shape now exists for one label: the Queue's wait so far.
-`QueueWait` (`src/components/QueueWait.tsx`) is a tiny client leaf that reads
-the time through `useNow` (`src/hooks/use-now.ts`), a `useSyncExternalStore`
-store whose clock reads live only in its `subscribe` (the first stamp, when the
-first subscriber attaches) and its 30-second interval callback, both of which
-React runs after commit and never in render. `getSnapshot` returns the stored
-number and `getServerSnapshot` returns `null`, so neither prerender pass reads
-the clock, hydration renders `null` like the server did, and the wait appears
-after mount. It is absent from the static HTML by design (`getQueue` has no
-`fetched_at` to serve as a snapshot, and a build-time wait would be wrong for
-the shell's lifetime anyway). A tick re-renders only the `QueueWait` leaves.
-The run labels above are unchanged and still tracked in issue #3.
-
 `fetched_at` itself is `new Date().toISOString()` taken inside
 `getActiveRuns`, which only ever runs inside the page's `"use cache"` scope on
 the server. A clock read inside a cache scope is allowed (the value is cached
@@ -244,7 +234,7 @@ fetches it again on mount:
    (`getProjectsState`, tagged `projects`). The scope is required: React Query
    stamps the settled query with `Date.now()`,
    and with `cacheComponents` on, reading the current time outside a cache
-   scope fails the prerender of `/` (`next-prerender-current-time`). Cached,
+   scope fails the prerender of `/projects` (`next-prerender-current-time`). Cached,
    the stamp is the cache fill time.
 2. The layout renders `<Providers>` around the whole two-pane shell and
    `<HydrationBoundary state={…}>` around the sidebar's `QueryBoundary` only,
@@ -274,7 +264,7 @@ fetches it again on mount:
    two cases: if the server ever hands over a still-pending query, and in the
    partial-prerender shell for a slug outside `generateStaticParams`, where
    `usePathname()` cannot resolve at build time and the sidebar streams in at
-   request time behind the boundary. On `/` and the pre-rendered project pages
+   request time behind the boundary. On `/projects` and the pre-rendered project pages
    the sidebar is in the static HTML.
 
 ### Runs: active and history
@@ -296,6 +286,9 @@ It changes only when the server is told to re-render it.
 Each section's heading, one-line description and info-button detail are
 rendered by `SectionHeading`, and the copy lives in the project page
 (`src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`) next to the sections.
+The detail popover sits on `TOOLTIP_LAYER` (`z-50`, `src/lib/layers.ts`),
+above the queue rail markers (`z-10`) and anything else positioned below a
+heading.
 
 Each run row shows the issue title (`adw.runs.issue_title`, published by the
 toolkit) after the issue number, on one line truncated with an ellipsis; runs
@@ -374,21 +367,14 @@ entry per slug:
    item in ledger order, a move reorders the ledger without restamping
    `queued_at`, and a retry restamps it without moving the item. Beside the
    marker, the card holds the issue number as a GitHub
-   link, the title (omitted when `null`), the source and `Queued <time>` (`none`
-   when `queued_at` is `null`), and under it a second line: the wait so far
-   (`QueueWait`, formatted by the pure `waitLabel`, see the clock section) and,
-   on the head row, a start hint from `queueStartHint`: "starts when the
-   running run finishes" when the project has a `running` run, otherwise
-   "starts with the next runner". `QueueView` learns that from a second
-   `useSuspenseQuery` on `queryKeys.runs(slug)` with the same options as
-   `ActiveRunsView` and `select: hasRunningRun`; the page's runs
-   `HydrationBoundary` encloses the queue slot, so it is a cache hit on the
-   entry Active renders, and the runs listener keeps the hint live. The source is parsed from
-   the stored `source` column by `queueSource` in `src/lib/queue-source.ts`
-   (`label:<name>` renders a `label: <name>` badge, `manual` a `manual` badge
-   plus a visible hint that removing the label does not remove the item, since
-   a manually queued item is not taken out by unlabelling the issue; anything
-   else, or `null`, renders no badge).
+   link, the title (omitted when `null`), the source hint and `Queued <time>`
+   (`none` when `queued_at` is `null`), then the status pill, all on one line.
+   The source is parsed from the stored `source` column by `queueSource` in
+   `src/lib/queue-source.ts`: `manual` renders a `manual` badge plus a visible
+   hint that removing the label does not remove the item, since a manually
+   queued item is not taken out by unlabelling the issue; anything else
+   (`label:<name>` included, or `null`) renders no badge, because the section
+   description already explains the label.
    Every row ends with the amber `queued` `StatusBadge`, the same component
    and colour map as a run row's status.
 
@@ -498,7 +484,7 @@ When a run completes, three things happen in the browser, in this order:
    for a valid slug it calls `updateTag` on each tag of `historyTags(slug)`
    (`src/lib/history-tags.ts`: `history:<slug>`, `runs:<slug>` and `summary`,
    the same helpers the pages' `cacheTag` calls use), and nothing else. The
-   third tag is the `/summary` page's scope (see "Summary"). The second tag is
+   third tag is the summary page's (`/`) scope (see "Summary"). The second tag is
    the Active prefetch scope: on a full regeneration of the page it keeps the
    refresh (and the next visitor) from getting an Active list that still holds
    the finished run. On a resumed prerender it does not reach that scope (see
@@ -673,7 +659,7 @@ below). They are the only readers of `searchParams` (for
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
-`/summary` is built the same way: its heading and description are the static
+The summary (`/`) is built the same way: its heading and intro are the static
 shell, and the report island awaits `searchParams` before its `"use cache"`
 scope (`getSummary`, tag `summary`), so the report is a request-time hole and
 the route is a partial prerender too.
@@ -750,7 +736,7 @@ Two caveats of the design:
 - The server action is a public endpoint: anyone who can reach the site can
   call it with any string. That is why it validates the slug strictly and does
   nothing but drop three tags; the worst a caller can do is make the next
-  render of one project page, and of `/summary`, read the database once.
+  render of one project page, and of the summary (`/`), read the database once.
 - A completion nobody is watching is not moved by the browser. The move is
   triggered by a browser that received the event; if no browser had the
   channel open when the run completed, nothing calls the action. The database
@@ -1082,7 +1068,7 @@ so a screen reader announces changes. The three states are the string enum
 `Reconnecting = "reconnecting"`) exported from the same file; the enum value is
 the rendered label, and the style table is keyed by it. It is rendered only in
 the `(dashboard)` layout, beside `Providers`, so it exists exactly where the
-channel does: leaving the group (to `/summary`) unmounts both, and returning
+channel does: leaving the group (to the summary at `/`) unmounts both, and returning
 remounts both (the closer resets the store to `Connecting`, the next
 `SUBSCRIBED` sets `Live`).
 
@@ -1142,31 +1128,50 @@ status. That includes a path with one or three segments under `/projects`
 (`/projects/SBub%2Fadw-dashboard`, one segment): the router answers them, no
 slug lookup happens.
 
-`/summary` (`src/app/summary/`) sits outside the `(dashboard)` group: no
-project sidebar, no project prefetch, no `Providers` and no Realtime channel,
-so `/summary` shows no connection pill: the pill is rendered by the
-`(dashboard)` layout beside `Providers`, where the channel is.
+The summary is the root route `/` (`src/app/page.tsx`) and sits outside the
+`(dashboard)` group: no project sidebar, no project prefetch, no `Providers`
+and no Realtime channel, so `/` shows no connection pill: the pill is rendered
+by the `(dashboard)` layout beside `Providers`, where the channel is. The
+project overview ("Select a project") is `src/app/(dashboard)/projects/page.tsx`
+at `/projects`, beside the `projects/[owner]/[repo]` segment. `/summary`, the
+summary's old address, is a permanent (308) redirect to `/` in
+`next.config.ts` `redirects()`; Next passes the query string (`?days`,
+`?project`) through, so old links and bookmarks keep their filters.
 
 ## Summary
 
-`/summary` shows what the toolkit finished per UTC day, newest first: runs
+`/` shows what the toolkit finished per UTC day, newest first: runs
 completed and failed (halted when there are any), the split by issue class as
-an inline-SVG stacked bar with its counts as text, the median run duration,
-and tokens in, tokens out and cost, each as a sum and a median. By default it
-covers 30 days across every public project, with a per-project table under
-each day.
+an inline-SVG stacked bar with its counts as text. By default it covers 30
+days across every public project, with a per-project table under each day
+(Project, Runs, Completed, Failed, Classes, Total duration, Tokens in, Cache
+read, Tokens out, Cost) that ends in a Total row with the column sums. With a
+project selected, the table holds that project's single row plus Total.
+
+**Page copy.** `/` is the landing page, so its static shell opens with the
+`h1` "What an AI developer workflow gets done" and an intro paragraph saying
+what ADW is and that the page is the public ledger of finished runs; the
+document title is "ADW Dashboard: what an AI developer workflow gets done".
+Both sit in the page body and `metadata`, outside the report hole. The
+reading notes ("Times are UTC. Tokens and cost count runs that published
+metrics.") are a muted line under the filters, inside the report island,
+because they describe the report.
 
 **Data.** The toolkit's `adw.daily_summary` view (its migration
 `supabase/migrations/*_run_metrics.sql`) holds one row per project per UTC day
-of `runs.finished_at`, left-joined to `adw.run_metrics`; the token and cost
-medians are over the runs that published metrics and are `n/a` when none did.
+of `runs.finished_at`, left-joined to `adw.run_metrics`. The page reads its
+sums: `duration_sum_s`, `tokens_in_sum`, `tokens_cache_read_sum`,
+`tokens_out_sum` and `cost_usd_sum`. The token and cost sums are over the runs
+that published metrics and are 0 when none did. Since the toolkit split token
+usage four ways, `tokens_in` is fresh (uncached) input only and small; cache
+read is the large figure, which is why it has its own column.
 `getDailySummary(days, project)` in `src/data/index.ts` reads the projects, the
 newest `day` in the view and the rows of the window, casts them to
 `DailySummary` (`src/types/adw.ts`), and hands them to `toSummaryReport` in
 `src/lib/daily-summary.ts`, which groups and adds them. Everything that shapes
 the report (the parameters, the window, the totals, the bar's segments, the
 labels) lives in that file, pure and unit-tested. A day is shown as
-`DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and a median duration
+`DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
 by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
 `durationLabel`); both are pure and read no clock.
 
@@ -1177,20 +1182,21 @@ view for the selection, and the page states it ("30 days to 05.10.2026"). On
 an active installation that is today; on a quiet one it is the last day with a
 finished run.
 
-**Medians across projects.** A median cannot be combined from per-project
-medians. In the all-projects view a day's counts and sums are added; a median
-is shown only when exactly one project contributed that day (it is then that
-project's exact value), and reads `per project` otherwise, where the table
-below carries each project's exact medians. With a project selected every
-median is exact.
+**Totals.** Every value on the page is a sum. The day header's counts and the
+table's Total row are `day.totals`, the sum of the table's own rows
+(`dayTotals` in `src/lib/daily-summary.ts`), passed to `ProjectBreakdownTable`
+as a prop. Nothing is a median.
 
 **Filters.** A plain GET form, no client state: `?days` (1 to 90, default 30;
 the form offers 7, 30 and 90) and `?project=owner/repo`. Both are normalised
 by `readSummaryDays` and `readSummaryProject` outside the cache scope; an
 invalid value is the default, never an error. A valid slug the publishable key
-cannot see renders a "No public project" panel.
+cannot see renders a "No public project" panel. The selects reset the native
+appearance and draw their own chevron, and share one height, border and font
+with Apply through `src/lib/form-controls.ts`, so the row looks the same in
+Safari and Chrome.
 
-**Cache.** `getSummary` in `src/app/summary/page.tsx` is `"use cache"`, tagged
+**Cache.** `getSummary` in `src/app/page.tsx` is `"use cache"`, tagged
 `summary` (`summaryTag()` in `src/lib/history-tags.ts`; one tag for every
 window and filter) with `cacheLife({ stale: 300, revalidate: 900, expire:
 86400 })`. It is called only from the report island after its `searchParams`

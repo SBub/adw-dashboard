@@ -20,16 +20,17 @@ the ADW commands need and must be kept in step with it and with `README.md`.
 
 ## Workspaces
 
-| name          | path | dev command | port variable | default port | health URL                                         | ADW may start |
-| ------------- | ---- | ----------- | ------------- | ------------ | -------------------------------------------------- | ------------- |
-| adw-dashboard | `.`  | `yarn dev`  | `PORT`        | 3000         | `/`, then `/projects/SBub/issebya-homes-ai-system` | yes           |
+| name          | path | dev command | port variable | default port | health URL                                                      | ADW may start |
+| ------------- | ---- | ----------- | ------------- | ------------ | --------------------------------------------------------------- | ------------- |
+| adw-dashboard | `.`  | `yarn dev`  | `PORT`        | 3000         | `/`, `/projects`, then `/projects/SBub/issebya-homes-ai-system` | yes           |
 
 - `yarn dev` is exactly `next dev`; it takes its port from `PORT`, so nothing passes `--port`.
-- `/` answering 200 proves the server is up and can reach Supabase (the sidebar is prefetched from
-  the database). A 500 means the data layer threw, almost always a missing `.env.local`.
+- `/` (the summary) answering 200 proves the server is up and can reach Supabase (its report is
+  read from the database at request time). `/projects` answering 200 proves the sidebar's prefetch
+  path. A 500 means the data layer threw, almost always a missing `.env.local`.
 - The project page is the second compile and the natural second check. A 404 there is not a server
   fault: that slug is not among the public projects the publishable key can see; use the first
-  project the sidebar on `/` lists instead.
+  project the sidebar on `/projects` lists instead.
 - `target_apps` from the engine is always empty for this repository; every command runs from the
   root, unfiltered. `/classify_app` answers `{"target_apps": []}` here.
 
@@ -117,13 +118,13 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 ## Review
 
-- Open at `http://localhost:$PORT`: `/` (project sidebar plus the "Select a project" panel) and
-  `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue section, History section), or the first
-  project the sidebar lists if that slug is 404, plus `/summary` (heading, filters, day
-  cards with class bars, per-project tables) and `/summary?project=SBub/issebya-homes-ai-system`
-  (or the first listed project; one row per day, no table). Capture each at desktop 1920x1080 and mobile
+- Open at `http://localhost:$PORT`: `/` (the summary: heading, filters, day cards with class
+  bars, per-project tables; no sidebar, no pill), `/?project=SBub/issebya-homes-ai-system` (or the
+  first listed project; each day's table holds one project row plus Total), `/projects` (project sidebar plus the "Select a
+  project" panel) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
+  section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
-- The sidebar's connection indicator (dashboard routes only; `/summary` has none) moves from `connecting` to `live` once the Realtime channel
+- The sidebar's connection indicator (dashboard routes only; `/` has none) moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report
   `connecting` as a defect unless the spec is about the indicator.
 - A route handler (`src/app/api/revalidate`), a server action, a reducer or a helper has no rendered

@@ -1,4 +1,4 @@
-// Everything that shapes the /summary page, pure: the two search parameters,
+// Everything that shapes the summary page (`/`), pure: the two search parameters,
 // the window, the report assembled from adw.daily_summary rows, the class bar's
 // segments and the number labels. No clock, no cache, no IO, so every case is
 // unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The data
@@ -68,9 +68,8 @@ function sum(rows: readonly SummaryProjectDay[], pick: (row: SummaryProjectDay) 
   return rows.reduce((total, row) => total + pick(row), 0);
 }
 
-/** Counts and sums added across a day's projects; a median only when there is one project. */
+/** Every count and every sum added across a day's projects. */
 function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay["totals"] {
-  const only = rows.length === 1 ? rows[0] : null;
   return {
     day,
     runs: sum(rows, (row) => row.runs),
@@ -81,13 +80,11 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
     bugs: sum(rows, (row) => row.bugs),
     chores: sum(rows, (row) => row.chores),
     patches: sum(rows, (row) => row.patches),
-    median_duration_s: only?.median_duration_s ?? null,
+    duration_sum_s: sum(rows, (row) => row.duration_sum_s),
     tokens_in_sum: sum(rows, (row) => row.tokens_in_sum),
-    tokens_in_median: only?.tokens_in_median ?? null,
+    tokens_cache_read_sum: sum(rows, (row) => row.tokens_cache_read_sum),
     tokens_out_sum: sum(rows, (row) => row.tokens_out_sum),
-    tokens_out_median: only?.tokens_out_median ?? null,
     cost_usd_sum: Math.round(sum(rows, (row) => row.cost_usd_sum) * 1e4) / 1e4,
-    cost_usd_median: only?.cost_usd_median ?? null,
   };
 }
 
@@ -96,9 +93,7 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
  * grouped by day, newest first; each day's projects are named by project_id
  * (a row whose project is not in `projects` is dropped: RLS hides it) and
  * ordered by runs, then slug. A day's totals add every count and sum (cost
- * rounded to 4 decimals against float noise); a median is kept only when the
- * day has exactly one project, because a median cannot be combined from
- * per-project medians. Never mutates its inputs.
+ * rounded to 4 decimals against float noise). Never mutates its inputs.
  */
 export function toSummaryReport(
   rows: readonly DailySummary[],
@@ -198,7 +193,7 @@ export function costLabel(usd: number | null): string {
 }
 
 /**
- * The /summary URL for a window and a project filter, the default window and
+ * The summary URL (`/`) for a window and a project filter, the default window and
  * "all projects" left out of the query string.
  */
 export function summaryHref(days: number, project: string | null): string {
@@ -206,5 +201,5 @@ export function summaryHref(days: number, project: string | null): string {
   if (days !== SUMMARY_DEFAULT_DAYS) params.set("days", String(days));
   if (project !== null) params.set("project", project);
   const query = params.toString();
-  return query ? `/summary?${query}` : "/summary";
+  return query ? `/?${query}` : "/";
 }

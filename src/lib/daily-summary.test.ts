@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { DailySummary } from "@/types/adw";
+import { secondsLabel } from "./run-view";
 import {
   classSegments,
   costLabel,
@@ -27,13 +28,11 @@ function row(overrides: Partial<DailySummary>): DailySummary {
     bugs: 0,
     chores: 0,
     patches: 0,
-    median_duration_s: null,
+    duration_sum_s: 0,
     tokens_in_sum: 0,
-    tokens_in_median: null,
+    tokens_cache_read_sum: 0,
     tokens_out_sum: 0,
-    tokens_out_median: null,
     cost_usd_sum: 0,
-    cost_usd_median: null,
     ...overrides,
   };
 }
@@ -121,7 +120,7 @@ describe("summaryWindowStart", () => {
 });
 
 describe("toSummaryReport", () => {
-  it("adds counts and sums across projects and shows no median of medians", () => {
+  it("the day's totals are the sum of its project rows", () => {
     const report = toSummaryReport(
       [
         row({
@@ -130,22 +129,24 @@ describe("toSummaryReport", () => {
           completed: 2,
           failed: 1,
           features: 3,
-          median_duration_s: 600,
+          duration_sum_s: 600,
           tokens_in_sum: 100,
-          tokens_in_median: 30,
+          tokens_cache_read_sum: 1_200_000,
+          tokens_out_sum: 40,
           cost_usd_sum: 1.5,
-          cost_usd_median: 0.5,
         }),
         row({
           project_id: "p2",
           runs: 2,
-          completed: 2,
-          bugs: 2,
-          median_duration_s: 900,
+          completed: 1,
+          halted: 1,
+          bugs: 1,
+          chores: 1,
+          duration_sum_s: 4200,
           tokens_in_sum: 50,
-          tokens_in_median: 25,
+          tokens_cache_read_sum: 3_400_000,
+          tokens_out_sum: 60,
           cost_usd_sum: 0.25,
-          cost_usd_median: 0.1,
         }),
       ],
       PROJECTS,
@@ -153,43 +154,139 @@ describe("toSummaryReport", () => {
     );
     expect(report.rows).toHaveLength(1);
     const { totals, projects } = at(report.rows, 0);
-    expect(totals).toMatchObject({
+    expect(totals).toEqual({
+      day: "2026-10-05",
       runs: 5,
-      completed: 4,
+      completed: 3,
       failed: 1,
+      halted: 1,
       features: 3,
-      bugs: 2,
+      bugs: 1,
+      chores: 1,
+      patches: 0,
+      duration_sum_s: 4800,
       tokens_in_sum: 150,
+      tokens_cache_read_sum: 4_600_000,
+      tokens_out_sum: 100,
       cost_usd_sum: 1.75,
     });
-    expect(totals.median_duration_s).toBeNull();
-    expect(totals.tokens_in_median).toBeNull();
-    expect(totals.tokens_out_median).toBeNull();
-    expect(totals.cost_usd_median).toBeNull();
+    for (const [key, value] of Object.entries(totals)) {
+      if (key === "day") continue;
+      const field = key as Exclude<keyof typeof totals, "day">;
+      expect(value).toBe(projects.reduce((total, p) => total + p[field], 0));
+    }
     expect(projects.map((p) => p.slug)).toEqual(["SBub/alpha", "SBub/beta"]);
-    expect(at(projects, 0).median_duration_s).toBe(600);
   });
 
-  it("keeps the exact medians when one project contributed", () => {
+  it("the Total row equals the column sums of a day with three projects", () => {
+    const three = [...PROJECTS, { id: "p3", slug: "SBub/gamma", display_name: "Gamma" }];
     const report = toSummaryReport(
       [
         row({
-          runs: 1,
-          median_duration_s: 780,
-          tokens_in_median: 10,
-          tokens_out_median: 5,
-          cost_usd_median: 0.2,
+          project_id: "p1",
+          runs: 5,
+          completed: 3,
+          failed: 2,
+          features: 2,
+          bugs: 1,
+          chores: 1,
+          patches: 1,
+          duration_sum_s: 610,
+          tokens_in_sum: 1200,
+          tokens_cache_read_sum: 1_500_000,
+          tokens_out_sum: 3400,
+          cost_usd_sum: 0.1,
+        }),
+        row({
+          project_id: "p2",
+          runs: 4,
+          completed: 3,
+          failed: 1,
+          features: 1,
+          bugs: 1,
+          chores: 1,
+          patches: 1,
+          duration_sum_s: 1250,
+          tokens_in_sum: 800,
+          tokens_cache_read_sum: 2_250_000,
+          tokens_out_sum: 2100,
+          cost_usd_sum: 0.2,
+        }),
+        row({
+          project_id: "p3",
+          runs: 6,
+          completed: 4,
+          failed: 2,
+          features: 2,
+          bugs: 2,
+          chores: 1,
+          patches: 1,
+          duration_sum_s: 2000,
+          tokens_in_sum: 500,
+          tokens_cache_read_sum: 950_000,
+          tokens_out_sum: 1500,
+          cost_usd_sum: 0.35,
         }),
       ],
-      PROJECTS,
+      three,
       ALL,
     );
-    expect(at(report.rows, 0).totals).toMatchObject({
-      median_duration_s: 780,
-      tokens_in_median: 10,
-      tokens_out_median: 5,
-      cost_usd_median: 0.2,
+    const { totals, projects } = at(report.rows, 0);
+    expect(projects).toHaveLength(3);
+    for (const [key, value] of Object.entries(totals)) {
+      if (key === "day" || key === "cost_usd_sum") continue;
+      const field = key as Exclude<keyof typeof totals, "day">;
+      expect(value).toBe(projects.reduce((total, p) => total + p[field], 0));
+    }
+    expect(totals.cost_usd_sum).toBeCloseTo(
+      projects.reduce((total, p) => total + p.cost_usd_sum, 0),
+      4,
+    );
+    expect(totals.cost_usd_sum).toBe(0.65);
+    expect(secondsLabel(totals.duration_sum_s)).toBe("1h 04m");
+    expect(tokensLabel(totals.tokens_in_sum)).toBe("2.5k");
+    expect(tokensLabel(totals.tokens_cache_read_sum)).toBe("4.7M");
+    expect(tokensLabel(totals.tokens_out_sum)).toBe("7.0k");
+    expect(costLabel(totals.cost_usd_sum)).toBe("$0.65");
+  });
+
+  it("a single project's totals equal its row", () => {
+    const only = row({
+      runs: 2,
+      completed: 1,
+      failed: 1,
+      features: 2,
+      duration_sum_s: 970,
+      tokens_in_sum: 12,
+      tokens_cache_read_sum: 345_678,
+      tokens_out_sum: 9,
+      cost_usd_sum: 0.42,
     });
+    const report = toSummaryReport([only], PROJECTS, ALL);
+    const { project_id: _, ...expected } = only;
+    expect(at(report.rows, 0).totals).toEqual(expected);
+  });
+
+  it("carries only the day, counts and sums", () => {
+    const report = toSummaryReport([row({ runs: 1 })], PROJECTS, ALL);
+    expect(Object.keys(at(report.rows, 0).totals).sort()).toEqual(
+      [
+        "day",
+        "runs",
+        "completed",
+        "failed",
+        "halted",
+        "features",
+        "bugs",
+        "chores",
+        "patches",
+        "duration_sum_s",
+        "tokens_in_sum",
+        "tokens_cache_read_sum",
+        "tokens_out_sum",
+        "cost_usd_sum",
+      ].sort(),
+    );
   });
 
   it("orders days newest first and a day's projects by runs, then slug", () => {
@@ -328,18 +425,16 @@ describe("costLabel", () => {
 
 describe("summaryHref", () => {
   it("is the bare path for the defaults", () => {
-    expect(summaryHref(SUMMARY_DEFAULT_DAYS, null)).toBe("/summary");
+    expect(summaryHref(SUMMARY_DEFAULT_DAYS, null)).toBe("/");
   });
 
   it("carries a non-default window", () => {
-    expect(summaryHref(7, null)).toBe("/summary?days=7");
+    expect(summaryHref(7, null)).toBe("/?days=7");
   });
 
   it("encodes the project slug", () => {
     const encoded = "SBub%2Fadw-toolkit";
-    expect(summaryHref(SUMMARY_DEFAULT_DAYS, "SBub/adw-toolkit")).toBe(
-      `/summary?project=${encoded}`,
-    );
-    expect(summaryHref(90, "SBub/adw-toolkit")).toBe(`/summary?days=90&project=${encoded}`);
+    expect(summaryHref(SUMMARY_DEFAULT_DAYS, "SBub/adw-toolkit")).toBe(`/?project=${encoded}`);
+    expect(summaryHref(90, "SBub/adw-toolkit")).toBe(`/?days=90&project=${encoded}`);
   });
 });

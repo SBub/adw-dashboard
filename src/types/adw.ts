@@ -2,7 +2,7 @@
 // tables column for column; keep them in lockstep with the schema. The second
 // section holds what the data layer reads from a view or assembles for a
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
-// DailySummary (the daily_summary view, column for column) and the summary
+// DailySummary (the daily_summary columns the page reads) and the summary
 // page's report (assembled by toSummaryReport in src/lib/daily-summary.ts).
 // Runs and queue items have
 // no view model; the screens render Run and QueueItem rows as stored (the
@@ -81,11 +81,14 @@ export interface ProjectSummary extends Project {
 /**
  * One row of the adw.daily_summary view: one project's finished runs on one
  * UTC calendar day (`day` is `YYYY-MM-DD`, the day of runs.finished_at),
- * column for column with the view. `runs` counts every finished status, so
- * `runs - completed - failed` is `halted` (and any future status), and
- * `runs - features - bugs - chores - patches` is the runs with no known
- * issue class. The token and cost medians are over the runs that published
- * metrics (adw.run_metrics) and are null when none did.
+ * the columns the summary page reads from the view. `runs` counts every
+ * finished status, so `runs - completed - failed` is `halted` (and any future
+ * status), and `runs - features - bugs - chores - patches` is the runs with no
+ * known issue class. `duration_sum_s` is the sum of the finished runs'
+ * wall-clock durations in seconds. The token and cost sums are over the runs
+ * that published metrics (adw.run_metrics) and are 0 when none did.
+ * `tokens_in_sum` is fresh (uncached) input only since the toolkit's four-way
+ * split; `tokens_cache_read_sum` is the cached prompt read, the large figure.
  */
 export interface DailySummary {
   project_id: string;
@@ -98,13 +101,11 @@ export interface DailySummary {
   bugs: number;
   chores: number;
   patches: number;
-  median_duration_s: number | null;
+  duration_sum_s: number;
   tokens_in_sum: number;
-  tokens_in_median: number | null;
+  tokens_cache_read_sum: number;
   tokens_out_sum: number;
-  tokens_out_median: number | null;
   cost_usd_sum: number;
-  cost_usd_median: number | null;
 }
 
 /** A project as the summary page names it: its slug and display name. */
@@ -120,9 +121,8 @@ export interface SummaryProjectDay extends DailySummary {
 }
 
 /**
- * One UTC day of the summary. `totals` adds counts and sums across the day's
- * projects; a median is the single project's exact value when exactly one
- * project contributed and null otherwise (a median of medians is never shown).
+ * One UTC day of the summary. `totals` adds every count and every sum across
+ * the day's projects.
  */
 export interface SummaryDay {
   day: string;

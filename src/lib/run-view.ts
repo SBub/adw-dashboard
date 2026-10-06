@@ -36,10 +36,9 @@ export function durationLabel(startedAt: string, finishedAt: string | null): str
 }
 
 /**
- * A duration given in seconds (the summary view's median_duration_s) in the
- * same format as durationLabel, or null for null.
+ * A duration given in seconds (the summary view's duration_sum_s) in the
+ * same format as durationLabel.
  */
-export function secondsLabel(seconds: number | null): string | null {
-  if (seconds === null) return null;
+export function secondsLabel(seconds: number): string {
   return formatDuration(seconds * SECOND);
 }

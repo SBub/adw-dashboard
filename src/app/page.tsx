@@ -9,7 +9,7 @@ import { readSummaryDays, readSummaryProject } from "@/lib/daily-summary";
 import { summaryTag } from "@/lib/history-tags";
 
 export const metadata: Metadata = {
-  title: "Summary | ADW Dashboard",
+  title: "ADW Dashboard: what an AI developer workflow gets done",
 };
 
 type SearchParams = { [key: string]: string | string[] | undefined };
@@ -58,10 +58,7 @@ async function SummaryContent({ searchParams }: SummaryPageProps) {
     return (
       <p className="mt-6 rounded-lg border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500 dark:border-neutral-700 dark:text-neutral-400">
         No public project named {project}.{" "}
-        <Link
-          href="/summary"
-          className="underline hover:text-neutral-900 dark:hover:text-neutral-100"
-        >
+        <Link href="/" className="underline hover:text-neutral-900 dark:hover:text-neutral-100">
           Show all projects
         </Link>
       </p>
@@ -70,21 +67,31 @@ async function SummaryContent({ searchParams }: SummaryPageProps) {
 
   return (
     <div className="mt-6 space-y-6">
-      <SummaryFilters projects={report.projects} project={project} days={days} />
+      <div className="space-y-2">
+        <SummaryFilters projects={report.projects} project={project} days={days} />
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+          Times are UTC. Tokens and cost count runs that published metrics.
+        </p>
+      </div>
       <DailySummaryList report={report} />
     </div>
   );
 }
 
 // Not async, and searchParams is handed down unawaited: the heading and the
-// description are the static shell, the report is the hole.
+// intro are the static shell, the report is the hole.
 export default function SummaryPage({ searchParams }: SummaryPageProps) {
   return (
     <div className="mx-auto max-w-6xl px-4 py-6">
-      <h1 className="text-2xl font-semibold tracking-tight">Summary</h1>
-      <p className="mt-1 text-sm text-neutral-500 dark:text-neutral-400">
-        Finished runs per UTC day: what kind of work, how long, and what it cost. Medians are over
-        runs that published metrics.
+      <h1 className="text-2xl font-semibold tracking-tight">
+        What an AI developer workflow gets done
+      </h1>
+      <p className="mt-2 max-w-[70ch] text-base text-neutral-700 dark:text-neutral-300">
+        ADW is an autonomous pipeline that takes a GitHub issue and plans, builds, tests, reviews
+        and documents the change, then opens a pull request and merges it once checks are green.
+        This page is its public ledger: every finished run per day across the connected
+        repositories, what kind of work it was, how long it took, how many tokens it used and what
+        it cost. Pick a project in the header to watch runs live.
       </p>
       <SectionBoundary
         fallback={
