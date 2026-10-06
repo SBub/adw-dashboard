@@ -21,7 +21,7 @@ import { isProjectSlug } from "@/lib/slug";
  * - runs:<slug>, the "use cache" scope of the Active prefetch, so the refresh
  *   (and the next visitor) does not get an Active list that still contains
  *   the completed run.
- * - summary, the "use cache" scope of the /summary page, one tag for every
+ * - summary, the "use cache" scope of the summary page (`/`), one tag for every
  *   project filter and window, so the day's counts include the run.
  *
  * updateTag, not revalidateTag. Per node_modules/next/dist/docs/01-app/
@@ -41,7 +41,7 @@ import { isProjectSlug } from "@/lib/slug";
  * call it with any string. So it validates the slug strictly (isProjectSlug,
  * src/lib/slug.ts) and does nothing else: no database write, no read, no
  * return value worth having. The worst a caller can do is make the next
- * render of one project page, and of /summary, read the database once.
+ * render of one project page, and of the summary page (`/`), read the database once.
  */
 export async function revalidateHistory(slug: string): Promise<void> {
   if (!isProjectSlug(slug)) return;

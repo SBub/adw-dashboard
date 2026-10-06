@@ -1,4 +1,4 @@
-// Everything that shapes the /summary page, pure: the two search parameters,
+// Everything that shapes the summary page (`/`), pure: the two search parameters,
 // the window, the report assembled from adw.daily_summary rows, the class bar's
 // segments and the number labels. No clock, no cache, no IO, so every case is
 // unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The data
@@ -193,7 +193,7 @@ export function costLabel(usd: number | null): string {
 }
 
 /**
- * The /summary URL for a window and a project filter, the default window and
+ * The summary URL (`/`) for a window and a project filter, the default window and
  * "all projects" left out of the query string.
  */
 export function summaryHref(days: number, project: string | null): string {
@@ -201,5 +201,5 @@ export function summaryHref(days: number, project: string | null): string {
   if (days !== SUMMARY_DEFAULT_DAYS) params.set("days", String(days));
   if (project !== null) params.set("project", project);
   const query = params.toString();
-  return query ? `/summary?${query}` : "/summary";
+  return query ? `/?${query}` : "/";
 }

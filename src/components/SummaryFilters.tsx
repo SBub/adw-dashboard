@@ -24,7 +24,7 @@ export function SummaryFilters({ projects, project, days }: SummaryFiltersProps)
     : [...SUMMARY_DAY_OPTIONS, days].sort((a, b) => a - b);
 
   return (
-    <form method="get" action="/summary" className="flex flex-wrap items-end gap-3">
+    <form method="get" action="/" className="flex flex-wrap items-end gap-3">
       <label className="flex flex-col gap-1 text-xs font-medium text-neutral-600 dark:text-neutral-400">
         Project
         <span className="relative flex">

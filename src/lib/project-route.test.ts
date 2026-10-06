@@ -21,6 +21,7 @@ describe("isProjectPath", () => {
 
   it("is false for the overview and for a route outside /projects", () => {
     expect(isProjectPath("/", "SBub/adw-toolkit")).toBe(false);
+    expect(isProjectPath("/projects", "SBub/adw-toolkit")).toBe(false);
     expect(isProjectPath("/about", "SBub/adw-toolkit")).toBe(false);
   });
 

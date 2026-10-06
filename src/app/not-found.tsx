@@ -7,7 +7,7 @@ export default function NotFound() {
       <p className="mt-2 text-sm text-neutral-500 dark:text-neutral-400">
         There is nothing at this address.
       </p>
-      <Link href="/" className="mt-6 inline-block text-sm underline underline-offset-4">
+      <Link href="/projects" className="mt-6 inline-block text-sm underline underline-offset-4">
         &larr; All projects
       </Link>
     </div>
