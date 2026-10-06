@@ -100,12 +100,15 @@ project)`, is called only from the summary page's `getSummary` scope (see
   factory only; it never reads Supabase.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
   `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
-  `daily_summary`) in `src/data/index.ts`.
+  `daily_summary`, and `SummaryRun[]`, that is
+  `(Run & { run_metrics: RunMetrics | null })[]`, for the summary's runs read
+  with the embedded `run_metrics` row) in `src/data/index.ts`.
   Those casts are the only place the shapes are asserted; do not add another
   in a page or component. When touching the `runs` select, keep the column
   list equal to the fields of `Run`, `QUEUE_COLUMNS` equal to the fields
-  of `QueueItem`, and `DAILY_SUMMARY_COLUMNS` equal to the fields of
-  `DailySummary`, all in `src/types/adw.ts`.
+  of `QueueItem`, `DAILY_SUMMARY_COLUMNS` equal to the fields of
+  `DailySummary`, and `RUN_METRICS_COLUMNS` equal to the fields of
+  `RunMetrics`, all in `src/types/adw.ts`.
 - `getActiveRuns` is called on the server only from inside `getRunsState`,
   the page's `"use cache"` function: both the page body and `generateMetadata`
   go through it. Do not call `getActiveRuns` directly from a page, layout or
@@ -223,8 +226,10 @@ project)`, is called only from the summary page's `getSummary` scope (see
   hidden segment plus `$RC` swap in the same document); the latter is the
   page's cold SSR client chunk, not a cache miss or a clock read. See README,
   "Prefetch and hydration of a project's runs".
-- `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`) and the view
-  model (`ProjectSummary`) in clearly separated sections. Row types mirror the
+- `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`,
+  `RunMetrics` with its `RunPhase` entries) and the view models
+  (`ProjectSummary`, the summary report and its charts) in clearly separated
+  sections. Row types mirror the
   schema column for column; `ProjectSummary` is produced by the data layer.
   There is no run or queue item view model; do not add one for a label that a component can
   format from the row's own fields.
@@ -237,9 +242,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
   subscribes to the `useNow` store, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
-  `HistoryResults` share). `HistoryLinks`,
-  `RunHistoryList`, `SectionNav`, `SummaryFilters`,
-  `DailySummaryList`, `ClassDistributionBar` and `ProjectBreakdownTable` are
+  `HistoryResults` share, `SummaryCharts`, which holds the selected metric
+  and aggregate and lazy-loads the two charts, and `RunDetailChart` and
+  `DailyAggregateChart`, which render recharts in the browser).
+  `HistoryLinks`, `RunHistoryList`, `SectionNav`, `SummaryFilters` (a
+  `next/form` `Form`, whose client part is Next's) and `ChartSkeleton` are
   server components with no state; do not put
   `"use client"` on them or give them a filter that needs one. The left and
   right arrows of `HistoryLinks` are plain `next/link` hrefs that
@@ -493,15 +500,50 @@ project)`, is called only from the summary page's `getSummary` scope (see
   selection, never on a clock read. If a calendar window is ever wanted, the
   clock rule above must be amended in the same change.
 - Medians across projects are never combined: a day's all-projects median is
-  the one project's exact value or `per project`. Never show a median of
-  medians.
+  the one project's exact value or absent, and the chart shows each
+  project's own. Never show a median of medians.
 - Everything that shapes the report lives in `src/lib/daily-summary.ts`
   (`SUMMARY_DEFAULT_DAYS`, `SUMMARY_MAX_DAYS`, `SUMMARY_DAY_OPTIONS` defined
   there and nowhere else), pure and tested in
   `src/lib/daily-summary.test.ts`; every change to it goes with a test case.
-- Charts are inline SVG with their values also as text; no charting library.
-  Class hues match `IssueClassBadge`; completed and failed counts use
-  `STATUS_COLORS`.
+- `?metric` and `?agg` are normalised by `readSummaryMetric` and
+  `readSummaryAggregate` (`src/lib/summary-charts.ts`) outside the scope and
+  are never `getSummary` arguments: they change no data, and an argument
+  would multiply cache entries. They live in `SummaryCharts`'s client state
+  and reach the URL only through
+  `window.history.replaceState(null, "", summaryHref(...))` in the change
+  handler, never in render or an effect, never a navigation. The two selects
+  join the filter form with `form={SUMMARY_FILTER_FORM_ID}`, so applying a
+  project or window keeps them; `SummaryCharts` is keyed by all four
+  parameters so a navigation remounts its state.
+- Charts are `recharts` and nothing else: rendered only by the client
+  components `RunDetailChart` and `DailyAggregateChart`, which `SummaryCharts`
+  loads with `next/dynamic` and `ssr: false` behind `ChartSkeleton`, so no
+  prerender pass and no server render ever runs recharts. Values are
+  available as text in legends, axis labels and tooltips. Colours come only
+  from `src/lib/class-colors.ts` (`CLASS_COLORS` for issue classes, which
+  `IssueClassBadge` reads too, and `modelColor`/`UNATTRIBUTED_COLOR` for
+  model and project series), as `var(--chart-*)` references defined in
+  `globals.css` for light and dark, and from `STATUS_COLORS` for the status
+  text in the tooltip. Class and model colours never use a status hue
+  (`src/lib/class-colors.test.ts`).
+- Everything that shapes the charts lives in `src/lib/summary-charts.ts`
+  (`SUMMARY_METRICS`, `SUMMARY_AGGREGATES`, `SUMMARY_METRIC_FIELD` and
+  `SUMMARY_FILTER_FORM_ID` defined there and nowhere else; the two defaults,
+  `SUMMARY_DEFAULT_METRIC` and `SUMMARY_DEFAULT_AGGREGATE`, sit beside
+  `SUMMARY_DEFAULT_DAYS` in `daily-summary.ts`, which `summary-charts.ts`
+  imports and never the other way round), pure and tested in
+  `src/lib/summary-charts.test.ts`; every change to it goes with a test case.
+  The boundary attaches `toSummaryCharts(...)` to the report; the chart
+  components only pick a precomputed field by the selected key. A run's mark
+  sits on the UTC day of `finished_at` and is spread inside the day by finish
+  time, then `adw_id`: deterministic, never random.
+- Per-model stacks come from `run_metrics.phases[].models` of the runs read,
+  on the `finished_at` day, never from `adw.daily_model_summary` (it keys on
+  `started_at` and would disagree with `adw.daily_summary`). What a run's
+  totals hold beyond its models is the `unattributed` series, so a day's
+  stack adds up. The median rule holds in the chart: the median duration
+  aggregate is one series per project, never a combined median.
 - The summary is not a live section: no React Query entry, no Realtime
   reducer and no catch-up read touch it. It follows completions only through
   the `summary` tag in `historyTags(slug)`.
