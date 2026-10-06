@@ -69,7 +69,9 @@ The one test layer is `src/**/*.test.ts`: pure reducers in `src/data/`, helpers 
 pinned hydration rule. There is no component test layer and no Playwright suite; a user-visible
 change gets its browser evidence from the review phase's screenshots, not from a test.
 
-E2E: `none`. No `e2e/` directory exists; the test phase treats that as nothing to run.
+E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-driven journeys
+(currently `e2e/test_connection_indicator_scope.md`) that the test phase runs through the Playwright
+MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
 `yarn test` on every push. Never bypass it.
@@ -121,7 +123,7 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
   cards with class bars, per-project tables) and `/summary?project=SBub/issebya-homes-ai-system`
   (or the first listed project; one row per day, no table). Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
-- The header's connection indicator moves from `connecting` to `live` once the Realtime channel
+- The sidebar's connection indicator (dashboard routes only; `/summary` has none) moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report
   `connecting` as a defect unless the spec is about the indicator.
 - A route handler (`src/app/api/revalidate`), a server action, a reducer or a helper has no rendered
