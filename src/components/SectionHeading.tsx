@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { TOOLTIP_LAYER } from "@/lib/layers";
 
 interface SectionHeadingProps {
   title: string;
@@ -27,7 +28,9 @@ interface SectionHeadingProps {
  * inside it. The wrapper hangs from the bottom of the title row (`top-full`),
  * and the group stretches to that row's full height (`self-stretch`), so the
  * hover area runs without a gap from the button through the wrapper's `pt-2`
- * bridge onto the popover.
+ * bridge onto the popover. The wrapper takes `TOOLTIP_LAYER`, above every
+ * positioned element below the heading (the queue rail markers included),
+ * so nothing in a section paints over the open popover.
  *
  * The row owns the layout: `controls` stays next to the title and `actions`
  * stays at the right edge, whatever either renders.
@@ -57,7 +60,7 @@ export function SectionHeading({
                 >
                   <InfoIcon />
                 </button>
-                <span className="absolute top-full left-0 z-10 pt-2">
+                <span className={`absolute top-full left-0 pt-2 ${TOOLTIP_LAYER}`}>
                   <span
                     id={detailId}
                     role="tooltip"

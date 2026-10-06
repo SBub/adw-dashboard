@@ -135,7 +135,10 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `<h2>` stays outside every `SectionBoundary`. The heading row owns that
   layout (search next to the title, pagination at the right edge, both
   independent of the results), so do not put both in one slot or
-  reintroduce `justify-between`.
+  reintroduce `justify-between`. The detail popover takes `TOOLTIP_LAYER`
+  from `src/lib/layers.ts` (defined nowhere else), the topmost layer of the
+  page; no other element may take a z-index at or above it, and
+  `src/lib/layers.test.ts` scans `src/` and fails on one.
 - The project route is `projects/[owner]/[repo]`. The slug is assembled from
   `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
   file splits or joins it, and everything below the page (data boundary,

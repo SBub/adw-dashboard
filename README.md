@@ -286,6 +286,9 @@ It changes only when the server is told to re-render it.
 Each section's heading, one-line description and info-button detail are
 rendered by `SectionHeading`, and the copy lives in the project page
 (`src/app/(dashboard)/projects/[owner]/[repo]/page.tsx`) next to the sections.
+The detail popover sits on `TOOLTIP_LAYER` (`z-50`, `src/lib/layers.ts`),
+above the queue rail markers (`z-10`) and anything else positioned below a
+heading.
 
 Each run row shows the issue title (`adw.runs.issue_title`, published by the
 toolkit) after the issue number, on one line truncated with an ellipsis; runs
