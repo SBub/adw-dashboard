@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import Link from "next/link";
-import { SectionNav } from "@/components/SectionNav";
+import { BrandLink, SectionNav } from "@/components/SectionNav";
 
 import "./globals.css";
 
@@ -17,9 +16,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <header className="border-b border-neutral-200 dark:border-neutral-800">
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3">
             <div className="flex items-center gap-3 sm:gap-6">
-              <Link href="/" className="font-semibold tracking-tight">
-                ADW Dashboard
-              </Link>
+              <BrandLink />
               <SectionNav />
             </div>
             <div className="ml-auto flex items-center gap-3">

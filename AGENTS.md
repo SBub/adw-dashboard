@@ -199,7 +199,12 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `resetErrorBoundary()`, in that order, so the re-mounted server component
   is a fresh server render, not a replay of the failed one. Both share the
   panel in `src/components/ErrorPanel.tsx`. `QueryBoundary` sits inside
-  `Providers`, where the query it guards has its client.
+  `Providers`, where the query it guards has its client. The one exception
+  is `HeaderLink`'s `usePathname` read, which sits in a plain `Suspense` in
+  `SectionNav.tsx`: it reads no data and cannot fail, it only suspends during
+  prerender on a project page outside `generateStaticParams`. Its fallback is
+  the same link inactive, never a spinner or an empty node. No other
+  `Suspense` may be bare.
 - `queryClient.prefetchQuery` and `prefetchInfiniteQuery` are deprecated in
   the installed React Query; use `queryClient.query()` and `infiniteQuery()`.
   Do not swallow their rejection on the server prefetch: an empty dehydrated
@@ -221,6 +226,13 @@ project)`, is called only from the summary page's `getSummary` scope (see
   hidden segment plus `$RC` swap in the same document); the latter is the
   page's cold SSR client chunk, not a cache miss or a clock read. See README,
   "Prefetch and hydration of a project's runs".
+- The header's current section comes only from `headerSection` in
+  `src/lib/header-section.ts` (pure, tested in
+  `src/lib/header-section.test.ts`; every change to it goes with a test
+  case), read by `HeaderLink`. "Projects" is active on `/projects` and every
+  path below `/projects/` (never `/projectsx`) and takes the brand's text
+  colour; the brand is active on `/` only and keeps its styling. The active
+  link carries `aria-current="page"`, the other none.
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`) and the view
   model (`ProjectSummary`) in clearly separated sections. Row types mirror the
   schema column for column; `ProjectSummary` is produced by the data layer.
@@ -231,7 +243,8 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `ProjectNav`, which reads the pathname and the query cache,
   `ActiveRunsView`, which reads the active runs from the query cache,
   `QueueView`, which reads the queued items from the query cache,
-  `ConnectionIndicator`, which subscribes to its store, `HistorySearch`, which
+  `ConnectionIndicator`, which subscribes to its store, `HeaderLink`, which
+  reads the pathname to mark the header's current section, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks`,
@@ -491,7 +504,8 @@ project)`, is called only from the summary page's `getSummary` scope (see
   query string passed through; do not add a page under `src/app/summary/`.
   The project overview (sidebar plus the "Select a project" panel) is
   `/projects`, `src/app/(dashboard)/projects/page.tsx`; the header's
-  `SectionNav` links to `/projects` only and the brand links to `/`.
+  `SectionNav` links to `/projects` only and the brand, rendered by
+  `BrandLink` from the same file, links to `/`.
 - `?days` and `?project` are normalised by `readSummaryDays` and
   `readSummaryProject` outside the scope and never surface an error: an
   invalid value is the default. An unknown or private project renders a
