@@ -659,7 +659,7 @@ below). They are the only readers of `searchParams` (for
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
-The summary (`/`) is built the same way: its heading and description are the static
+The summary (`/`) is built the same way: its heading and intro are the static
 shell, and the report island awaits `searchParams` before its `"use cache"`
 scope (`getSummary`, tag `summary`), so the report is a request-time hole and
 the route is a partial prerender too.
@@ -1147,6 +1147,15 @@ days across every public project, with a per-project table under each day
 (Project, Runs, Completed, Failed, Classes, Total duration, Tokens in, Cache
 read, Tokens out, Cost) that ends in a Total row with the column sums. With a
 project selected, the table holds that project's single row plus Total.
+
+**Page copy.** `/` is the landing page, so its static shell opens with the
+`h1` "What an AI developer workflow gets done" and an intro paragraph saying
+what ADW is and that the page is the public ledger of finished runs; the
+document title is "ADW Dashboard: what an AI developer workflow gets done".
+Both sit in the page body and `metadata`, outside the report hole. The
+reading notes ("Times are UTC. Tokens and cost count runs that published
+metrics.") are a muted line under the filters, inside the report island,
+because they describe the report.
 
 **Data.** The toolkit's `adw.daily_summary` view (its migration
 `supabase/migrations/*_run_metrics.sql`) holds one row per project per UTC day
