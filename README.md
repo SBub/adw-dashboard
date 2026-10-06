@@ -31,8 +31,8 @@ classes, total duration, tokens (fresh input, cache read, output) and cost (see
 `/projects`. The link of the current section carries `aria-current="page"`, and
 "Projects" is emphasised on `/projects` and on every project page. On a project
 page added after the deploy (not among the pre-rendered slugs) the shell carries
-the unmarked link and the highlight arrives with the streamed pathname. The old address `/summary` is a permanent redirect to `/` that
-keeps its query string.
+the unmarked link and the highlight arrives with the streamed pathname. The old address `/summary` is a permanent redirect to a bare `/`
+(its query string is dropped).
 
 ## Data: projects and runs from the database
 
@@ -662,10 +662,11 @@ below). They are the only readers of `searchParams` (for
 marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
-The summary (`/`) is built the same way: its heading and intro are the static
-shell, and the report island awaits `searchParams` before its `"use cache"`
-scope (`getSummary`, tag `summary`), so the report is a request-time hole and
-the route is a partial prerender too.
+The summary (`/`) is built the same way: its heading, intro and reading note
+are the static shell, and the report island awaits `connection()` before its
+`"use cache"` scope (`getSummary`, tag `summary`); it reads no `searchParams`,
+so `connection()` is its one request-time marker. The report is a
+request-time hole and the route is a partial prerender too.
 
 Two islands do not mean two reads. `getHistory` is a `"use cache"` function
 keyed by its arguments, the slug, a plain bookmark object and the search text, with the same
@@ -1137,19 +1138,21 @@ and no Realtime channel, so `/` shows no connection pill: the pill is rendered
 by the `(dashboard)` layout beside `Providers`, where the channel is. The
 project overview ("Select a project") is `src/app/(dashboard)/projects/page.tsx`
 at `/projects`, beside the `projects/[owner]/[repo]` segment. `/summary`, the
-summary's old address, is a permanent (308) redirect to `/` in
-`next.config.ts` `redirects()`; Next passes the query string (`?days`,
-`?project`) through, so old links and bookmarks keep their filters.
+summary's old address, is a permanent (308) redirect to `/` answered by the
+route handler `src/app/summary/route.ts`. It is not a `next.config.ts`
+redirect because Next always merges the request's query string into a config
+redirect's destination; the handler answers a bare, relative `/` and reads
+nothing from the request, so old filtered links land on the plain page.
 
 ## Summary
 
 `/` shows what the toolkit finished per UTC day, newest first: runs
 completed and failed (halted when there are any), the split by issue class as
-an inline-SVG stacked bar with its counts as text. By default it covers 30
-days across every public project, with a per-project table under each day
-(Project, Runs, Completed, Failed, Classes, Total duration, Tokens in, Cache
-read, Tokens out, Cost) that ends in a Total row with the column sums. With a
-project selected, the table holds that project's single row plus Total.
+an inline-SVG stacked bar with its counts as text. It always covers 30 days
+(`SUMMARY_DEFAULT_DAYS`) across every public project, with a per-project table
+under each day (Project, Runs, Completed, Failed, Classes, Total duration,
+Tokens in, Cache read, Tokens out, Cost) that ends in a Total row with the
+column sums. There are no filters (issue #97).
 
 **Page copy.** `/` is the landing page, so its static shell opens with the
 `h1` "What an AI developer workflow gets done" and an intro paragraph saying
@@ -1157,8 +1160,7 @@ what ADW is and that the page is the public ledger of finished runs; the
 document title is "ADW Dashboard: what an AI developer workflow gets done".
 Both sit in the page body and `metadata`, outside the report hole. The
 reading notes ("Times are UTC. Tokens and cost count runs that published
-metrics.") are a muted line under the filters, inside the report island,
-because they describe the report.
+metrics.") are a muted line directly under the intro, also in the shell.
 
 **Data.** The toolkit's `adw.daily_summary` view (its migration
 `supabase/migrations/*_run_metrics.sql`) holds one row per project per UTC day
@@ -1168,11 +1170,11 @@ sums: `duration_sum_s`, `tokens_in_sum`, `tokens_cache_read_sum`,
 that published metrics and are 0 when none did. Since the toolkit split token
 usage four ways, `tokens_in` is fresh (uncached) input only and small; cache
 read is the large figure, which is why it has its own column.
-`getDailySummary(days, project)` in `src/data/index.ts` reads the projects, the
+`getDailySummary(days)` in `src/data/index.ts` reads the projects, the
 newest `day` in the view and the rows of the window, casts them to
 `DailySummary` (`src/types/adw.ts`), and hands them to `toSummaryReport` in
 `src/lib/daily-summary.ts`, which groups and adds them. Everything that shapes
-the report (the parameters, the window, the totals, the bar's segments, the
+the report (the window, the totals, the bar's segments, the
 labels) lives in that file, pure and unit-tested. A day is shown as
 `DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
 by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
@@ -1181,7 +1183,7 @@ by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
 **The window.** "Last 30 days" needs a reference day, and reading the clock
 would be a second clock read in the data layer (the one permitted is
 `getActiveRuns`'s `fetched_at`). So the window ends on the newest day in the
-view for the selection, and the page states it ("30 days to 05.10.2026"). On
+view, and the page states it ("30 days to 05.10.2026"). On
 an active installation that is today; on a quiet one it is the last day with a
 finished run.
 
@@ -1190,21 +1192,13 @@ table's Total row are `day.totals`, the sum of the table's own rows
 (`dayTotals` in `src/lib/daily-summary.ts`), passed to `ProjectBreakdownTable`
 as a prop. Nothing is a median.
 
-**Filters.** A plain GET form, no client state: `?days` (1 to 90, default 30;
-the form offers 7, 30 and 90) and `?project=owner/repo`. Both are normalised
-by `readSummaryDays` and `readSummaryProject` outside the cache scope; an
-invalid value is the default, never an error. A valid slug the publishable key
-cannot see renders a "No public project" panel. The selects reset the native
-appearance and draw their own chevron, and share one height, border and font
-with Apply through `src/lib/form-controls.ts`, so the row looks the same in
-Safari and Chrome.
-
 **Cache.** `getSummary` in `src/app/page.tsx` is `"use cache"`, tagged
-`summary` (`summaryTag()` in `src/lib/history-tags.ts`; one tag for every
-window and filter) with `cacheLife({ stale: 300, revalidate: 900, expire:
-86400 })`. It is called only from the report island after its `searchParams`
-read, so it is a request-time hole (see "What is prerendered and what is
-not"); there is no `connection()` call, as in History.
+`summary` (`summaryTag()` in `src/lib/history-tags.ts`; one report, one
+entry) with `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`. It
+is called only from the report island after its `await connection()`, so it
+is a request-time hole (see "What is prerendered and what is not"). Unlike
+History, which reads `searchParams`, the island has no other request-time
+read, so the `connection()` call is required here.
 
 **Revalidation.** `historyTags(slug)` includes `summary`, so the
 `revalidateHistory` action and the `/api/revalidate` webhook drop it on every

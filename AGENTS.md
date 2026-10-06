@@ -69,8 +69,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `@/data` and nothing else for data. The fifth export, `getProjectSlug(projectId)`, is
   read only by the `/api/revalidate` route handler (it turns a webhook's
   `project_id` into the slug the tags are keyed by); never call it from a
-  page, a component or a `queryFn`. The sixth, `getDailySummary(days,
-project)`, is called only from the summary page's `getSummary` scope (see
+  page, a component or a `queryFn`. The sixth, `getDailySummary(days)`, is called only from the summary page's `getSummary` scope (see
   "Summary"), never a `queryFn`. `getProjects`, `getActiveRuns` and
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
@@ -248,7 +247,7 @@ project)`, is called only from the summary page's `getSummary` scope (see
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks`,
-  `RunHistoryList`, `SectionNav`, `SummaryFilters`,
+  `RunHistoryList`, `SectionNav`,
   `DailySummaryList`, `ClassDistributionBar` and `ProjectBreakdownTable` are
   server components with no state; do not put
   `"use client"` on them or give them a filter that needs one. The left and
@@ -490,49 +489,47 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `(dashboard)`. `getSummary`
   is `"use cache"`, tagged `summaryTag()`, with an explicit
   `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`, and is called
-  only from the `SummaryContent` island after its `await searchParams`, under
+  only from the `SummaryContent` island after its `await connection()`, under
   a `SectionBoundary`; never from the page body or metadata (it would be
-  prerendered into the shell and frozen). No `connection()` call, as in
-  History. One tag for every window and filter; never a per-project or
-  per-window summary tag.
+  prerendered into the shell and frozen). The island reads no `searchParams`,
+  so `connection()` is its one request-time marker and is required (the
+  History rule against it does not apply here). One report, one tag; never a
+  per-project or per-window summary tag.
 - The `h1` and the intro paragraph of `/` are static copy in the page body
   (the shell), and the title comes from `metadata`; none of them reads the
-  report. The reading notes about UTC and metrics live under the filters in
-  `SummaryContent`. `e2e/test_connection_indicator_scope.md` asserts the `h1`
-  text, so change both together.
-- `/summary` is a permanent redirect to `/` in `next.config.ts` `redirects()`,
-  query string passed through; do not add a page under `src/app/summary/`.
+  report. The reading note about UTC and metrics is a `<p>` in the page body
+  directly under the intro, also in the shell, outside the `SectionBoundary`.
+  `e2e/test_connection_indicator_scope.md` and `e2e/test_landing_no_filters.md`
+  assert the `h1` text, so change them together.
+- `/summary` is a permanent (308) redirect to a bare `/`, answered by the
+  route handler `src/app/summary/route.ts`, which reads nothing from the
+  request, so the query string is dropped. It is the only file under
+  `src/app/summary/`; do not add a page there, and do not add a
+  `next.config.ts` redirect for it (Next merges the query string into a
+  config redirect's destination, and config redirects run before the
+  handler).
   The project overview (sidebar plus the "Select a project" panel) is
   `/projects`, `src/app/(dashboard)/projects/page.tsx`; the header's
   `SectionNav` links to `/projects` only and the brand, rendered by
   `BrandLink` from the same file, links to `/`.
-- `?days` and `?project` are normalised by `readSummaryDays` and
-  `readSummaryProject` outside the scope and never surface an error: an
-  invalid value is the default. An unknown or private project renders a
-  panel, not an error.
-- The window is anchored on the newest `day` in `adw.daily_summary` for the
-  selection, never on a clock read. If a calendar window is ever wanted, the
-  clock rule above must be amended in the same change.
+- `/` has no filters (issue #97): it always shows every public project over
+  `SUMMARY_DEFAULT_DAYS` days and reads no search parameter.
+- The window is anchored on the newest `day` in `adw.daily_summary`, never
+  on a clock read. If a calendar window is ever wanted, the clock rule above must be amended in the same change.
 - The summary shows sums only. A day's totals are the sum of its project
   rows (`dayTotals` in `src/lib/daily-summary.ts`), and no median is read,
   assembled or shown; a median cannot be combined across projects, so do not
   reintroduce one without a per-project-only display.
 - The per-project table's `<tfoot>` Total row renders `day.totals`, passed
   in as `ProjectBreakdownTable`'s `totals` prop; the table adds nothing
-  itself. The table shows for every day with projects, filtered or not. Do
+  itself. The table shows for every day with projects. Do
   not reintroduce a separate totals strip.
 - Everything that shapes the report lives in `src/lib/daily-summary.ts`
-  (`SUMMARY_DEFAULT_DAYS`, `SUMMARY_MAX_DAYS`, `SUMMARY_DAY_OPTIONS` defined
-  there and nowhere else), pure and tested in
+  (`SUMMARY_DEFAULT_DAYS` defined there and nowhere else), pure and tested in
   `src/lib/daily-summary.test.ts`; every change to it goes with a test case.
 - Charts are inline SVG with their values also as text; no charting library.
   Class hues match `IssueClassBadge`; completed and failed counts use
   `STATUS_COLORS`.
-- The filter controls take their classes only from
-  `src/lib/form-controls.ts`: the selects are `appearance-none` (plus the
-  `-webkit-` reset), share one explicit height with the button, and get a
-  chevron drawn by the component; the `<select>` elements stay native. Every
-  change to it goes with a test case in `src/lib/form-controls.test.ts`.
 - The summary is not a live section: no React Query entry, no Realtime
   reducer and no catch-up read touch it. It follows completions only through
   the `summary` tag in `historyTags(slug)`.

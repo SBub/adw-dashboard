@@ -4,11 +4,6 @@ import { secondsLabel } from "./run-view";
 import {
   classSegments,
   costLabel,
-  readSummaryDays,
-  readSummaryProject,
-  SUMMARY_DEFAULT_DAYS,
-  SUMMARY_MAX_DAYS,
-  summaryHref,
   summaryWindowStart,
   tokensLabel,
   toSummaryReport,
@@ -47,55 +42,7 @@ function at<T>(items: readonly T[], index: number): T {
   return item;
 }
 
-const ALL = { days: 30, project: null, from: "2026-09-06", to: "2026-10-05" };
-
-describe("readSummaryDays", () => {
-  it("is the default when absent", () => {
-    expect(readSummaryDays(undefined)).toBe(SUMMARY_DEFAULT_DAYS);
-  });
-
-  it("reads a value inside the bounds", () => {
-    expect(readSummaryDays("7")).toBe(7);
-  });
-
-  it("clamps to the maximum", () => {
-    expect(readSummaryDays("999")).toBe(SUMMARY_MAX_DAYS);
-  });
-
-  it("clamps zero to one", () => {
-    expect(readSummaryDays("0")).toBe(1);
-  });
-
-  it("is the default for junk, signs, fractions, empty and too many digits", () => {
-    for (const raw of ["abc", "-5", "1.5", "", "1000", " 7"]) {
-      expect(readSummaryDays(raw)).toBe(SUMMARY_DEFAULT_DAYS);
-    }
-  });
-
-  it("is the default for a repeated parameter", () => {
-    expect(readSummaryDays(["7", "30"])).toBe(SUMMARY_DEFAULT_DAYS);
-  });
-});
-
-describe("readSummaryProject", () => {
-  it("keeps a valid slug", () => {
-    expect(readSummaryProject("SBub/adw-toolkit")).toBe("SBub/adw-toolkit");
-  });
-
-  it("is null for absent and the form's empty value", () => {
-    expect(readSummaryProject(undefined)).toBeNull();
-    expect(readSummaryProject("")).toBeNull();
-  });
-
-  it("is null for a malformed slug", () => {
-    expect(readSummaryProject("a/b/c")).toBeNull();
-    expect(readSummaryProject("a%2Fb")).toBeNull();
-  });
-
-  it("is null for a repeated parameter", () => {
-    expect(readSummaryProject(["SBub/a", "SBub/b"])).toBeNull();
-  });
-});
+const ALL = { days: 30, from: "2026-09-06", to: "2026-10-05" };
 
 describe("summaryWindowStart", () => {
   it("counts the anchor as the last day of the window", () => {
@@ -326,24 +273,9 @@ describe("toSummaryReport", () => {
     expect(at(report.rows, 0).totals.cost_usd_sum).toBe(0.3);
   });
 
-  it("passes the window through and lists the projects without ids", () => {
-    const report = toSummaryReport([], PROJECTS, {
-      days: 7,
-      project: ALPHA,
-      from: null,
-      to: null,
-    });
-    expect(report).toEqual({
-      from: null,
-      to: null,
-      days: 7,
-      project: ALPHA,
-      projects: [
-        { slug: "SBub/alpha", display_name: "Alpha" },
-        { slug: "SBub/beta", display_name: "Beta" },
-      ],
-      rows: [],
-    });
+  it("passes the window through", () => {
+    const report = toSummaryReport([], PROJECTS, { days: 7, from: null, to: null });
+    expect(report).toEqual({ from: null, to: null, days: 7, rows: [] });
   });
 
   it("does not mutate its inputs", () => {
@@ -420,21 +352,5 @@ describe("costLabel", () => {
 
   it("marks a cost under one cent", () => {
     expect(costLabel(0.0042)).toBe("<$0.01");
-  });
-});
-
-describe("summaryHref", () => {
-  it("is the bare path for the defaults", () => {
-    expect(summaryHref(SUMMARY_DEFAULT_DAYS, null)).toBe("/");
-  });
-
-  it("carries a non-default window", () => {
-    expect(summaryHref(7, null)).toBe("/?days=7");
-  });
-
-  it("encodes the project slug", () => {
-    const encoded = "SBub%2Fadw-toolkit";
-    expect(summaryHref(SUMMARY_DEFAULT_DAYS, "SBub/adw-toolkit")).toBe(`/?project=${encoded}`);
-    expect(summaryHref(90, "SBub/adw-toolkit")).toBe(`/?days=90&project=${encoded}`);
   });
 });
