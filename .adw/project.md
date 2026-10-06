@@ -71,7 +71,7 @@ pinned hydration rule. There is no component test layer and no Playwright suite;
 change gets its browser evidence from the review phase's screenshots, not from a test.
 
 E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-driven journeys
-(currently `e2e/test_connection_indicator_scope.md`) that the test phase runs through the Playwright
+(currently `e2e/test_connection_indicator_scope.md` and `e2e/test_header_section_active.md`) that the test phase runs through the Playwright
 MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
