@@ -184,7 +184,7 @@ Each boundary function runs on the server during its prefetch (and at build
 time, through it) and in the browser only on a cache miss, which the hydration
 makes rare.
 
-### Labels: no clock in the UI
+### Labels: no clock in render
 
 Every value a run row shows is a stored column, rendered as is, plus one pure
 derivation: `durationLabel(startedAt, finishedAt)` in `src/lib/run-view.ts`
