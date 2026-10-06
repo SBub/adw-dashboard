@@ -482,6 +482,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
   prerendered into the shell and frozen). No `connection()` call, as in
   History. One tag for every window and filter; never a per-project or
   per-window summary tag.
+- The `h1` and the intro paragraph of `/` are static copy in the page body
+  (the shell), and the title comes from `metadata`; none of them reads the
+  report. The reading notes about UTC and metrics live under the filters in
+  `SummaryContent`. `e2e/test_connection_indicator_scope.md` asserts the `h1`
+  text, so change both together.
 - `/summary` is a permanent redirect to `/` in `next.config.ts` `redirects()`,
   query string passed through; do not add a page under `src/app/summary/`.
   The project overview (sidebar plus the "Select a project" panel) is
