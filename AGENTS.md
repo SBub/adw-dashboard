@@ -35,21 +35,16 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
   anywhere for runs.
-- No clock reads outside the cached boundary. There are exactly two
-  argument-less `new Date()` / `Date.now()` sites in the codebase
+- No clock reads outside the cached boundary. There is exactly one
+  argument-less `new Date()` / `Date.now()` site in the codebase
   (`new Date(ms)` on a parsed input, as in `formatTimestamp`, is not a clock
-  read).
-  The first is `getActiveRuns`'s `fetched_at` stamp, which
+  read): `getActiveRuns`'s `fetched_at` stamp, which
   on the server only ever executes inside the page's `"use cache"` scope (in
   the browser it runs as a `queryFn` on a cache miss and in the realtime
-  catch-up, where a clock read is fine). The second is the `useNow` store in
-  `src/hooks/use-now.ts`, which reads the clock only in its `subscribe` and
-  its interval callback (post-commit, browser only); its `getSnapshot`
-  returns the stored value and its `getServerSnapshot` returns `null`, so
-  neither prerender pass reads the clock. Never read the clock in
-  `getSnapshot`. `QueueWait` is its one consumer; a new time-dependent label
-  is a new leaf like it, never a clock read in `QueueRow`, `QueueView` or
-  `RunRow`. `getQueue` reads no clock either and
+  catch-up, where a clock read is fine). A future time-dependent label is a
+  new client leaf with a `useSyncExternalStore` store whose server snapshot
+  does not read the clock (issue #3), never a clock read in `QueueRow`,
+  `QueueView` or `RunRow`. `getQueue` reads no clock either and
   has no `fetched_at`. `getCompletedRuns` reads no clock and
   must stay that way: it has no `fetched_at`, and its cache scope is there for
   the tag, not for a clock-read permission. No clock read in client render at all:
@@ -233,8 +228,7 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `ProjectNav`, which reads the pathname and the query cache,
   `ActiveRunsView`, which reads the active runs from the query cache,
   `QueueView`, which reads the queued items from the query cache,
-  `ConnectionIndicator`, which subscribes to its store, `QueueWait`, which
-  subscribes to the `useNow` store, `HistorySearch`, which
+  `ConnectionIndicator`, which subscribes to its store, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryTransition`, which holds the one `useTransition` the box and
   `HistoryResults` share). `HistoryLinks`,
@@ -261,12 +255,11 @@ project)`, is called only from the summary page's `getSummary` scope (see
   `queuePositions` in `src/lib/queue-order.ts`: the rank in ledger order
   (`position`, then `issue_number`), never `queued_at` and never the array
   index. `byQueuePosition` in the same file is the one ledger comparator,
-  shared by `queuePositions` and `applyQueueChange`. `waitLabel`,
-  `hasRunningRun` and `queueStartHint` live there too; all are pure and tested
+  shared by `queuePositions` and `applyQueueChange`; both are pure and tested
   in `src/lib/queue-order.test.ts`, and every change to them goes with a test
-  case. For the head row's hint `QueueView` reads `queryKeys.runs(slug)` with
-  the same options as `ActiveRunsView` and `select: hasRunningRun` only; never
-  merge it into the queue entry. Rows stay keyed by `issue_number`, and the
+  case. A row is one line: issue link, title, the manual hint for a manual
+  item, `Queued <time>` and the status pill; it shows no label chip, no wait
+  and no start hint. Rows stay keyed by `issue_number`, and the
   left gutter stays reserved for the marker and the future drag handle. The
   rail line and the `next` marker take their colours from
   `STATUS_COLORS.queued`, the hollow markers from

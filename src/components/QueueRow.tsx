@@ -1,8 +1,6 @@
-import { queueStartHint } from "@/lib/queue-order";
 import { queueSource } from "@/lib/queue-source";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import type { QueueItem } from "@/types/adw";
-import { QueueWait } from "./QueueWait";
 import { StatusBadge } from "./StatusBadge";
 import { Timestamp } from "./Timestamp";
 
@@ -12,8 +10,6 @@ interface QueueRowProps {
   projectSlug: string;
   /** 1-based ordinal in ledger order, from queuePositions; 1 is the head. */
   position: number;
-  /** Whether the project has a running run, for the head row's start hint. */
-  hasRunning: boolean;
 }
 
 const BADGE =
@@ -24,13 +20,13 @@ const BADGE =
  * holds the marker (filled `next` for the head, the ordinal otherwise, both
  * from the `position` prop) and is reserved for a future drag handle. The
  * source is parsed from the row's own column by queueSource; everything else
- * is a column. Nothing here reads the clock: the wait comes from the QueueWait
- * leaf, and the head row's hint from queueStartHint.
+ * is a column. The card is one line: the issue link, the title, the hint for a
+ * manual item, `Queued <time>` and the status pill. Nothing here reads the clock.
  * A manual item carries a visible hint (a title alone is invisible on touch):
  * removing the issue's label does not take it out of the queue. The queued
  * badge uses the same colour map as run rows.
  */
-export function QueueRow({ item, projectSlug, position, hasRunning }: QueueRowProps) {
+export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
   const source = queueSource(item.source);
   const isHead = position === 1;
 
@@ -74,7 +70,6 @@ export function QueueRow({ item, projectSlug, position, hasRunning }: QueueRowPr
               {item.issue_title}
             </span>
           )}
-          {source?.kind === "label" && <span className={BADGE}>label: {source.name}</span>}
           {source?.kind === "manual" && (
             <>
               <span
@@ -98,12 +93,6 @@ export function QueueRow({ item, projectSlug, position, hasRunning }: QueueRowPr
           </span>
           <StatusBadge status="queued" />
         </div>
-        {(isHead || item.queued_at !== null) && (
-          <p className="mt-1 flex flex-wrap gap-x-2 text-xs text-neutral-500 dark:text-neutral-400">
-            <QueueWait queuedAt={item.queued_at} />
-            {isHead && <span>{queueStartHint(hasRunning)}</span>}
-          </p>
-        )}
       </div>
     </li>
   );

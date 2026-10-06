@@ -209,19 +209,6 @@ a `useSyncExternalStore` hook with a data-derived server snapshot, and the
 first version of that re-rendered the whole pane on every tick. Issue #3
 describes the leaf-level replacement.
 
-That leaf-level shape now exists for one label: the Queue's wait so far.
-`QueueWait` (`src/components/QueueWait.tsx`) is a tiny client leaf that reads
-the time through `useNow` (`src/hooks/use-now.ts`), a `useSyncExternalStore`
-store whose clock reads live only in its `subscribe` (the first stamp, when the
-first subscriber attaches) and its 30-second interval callback, both of which
-React runs after commit and never in render. `getSnapshot` returns the stored
-number and `getServerSnapshot` returns `null`, so neither prerender pass reads
-the clock, hydration renders `null` like the server did, and the wait appears
-after mount. It is absent from the static HTML by design (`getQueue` has no
-`fetched_at` to serve as a snapshot, and a build-time wait would be wrong for
-the shell's lifetime anyway). A tick re-renders only the `QueueWait` leaves.
-The run labels above are unchanged and still tracked in issue #3.
-
 `fetched_at` itself is `new Date().toISOString()` taken inside
 `getActiveRuns`, which only ever runs inside the page's `"use cache"` scope on
 the server. A clock read inside a cache scope is allowed (the value is cached
@@ -377,21 +364,14 @@ entry per slug:
    item in ledger order, a move reorders the ledger without restamping
    `queued_at`, and a retry restamps it without moving the item. Beside the
    marker, the card holds the issue number as a GitHub
-   link, the title (omitted when `null`), the source and `Queued <time>` (`none`
-   when `queued_at` is `null`), and under it a second line: the wait so far
-   (`QueueWait`, formatted by the pure `waitLabel`, see the clock section) and,
-   on the head row, a start hint from `queueStartHint`: "starts when the
-   running run finishes" when the project has a `running` run, otherwise
-   "starts with the next runner". `QueueView` learns that from a second
-   `useSuspenseQuery` on `queryKeys.runs(slug)` with the same options as
-   `ActiveRunsView` and `select: hasRunningRun`; the page's runs
-   `HydrationBoundary` encloses the queue slot, so it is a cache hit on the
-   entry Active renders, and the runs listener keeps the hint live. The source is parsed from
-   the stored `source` column by `queueSource` in `src/lib/queue-source.ts`
-   (`label:<name>` renders a `label: <name>` badge, `manual` a `manual` badge
-   plus a visible hint that removing the label does not remove the item, since
-   a manually queued item is not taken out by unlabelling the issue; anything
-   else, or `null`, renders no badge).
+   link, the title (omitted when `null`), the source hint and `Queued <time>`
+   (`none` when `queued_at` is `null`), then the status pill, all on one line.
+   The source is parsed from the stored `source` column by `queueSource` in
+   `src/lib/queue-source.ts`: `manual` renders a `manual` badge plus a visible
+   hint that removing the label does not remove the item, since a manually
+   queued item is not taken out by unlabelling the issue; anything else
+   (`label:<name>` included, or `null`) renders no badge, because the section
+   description already explains the label.
    Every row ends with the amber `queued` `StatusBadge`, the same component
    and colour map as a run row's status.
 
