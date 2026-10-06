@@ -3,15 +3,10 @@
 // segments and the number labels. No clock, no cache, no IO, so every case is
 // unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The data
 // boundary (getDailySummary in src/data/index.ts) reads the rows and calls
-// toSummaryReport, then attaches the charts (toSummaryCharts in
-// src/lib/summary-charts.ts, which builds on this module, never the other way
-// round); the components only call the label helpers.
+// toSummaryReport; the components only call the label helpers.
 import { isProjectSlug } from "@/lib/slug";
 import type {
-  ClassKey,
   DailySummary,
-  SummaryAggregate,
-  SummaryMetric,
   SummaryDay,
   SummaryProject,
   SummaryProjectDay,
@@ -23,12 +18,6 @@ export const SUMMARY_DEFAULT_DAYS = 30;
 
 /** The widest window `?days` can ask for. */
 export const SUMMARY_MAX_DAYS = 90;
-
-/** The run chart's y axis when `?metric` is absent or invalid. */
-export const SUMMARY_DEFAULT_METRIC: SummaryMetric = "duration";
-
-/** The daily aggregate chart when `?agg` is absent or invalid. */
-export const SUMMARY_DEFAULT_AGGREGATE: SummaryAggregate = "runs";
 
 /** The windows the filter form offers. */
 export const SUMMARY_DAY_OPTIONS = [7, 30, 90] as const;
@@ -70,15 +59,7 @@ export function readSummaryProject(raw: string | string[] | undefined): string |
  * and leap-day boundaries are the calendar's. No clock is read.
  */
 export function summaryWindowStart(anchor: string, days: number): string {
-  return addDays(anchor, -(days - 1));
-}
-
-/**
- * The calendar day (`YYYY-MM-DD`) `count` days after `day` (before it for a
- * negative count), by the same UTC-midnight arithmetic. No clock is read.
- */
-export function addDays(day: string, count: number): string {
-  const date = new Date(Date.parse(day) + count * DAY_MS);
+  const date = new Date(Date.parse(anchor) - (days - 1) * DAY_MS);
   return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 }
 
@@ -123,7 +104,7 @@ export function toSummaryReport(
   rows: readonly DailySummary[],
   projects: readonly (SummaryProject & { id: string })[],
   options: { days: number; project: SummaryProject | null; from: string | null; to: string | null },
-): Omit<SummaryReport, "charts"> {
+): SummaryReport {
   const byId = new Map(projects.map((project) => [project.id, project]));
   const byDay = new Map<string, SummaryProjectDay[]>();
   for (const row of rows) {
@@ -149,6 +130,8 @@ export function toSummaryReport(
     }),
   };
 }
+
+export type ClassKey = "/feature" | "/bug" | "/chore" | "/patch" | "other";
 
 export interface ClassSegment {
   key: ClassKey;
@@ -215,26 +198,13 @@ export function costLabel(usd: number | null): string {
 }
 
 /**
- * The /summary URL for a window, a project filter, a run metric and a daily
- * aggregate, in that order, each left out of the query string at its default
- * (30 days, all projects, duration, runs per day).
+ * The /summary URL for a window and a project filter, the default window and
+ * "all projects" left out of the query string.
  */
-export function summaryHref({
-  days,
-  project,
-  metric = SUMMARY_DEFAULT_METRIC,
-  agg = SUMMARY_DEFAULT_AGGREGATE,
-}: {
-  days: number;
-  project: string | null;
-  metric?: SummaryMetric;
-  agg?: SummaryAggregate;
-}): string {
+export function summaryHref(days: number, project: string | null): string {
   const params = new URLSearchParams();
   if (days !== SUMMARY_DEFAULT_DAYS) params.set("days", String(days));
   if (project !== null) params.set("project", project);
-  if (metric !== SUMMARY_DEFAULT_METRIC) params.set("metric", metric);
-  if (agg !== SUMMARY_DEFAULT_AGGREGATE) params.set("agg", agg);
   const query = params.toString();
   return query ? `/summary?${query}` : "/summary";
 }

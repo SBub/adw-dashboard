@@ -328,42 +328,18 @@ describe("costLabel", () => {
 
 describe("summaryHref", () => {
   it("is the bare path for the defaults", () => {
-    expect(summaryHref({ days: SUMMARY_DEFAULT_DAYS, project: null })).toBe("/summary");
-    expect(
-      summaryHref({ days: SUMMARY_DEFAULT_DAYS, project: null, metric: "duration", agg: "runs" }),
-    ).toBe("/summary");
+    expect(summaryHref(SUMMARY_DEFAULT_DAYS, null)).toBe("/summary");
   });
 
   it("carries a non-default window", () => {
-    expect(summaryHref({ days: 7, project: null })).toBe("/summary?days=7");
+    expect(summaryHref(7, null)).toBe("/summary?days=7");
   });
 
   it("encodes the project slug", () => {
     const encoded = "SBub%2Fadw-toolkit";
-    expect(summaryHref({ days: SUMMARY_DEFAULT_DAYS, project: "SBub/adw-toolkit" })).toBe(
+    expect(summaryHref(SUMMARY_DEFAULT_DAYS, "SBub/adw-toolkit")).toBe(
       `/summary?project=${encoded}`,
     );
-    expect(summaryHref({ days: 90, project: "SBub/adw-toolkit" })).toBe(
-      `/summary?days=90&project=${encoded}`,
-    );
-  });
-
-  it("carries a non-default metric alone", () => {
-    expect(summaryHref({ days: SUMMARY_DEFAULT_DAYS, project: null, metric: "cost" })).toBe(
-      "/summary?metric=cost",
-    );
-  });
-
-  it("carries a non-default aggregate alone", () => {
-    expect(summaryHref({ days: SUMMARY_DEFAULT_DAYS, project: null, agg: "tokens" })).toBe(
-      "/summary?agg=tokens",
-    );
-  });
-
-  it("orders all four as days, project, metric, aggregate", () => {
-    const encoded = "SBub%2Fadw-toolkit";
-    expect(
-      summaryHref({ days: 7, project: "SBub/adw-toolkit", metric: "tokens_out", agg: "classes" }),
-    ).toBe(`/summary?days=7&project=${encoded}&metric=tokens_out&agg=classes`);
+    expect(summaryHref(90, "SBub/adw-toolkit")).toBe(`/summary?days=90&project=${encoded}`);
   });
 });
