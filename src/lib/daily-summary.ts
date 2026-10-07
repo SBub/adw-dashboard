@@ -3,7 +3,7 @@
 // report and the today card assembled from adw.daily_summary rows (and the
 // adw.daily_model_summary rows, summed per model by sumModelUsage in
 // src/lib/model-usage.ts), the class bar's segments, the column charts'
-// class counts and heights, and the number labels. No clock, no cache, no IO, so every
+// class counts, heights and value placement, and the number labels. No clock, no cache, no IO, so every
 // case is unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The
 // data boundary (getSummaryPast and getSummaryToday in src/data/index.ts)
 // reads the rows and calls toSummaryReport or toSummaryDay; the components
@@ -175,9 +175,10 @@ export interface ClassCount {
 }
 
 /**
- * A day's runs per issue class in a fixed order (/feature, /bug, /chore,
- * /patch, other), zero counts omitted. "other" is the runs with no known
- * class, floored at 0. Shared by the class bar and the class column chart.
+ * A day's runs per issue class in a fixed order (/feature, /chore, /bug,
+ * /patch, other), zero counts omitted, the rest keeping their relative order.
+ * "other" is the runs with no known class, floored at 0. Shared by the class
+ * bar and the class column chart, so both show the same order.
  */
 export function classCounts(
   day: Pick<DailySummary, "runs" | "features" | "bugs" | "chores" | "patches">,
@@ -185,8 +186,8 @@ export function classCounts(
   const known = day.features + day.bugs + day.chores + day.patches;
   const counts: ClassCount[] = [
     { key: "/feature", count: day.features },
-    { key: "/bug", count: day.bugs },
     { key: "/chore", count: day.chores },
+    { key: "/bug", count: day.bugs },
     { key: "/patch", count: day.patches },
     { key: "other", count: Math.max(0, day.runs - known) },
   ];
@@ -220,6 +221,36 @@ export function classSegments(
 export function columnHeights(values: readonly number[]): number[] {
   const max = Math.max(0, ...values);
   return values.map((value) => (max === 0 ? 0 : (value / max) * 100));
+}
+
+/** The column charts' plot height in pixels (`h-45`). */
+const CHART_PLOT_PX = 180;
+
+/** The smallest bar, in pixels, that holds its value: one `text-xs` line plus padding. */
+const BAR_VALUE_MIN_PX = 20;
+
+/**
+ * Whether a column of `heightPercent` (columnHeights' output) is tall enough
+ * to show its value inside the bar; otherwise the value sits just above it.
+ */
+export function barValueInside(heightPercent: number): boolean {
+  return (heightPercent / 100) * CHART_PLOT_PX >= BAR_VALUE_MIN_PX;
+}
+
+/** A class key as a chart label, without its leading slash ("/feature" is "feature"). */
+export function classLabel(key: ClassKey): string {
+  return key.startsWith("/") ? key.slice(1) : key;
+}
+
+/**
+ * `count` as a whole percent of `total` ("43%"), rounded half up; "<1%" for a
+ * non-zero share under 0.5%, "0%" for a zero count or a zero total. No Intl.
+ */
+export function shareLabel(count: number, total: number): string {
+  if (total === 0 || count === 0) return "0%";
+  const percent = (count / total) * 100;
+  if (percent < 0.5) return "<1%";
+  return `${Math.round(percent)}%`;
 }
 
 const TOKEN_UNITS = ["k", "M", "B"] as const;

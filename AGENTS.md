@@ -609,17 +609,26 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   charting library. Class colours come only from `CLASS_FILL`/`CLASS_BG` and
   model colours only from `MODEL_BG` in `src/lib/chart-colors.ts`; class hues
   match `IssueClassBadge`; completed and failed counts use `STATUS_COLORS`.
-  The column geometry (`classCounts`, `columnHeights`) lives in
+  The column geometry and labels (`classCounts`, `columnHeights`,
+  `barValueInside`, `classLabel`, `shareLabel`) live in
   `src/lib/daily-summary.ts`; each chart scales to its own maximum.
-- Each day card shows two column charts under its header, runs by class and
-  tokens by model (`DayCharts`); the per-project table keeps its compact
+- Both chart orders are fixed and come from the data shape, never from a sort
+  by value in a component: classes `feature`, `chore`, `bug`, `patch`,
+  `other` from `classCounts` (shared with `ClassDistributionBar` through
+  `classSegments`), models `Haiku`, `Sonnet`, `Opus`, then any other from
+  `sumModelUsage`. Absent entries are omitted; the components render the
+  arrays as given.
+- Each day card shows two chart cards under its header, work by class and
+  tokens by model (`DayCharts`), side by side from `sm` and stacked below; the per-project table keeps its compact
   `ClassDistributionBar`. Model aggregation and names (`modelFamily`,
   `modelShortName`, `sumModelUsage`) live in `src/lib/model-usage.ts`, pure
   and tested in `src/lib/model-usage.test.ts`; every change to it goes with a
   test case. `adw.daily_model_summary` keys on the UTC day of `started_at`,
   `adw.daily_summary` on `finished_at`; a day with model rows but no finished
   run gets no card. A column is as wide as its name (`min-w-12`, no fixed
-  width, no `truncate`), so `/feature` is never cut; the plot box stays `h-12`.
+  width, no `truncate`), so a name is never cut; the plot box is 180px
+  (`h-45`) and the value placement (inside the bar or above it) comes only
+  from `barValueInside`.
 - The today card is a React Query entry under `SummaryProviders`, but not a
   live section: no Realtime reducer, no catch-up read and no `setQueryData`
   touch it. Its Refresh button calls `refetch()` on that query only; never
