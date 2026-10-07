@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { DailySummary } from "@/types/adw";
+import type { DailyModelSummary, DailySummary } from "@/types/adw";
 import { secondsLabel } from "./run-view";
 import {
+  classCounts,
   classSegments,
+  columnHeights,
   costLabel,
   pastDaysWindow,
   summaryWindowStart,
@@ -31,6 +33,21 @@ function row(overrides: Partial<DailySummary>): DailySummary {
     tokens_cache_read_sum: 0,
     tokens_out_sum: 0,
     cost_usd_sum: 0,
+    ...overrides,
+  };
+}
+
+function modelRow(overrides: Partial<DailyModelSummary>): DailyModelSummary {
+  return {
+    project_id: "p1",
+    day: "2026-10-05",
+    model: "claude-opus-4-1",
+    runs: 0,
+    input: 0,
+    cache_read: 0,
+    cache_creation: 0,
+    output: 0,
+    cost_usd: 0,
     ...overrides,
   };
 }
@@ -126,17 +143,20 @@ describe("pastDaysWindow", () => {
 
 describe("toSummaryDay", () => {
   it("is null for no rows", () => {
-    expect(toSummaryDay([], PROJECTS, "2026-10-06")).toBeNull();
+    expect(toSummaryDay([], [], PROJECTS, "2026-10-06")).toBeNull();
   });
 
   it("is null when the only rows are of another day", () => {
-    expect(toSummaryDay([row({ day: "2026-10-05", runs: 1 })], PROJECTS, "2026-10-06")).toBeNull();
+    expect(
+      toSummaryDay([row({ day: "2026-10-05", runs: 1 })], [], PROJECTS, "2026-10-06"),
+    ).toBeNull();
   });
 
   it("is null when the only rows are of a hidden project", () => {
     expect(
       toSummaryDay(
         [row({ day: "2026-10-06", project_id: "hidden", runs: 1 })],
+        [],
         PROJECTS,
         "2026-10-06",
       ),
@@ -148,18 +168,29 @@ describe("toSummaryDay", () => {
       row({ day: "2026-10-06", project_id: "p1", runs: 1, completed: 1 }),
       row({ day: "2026-10-06", project_id: "p2", runs: 3, failed: 1 }),
     ];
-    const expected = at(toSummaryReport(rows, PROJECTS, ALL).rows, 0);
-    expect(toSummaryDay(rows, PROJECTS, "2026-10-06")).toEqual(expected);
+    const expected = at(toSummaryReport(rows, [], PROJECTS, ALL).rows, 0);
+    expect(toSummaryDay(rows, [], PROJECTS, "2026-10-06")).toEqual(expected);
   });
 
   it("ignores rows of other days", () => {
     const day = toSummaryDay(
       [row({ day: "2026-10-06", runs: 2 }), row({ day: "2026-10-05", runs: 9 })],
+      [],
       PROJECTS,
       "2026-10-06",
     );
     expect(day?.day).toBe("2026-10-06");
     expect(day?.totals.runs).toBe(2);
+  });
+
+  it("ignores model rows of other days", () => {
+    const day = toSummaryDay(
+      [row({ day: "2026-10-06", runs: 1 })],
+      [modelRow({ day: "2026-10-06", output: 2 }), modelRow({ day: "2026-10-05", output: 9 })],
+      PROJECTS,
+      "2026-10-06",
+    );
+    expect(day?.models.map((m) => m.total)).toEqual([2]);
   });
 
   it("does not mutate its inputs", () => {
@@ -168,7 +199,7 @@ describe("toSummaryDay", () => {
       Object.freeze(row({ day: "2026-10-06", project_id: "p1", runs: 2 })),
     ]);
     const projects = Object.freeze(PROJECTS.map((p) => Object.freeze({ ...p })));
-    expect(() => toSummaryDay(rows, projects, "2026-10-06")).not.toThrow();
+    expect(() => toSummaryDay(rows, [], projects, "2026-10-06")).not.toThrow();
     expect(rows.map((r) => r.project_id)).toEqual(["p2", "p1"]);
   });
 });
@@ -203,6 +234,7 @@ describe("toSummaryReport", () => {
           cost_usd_sum: 0.25,
         }),
       ],
+      [],
       PROJECTS,
       ALL,
     );
@@ -282,6 +314,7 @@ describe("toSummaryReport", () => {
           cost_usd_sum: 0.35,
         }),
       ],
+      [],
       three,
       ALL,
     );
@@ -316,13 +349,13 @@ describe("toSummaryReport", () => {
       tokens_out_sum: 9,
       cost_usd_sum: 0.42,
     });
-    const report = toSummaryReport([only], PROJECTS, ALL);
+    const report = toSummaryReport([only], [], PROJECTS, ALL);
     const { project_id: _, ...expected } = only;
     expect(at(report.rows, 0).totals).toEqual(expected);
   });
 
   it("carries only the day, counts and sums", () => {
-    const report = toSummaryReport([row({ runs: 1 })], PROJECTS, ALL);
+    const report = toSummaryReport([row({ runs: 1 })], [], PROJECTS, ALL);
     expect(Object.keys(at(report.rows, 0).totals).sort()).toEqual(
       [
         "day",
@@ -352,6 +385,7 @@ describe("toSummaryReport", () => {
         row({ day: "2026-10-04", project_id: "p2", runs: 1 }),
         row({ day: "2026-10-04", project_id: "p1", runs: 4 }),
       ],
+      [],
       PROJECTS,
       ALL,
     );
@@ -364,6 +398,7 @@ describe("toSummaryReport", () => {
   it("drops a row whose project is not in the visible list", () => {
     const report = toSummaryReport(
       [row({ project_id: "p1", runs: 1 }), row({ project_id: "hidden", runs: 9 })],
+      [],
       PROJECTS,
       ALL,
     );
@@ -374,6 +409,7 @@ describe("toSummaryReport", () => {
   it("rounds the added cost to four decimals", () => {
     const report = toSummaryReport(
       [row({ project_id: "p1", cost_usd_sum: 0.1 }), row({ project_id: "p2", cost_usd_sum: 0.2 })],
+      [],
       PROJECTS,
       ALL,
     );
@@ -381,7 +417,7 @@ describe("toSummaryReport", () => {
   });
 
   it("passes the window through", () => {
-    const report = toSummaryReport([], PROJECTS, { days: 7, from: null, to: null });
+    const report = toSummaryReport([], [], PROJECTS, { days: 7, from: null, to: null });
     expect(report).toEqual({ from: null, to: null, days: 7, rows: [] });
   });
 
@@ -392,8 +428,104 @@ describe("toSummaryReport", () => {
       Object.freeze(row({ day: "2026-10-05", project_id: "p2", runs: 3 })),
     ]);
     const projects = Object.freeze(PROJECTS.map((p) => Object.freeze({ ...p })));
-    expect(() => toSummaryReport(rows, projects, ALL)).not.toThrow();
+    expect(() => toSummaryReport(rows, [], projects, ALL)).not.toThrow();
     expect(rows.map((r) => r.day)).toEqual(["2026-10-04", "2026-10-05", "2026-10-05"]);
+  });
+});
+
+describe("toSummaryReport models", () => {
+  it("are empty when no model rows exist", () => {
+    const report = toSummaryReport([row({ runs: 1 })], [], PROJECTS, ALL);
+    expect(at(report.rows, 0).models).toEqual([]);
+  });
+
+  it("sum a model over two projects and attach it to its day only", () => {
+    const report = toSummaryReport(
+      [row({ day: "2026-10-05", runs: 2 }), row({ day: "2026-10-04", runs: 1 })],
+      [
+        modelRow({ day: "2026-10-05", project_id: "p1", input: 1, cache_read: 100 }),
+        modelRow({ day: "2026-10-05", project_id: "p2", cache_creation: 10, output: 5 }),
+      ],
+      PROJECTS,
+      ALL,
+    );
+    expect(at(report.rows, 0).models).toEqual([
+      {
+        model: "claude-opus-4-1",
+        runs: 0,
+        input: 1,
+        cache_read: 100,
+        cache_creation: 10,
+        output: 5,
+        total: 116,
+        cost_usd: 0,
+      },
+    ]);
+    expect(at(report.rows, 1).models).toEqual([]);
+  });
+
+  it("drop a hidden project's model rows", () => {
+    const report = toSummaryReport(
+      [row({ runs: 1 })],
+      [modelRow({ project_id: "p1", output: 3 }), modelRow({ project_id: "hidden", output: 900 })],
+      PROJECTS,
+      ALL,
+    );
+    expect(at(report.rows, 0).models.map((m) => m.total)).toEqual([3]);
+  });
+
+  it("do not create a day of their own", () => {
+    const report = toSummaryReport(
+      [row({ day: "2026-10-05", runs: 1 })],
+      [modelRow({ day: "2026-10-04", output: 3 })],
+      PROJECTS,
+      ALL,
+    );
+    expect(report.rows.map((d) => d.day)).toEqual(["2026-10-05"]);
+  });
+});
+
+describe("classCounts", () => {
+  it("lists the classes in a fixed order, zeros omitted, other the unclassed runs", () => {
+    expect(classCounts({ runs: 7, features: 0, bugs: 2, chores: 0, patches: 3 })).toEqual([
+      { key: "/bug", count: 2 },
+      { key: "/patch", count: 3 },
+      { key: "other", count: 2 },
+    ]);
+    expect(classCounts({ runs: 4, features: 1, bugs: 1, chores: 1, patches: 1 })).toEqual([
+      { key: "/feature", count: 1 },
+      { key: "/bug", count: 1 },
+      { key: "/chore", count: 1 },
+      { key: "/patch", count: 1 },
+    ]);
+  });
+
+  it("floors other at zero when runs are below the known sum", () => {
+    expect(classCounts({ runs: 1, features: 2, bugs: 0, chores: 0, patches: 0 })).toEqual([
+      { key: "/feature", count: 2 },
+    ]);
+  });
+
+  it("is empty for no runs", () => {
+    expect(classCounts({ runs: 0, features: 0, bugs: 0, chores: 0, patches: 0 })).toEqual([]);
+  });
+});
+
+describe("columnHeights", () => {
+  it("scales each value to the maximum", () => {
+    expect(columnHeights([5, 10])).toEqual([50, 100]);
+  });
+
+  it("is 100 for a single value", () => {
+    expect(columnHeights([7])).toEqual([100]);
+  });
+
+  it("is all zeros when every value is zero", () => {
+    expect(columnHeights([0, 0])).toEqual([0, 0]);
+  });
+
+  it("is empty for no values", () => {
+    expect(columnHeights([])).toEqual([]);
   });
 });
 

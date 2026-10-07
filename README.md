@@ -1164,12 +1164,17 @@ nothing from the request, so old filtered links land on the plain page.
 
 `/` shows what the toolkit finished per UTC day, newest first, today on top
 in its own card with a Refresh button: runs
-completed and failed (halted when there are any), the split by issue class as
-an inline-SVG stacked bar with its counts as text. It always covers 30 days
+completed and failed (halted when there are any), then two small column
+charts side by side on one baseline: runs by class (one column per class
+present, the count above, the class below) and tokens by model (one column per
+model, the day's total tokens above, `Opus`, `Sonnet` or `Haiku` below;
+hovering or focusing a column shows the full model id and the input, cache
+read, cache creation and output split). Each chart scales to its own maximum. It always covers 30 days
 (`SUMMARY_DEFAULT_DAYS`) across every public project, with a per-project table
 under each day (Project, Runs, Completed, Failed, Classes, Total duration,
 Tokens in, Cache read, Tokens out, Cost) that ends in a Total row with the
-column sums. There are no filters (issue #97).
+column sums; its Classes column keeps a compact stacked class bar. There are
+no filters (issue #97).
 
 **Page copy.** `/` is the landing page, so its static shell opens with the
 `h1` "What an AI developer workflow gets done" and an intro paragraph saying
@@ -1192,10 +1197,18 @@ Two reads in `src/data/index.ts` take today's UTC date as an argument:
 days before today (`day >= from and day < today`) and hands them to
 `toSummaryReport`; `getSummaryToday(today)` reads the projects and today's
 rows and hands them to `toSummaryDay`, which returns that one day (or `null`).
-Both cast the rows to `DailySummary` (`src/types/adw.ts`), and both helpers
-live in `src/lib/daily-summary.ts`, which groups and adds the rows. Everything
+Each also reads the `adw.daily_model_summary` view for the same days, in the
+same `Promise.all` (one row per project, model and UTC day, with `input`,
+`cache_read`, `cache_creation`, `output` and `cost_usd`). Both cast the rows to
+`DailySummary` and `DailyModelSummary` (`src/types/adw.ts`), and both helpers
+live in `src/lib/daily-summary.ts`, which groups and adds the rows; the model
+rows of visible projects are summed per day and model by `sumModelUsage`
+(`src/lib/model-usage.ts`) into each day's `models`. The model view keys on
+the UTC day of `runs.started_at`, not `finished_at`, so a run that spans
+midnight UTC sits on its start day in the model chart and on its finish day in
+the counts, and a day with model rows but no finished run gets no card. Everything
 that shapes the report (today's day, the window, the totals, the bar's
-segments, the labels) lives in that file, pure and unit-tested. A day is shown as
+segments, the chart columns, the labels) lives in that file, pure and unit-tested. A day is shown as
 `DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
 by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
 `durationLabel`); both are pure and read no clock.
@@ -1237,8 +1250,8 @@ expire: 172800 })`. `today` is in the cache key, so every request in one UTC
 
 **Refresh.** The today card's Refresh button calls `refetch()` on its own
 query and nothing else: `getSummaryToday(today)` runs in the browser through
-the same Supabase client (publishable key, RLS) and transfers today's rows and
-the project list, with no request to the app, no `router.refresh()`, no
+the same Supabase client (publishable key, RLS) and transfers today's rows,
+today's per-model rows and the project list, with no request to the app, no `router.refresh()`, no
 server action and no navigation. A failed refetch keeps the last figures and
 shows a retry line. The day is the prop the page rendered with, so a page left
 open across midnight keeps refreshing that day until it is reloaded.
@@ -1248,7 +1261,9 @@ open across midnight keeps refreshing that day until it is reloaded.
 scope on every completion they handle, and a fresh visitor sees the run
 without pressing Refresh. Not covered by a tag drop: a run that finishes
 `failed` or `halted` (neither fires the action or the webhook), and tokens and
-cost that the toolkit writes after the completion. The 60-second `revalidate`
+cost (per-model usage included) that the toolkit writes after the completion.
+The model rows are read in the same scopes as the day rows, so the same tags
+and lifetimes cover them. The 60-second `revalidate`
 of the today scope and the Refresh button bound both. The router cache's
 `staleTimes.dynamic` (300 seconds) is above that `stale`, so a client
 navigation back to `/` within five minutes may show the router-cached today

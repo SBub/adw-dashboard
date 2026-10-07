@@ -2,7 +2,7 @@
 
 Checks that the summary at `/` shows today's figures in their own card above the past days, that
 the card is in the server-rendered HTML, and that its Refresh button refetches only today's rows
-from Supabase in the browser: no request to the app, no navigation, the past days untouched.
+(and today's per-model rows) from Supabase in the browser: no request to the app, no navigation, the past days untouched.
 
 ## User Story
 
@@ -27,7 +27,8 @@ So that I can follow today's work without reloading the page
 7. Wait until the button is named `Refresh` again (it reads `Refreshing...` while pending).
 8. Call `browser_network_requests` and **Verify** that the requests issued after the click are
    only Supabase REST reads: exactly one `GET` to `.../rest/v1/daily_summary` whose query holds
-   `day=eq.<today>` (the today card's date as `YYYY-MM-DD`), at most one `GET` to
+   `day=eq.<today>` (the today card's date as `YYYY-MM-DD`), exactly one `GET` to
+   `.../rest/v1/daily_model_summary` whose query holds `day=eq.<today>`, at most one `GET` to
    `.../rest/v1/projects`, and no request to the application origin (no document, no `_rsc`
    request, no `POST` server action).
 9. **Verify** the URL is still exactly `/`, the button is named `Refresh`, there is no
@@ -39,7 +40,8 @@ So that I can follow today's work without reloading the page
 - The today card (heading `Today, <date>`, button `Refresh`) is above the past days and in the
   server HTML.
 - The today card's date is the day after the past window's end date.
-- Refresh issues only browser Supabase reads for today's day (plus at most the project list), no
-  request to the application origin and no navigation.
+- Refresh issues only browser Supabase reads for today's day (one `daily_summary` and one
+  `daily_model_summary` read, plus at most the project list), no request to the application origin
+  and no navigation.
 - After the refresh the button is back to `Refresh`, no error line, past days unchanged.
 - 2 screenshots are taken.

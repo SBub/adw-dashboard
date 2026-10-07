@@ -75,7 +75,7 @@ export function ProjectBreakdownTable({ rows, totals, label }: ProjectBreakdownT
               </td>
               <td className={`${NUM} ${countClass(row.failed, "failed")}`}>{row.failed}</td>
               <td className="px-2 py-1.5">
-                <ClassDistributionBar counts={row} compact />
+                <ClassDistributionBar counts={row} />
               </td>
               <td className={NUM}>{secondsLabel(row.duration_sum_s)}</td>
               <td className={NUM}>{tokensLabel(row.tokens_in_sum)}</td>
@@ -96,7 +96,7 @@ export function ProjectBreakdownTable({ rows, totals, label }: ProjectBreakdownT
             </td>
             <td className={`${NUM} ${countClass(totals.failed, "failed")}`}>{totals.failed}</td>
             <td className="px-2 py-1.5">
-              <ClassDistributionBar counts={totals} compact />
+              <ClassDistributionBar counts={totals} />
             </td>
             <td className={NUM}>{secondsLabel(totals.duration_sum_s)}</td>
             <td className={NUM}>{tokensLabel(totals.tokens_in_sum)}</td>
