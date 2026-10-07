@@ -28,7 +28,7 @@ const nextConfig: NextConfig = {
   // the whole client cache. A project not on screen is refetched on its next
   // visit once the window has passed, and its history tag has been dropped on
   // the server (action or webhook), so that refetch sees fresh rows. Keep this
-  // at or under getHistory's cacheLife stale (300 s); see AGENTS.md.
+  // at or under getHistory's cacheLife stale (300 s); see app_docs/history-revalidation.md.
   experimental: {
     staleTimes: {
       dynamic: 300,

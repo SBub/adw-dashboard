@@ -10,7 +10,7 @@
 // history scope and the summary page's today scope), so the project's next
 // History render, and the next render of the summary page's (`/`) today
 // card, read the database. Active has no tag: it is read per request. The summary's past days tag is never dropped.
-// See README, "Webhook revalidation".
+// See app_docs/history-revalidation.md, "Webhook revalidation".
 //
 // It does nothing else. No database write, no second read beyond resolving
 // the slug, no other side effect: an authenticated caller can make the next

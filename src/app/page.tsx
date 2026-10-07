@@ -28,7 +28,7 @@ export const metadata: Metadata = {
  * Called only from PastDays, below SummaryContent's connection() call, so it
  * is a hole resolved from the live cache handler on every request; prerendered
  * into the shell it would be read from the shell's Resume Data Cache, frozen at
- * build time (README, "What is prerendered and what is not"). `stale` stays at
+ * build time (app_docs/history-revalidation.md, "What is prerendered and what is not"). `stale` stays at
  * 300 seconds because the router cache's staleTimes.dynamic must stay at or
  * under it. `revalidate` is a day: it bounds tokens and cost written after
  * midnight for a run that finished just before it. `expire` is two days.
@@ -91,7 +91,7 @@ async function PastDays({ today }: { today: string }) {
  * the prerender here, so the clock read after it never runs in a prerender
  * pass (where it would fail the build) and never in client render. This is
  * the second and last argument-less clock read in the codebase (the other is
- * getActiveRuns's fetched_at; AGENTS.md, the clock rule). A plain function,
+ * getActiveRuns's fetched_at; app_docs/clock-and-prerender.md). A plain function,
  * not a component body, so render stays pure.
  */
 async function requestToday(): Promise<string> {
