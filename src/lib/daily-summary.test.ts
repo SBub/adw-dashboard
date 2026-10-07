@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import type { DailyModelSummary, DailySummary } from "@/types/adw";
 import { secondsLabel } from "./run-view";
 import {
+  barValueInside,
   classCounts,
+  classLabel,
   classSegments,
   columnHeights,
   costLabel,
   pastDaysWindow,
+  shareLabel,
   summaryWindowStart,
   tokensLabel,
   toSummaryDay,
@@ -494,10 +497,24 @@ describe("classCounts", () => {
     ]);
     expect(classCounts({ runs: 4, features: 1, bugs: 1, chores: 1, patches: 1 })).toEqual([
       { key: "/feature", count: 1 },
-      { key: "/bug", count: 1 },
       { key: "/chore", count: 1 },
+      { key: "/bug", count: 1 },
       { key: "/patch", count: 1 },
     ]);
+  });
+
+  it("keeps the relative order of the classes present when one is missing", () => {
+    expect(classCounts({ runs: 4, features: 2, bugs: 1, chores: 0, patches: 0 })).toEqual([
+      { key: "/feature", count: 2 },
+      { key: "/bug", count: 1 },
+      { key: "other", count: 1 },
+    ]);
+  });
+
+  it("never sorts by count", () => {
+    expect(
+      classCounts({ runs: 12, features: 1, bugs: 9, chores: 2, patches: 0 }).map((c) => c.key),
+    ).toEqual(["/feature", "/chore", "/bug"]);
   });
 
   it("floors other at zero when runs are below the known sum", () => {
@@ -546,10 +563,68 @@ describe("classSegments", () => {
     expect(at(segments, 1)).toMatchObject({ offset: 40, width: 30 });
   });
 
+  it("puts /bug after /chore", () => {
+    const segments = classSegments({ runs: 10, features: 2, bugs: 5, chores: 3, patches: 0 });
+    expect(segments.map((s) => [s.key, s.count])).toEqual([
+      ["/feature", 2],
+      ["/chore", 3],
+      ["/bug", 5],
+    ]);
+    expect(at(segments, 1)).toMatchObject({ offset: 20, width: 30 });
+    expect(at(segments, 2)).toMatchObject({ offset: 50, width: 50 });
+  });
+
   it("ends the last segment at exactly 100", () => {
     const segments = classSegments({ runs: 3, features: 1, bugs: 1, chores: 1, patches: 0 });
     const last = at(segments, segments.length - 1);
     expect(last.offset + last.width).toBe(100);
+  });
+});
+
+describe("barValueInside", () => {
+  // 20px of a 180px plot: the smallest bar that holds its value.
+  const threshold = (20 / 180) * 100;
+
+  it("is inside for a full-height bar", () => {
+    expect(barValueInside(100)).toBe(true);
+  });
+
+  it("is above for a zero-height bar", () => {
+    expect(barValueInside(0)).toBe(false);
+  });
+
+  it("is inside at exactly the threshold", () => {
+    expect(barValueInside(threshold)).toBe(true);
+  });
+
+  it("is above just under the threshold", () => {
+    expect(barValueInside(threshold - 0.01)).toBe(false);
+  });
+});
+
+describe("classLabel", () => {
+  it.each([
+    ["/feature", "feature"],
+    ["/chore", "chore"],
+    ["/bug", "bug"],
+    ["/patch", "patch"],
+    ["other", "other"],
+  ] as const)("%s is %s", (key, label) => {
+    expect(classLabel(key)).toBe(label);
+  });
+});
+
+describe("shareLabel", () => {
+  it.each([
+    [3, 7, "43%"],
+    [1, 2, "50%"],
+    [7, 7, "100%"],
+    [1, 8, "13%"],
+    [1, 1000, "<1%"],
+    [0, 5, "0%"],
+    [0, 0, "0%"],
+  ])("%i of %i is %s", (count, total, label) => {
+    expect(shareLabel(count, total)).toBe(label);
   });
 });
 

@@ -1209,12 +1209,22 @@ nothing from the request, so old filtered links land on the plain page.
 
 `/` shows what the toolkit finished per UTC day, newest first, today on top
 in its own card with a Refresh button: runs
-completed and failed (halted when there are any), then two small column
-charts side by side on one baseline: runs by class (one column per class
-present, the count above, the class below) and tokens by model (one column per
-model, the day's total tokens above, `Opus`, `Sonnet` or `Haiku` below;
-hovering or focusing a column shows the full model id and the input, cache
-read, cache creation and output split). Each chart scales to its own maximum. It always covers 30 days
+completed and failed (halted when there are any), then two bordered chart
+cards, side by side from 640px and stacked below, each with a coloured square,
+a title and a muted subtitle: "Work by class" ("Runs finished that day", one
+column per class present) and "Tokens by model" ("All tokens, including cache
+reads", one column per model). The order is fixed every day and comes from the
+data shape, never from the values: `feature`, `chore`, `bug`, `patch`, `other`
+(`classCounts`, which the per-project table's class bar shares) and `Haiku`,
+`Sonnet`, `Opus`, then any other model (`sumModelUsage`); absent entries are
+omitted. The plot is 180px high with faint dotted guide lines and bars with
+rounded tops and a capped width; the value (run count or token label) sits in
+white inside its bar, or just above a bar too short for it (`barValueInside`).
+Under each bar is its name (the class without its slash, or the short model
+name) beside a dot of the bar's colour. Hovering or focusing a column shows a
+tooltip: the full model id, input, cache read, cache write, output and the
+day's cost for a model; the run count and the share of the day's runs for a
+class. Each chart scales to its own maximum. It always covers 30 days
 (`SUMMARY_DEFAULT_DAYS`) across every public project, with a per-project table
 under each day (Project, Runs, Completed, Failed, Classes, Total duration,
 Tokens in, Cache read, Tokens out, Cost) that ends in a Total row with the

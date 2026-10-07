@@ -13,6 +13,9 @@ const SHORT_NAMES: Record<Exclude<ModelFamily, "other">, string> = {
   haiku: "Haiku",
 };
 
+/** Least to most capable family; any other model last. */
+const FAMILY_RANK: Record<ModelFamily, number> = { haiku: 0, sonnet: 1, opus: 2, other: 3 };
+
 /** The first of opus, sonnet and haiku the id contains (case-insensitive), else "other". */
 export function modelFamily(model: string): ModelFamily {
   const id = model.toLowerCase();
@@ -34,8 +37,10 @@ export function modelShortName(model: string): string {
 /**
  * One entry per distinct model id (so two versions of one family stay two
  * entries), every numeric column summed, `total` the four token columns added,
- * cost rounded to 4 decimals against float noise. Largest total first, then
- * model id. The caller filters by day and visible project. Never mutates its
+ * cost rounded to 4 decimals against float noise. Least to most capable
+ * family first (Haiku, Sonnet, Opus, then any other model), then largest
+ * total, then model id, so the order never depends on a day's values across
+ * families and two versions of one family stay adjacent. The caller filters by day and visible project. Never mutates its
  * input.
  */
 export function sumModelUsage(rows: readonly DailyModelSummary[]): SummaryModel[] {
@@ -62,5 +67,10 @@ export function sumModelUsage(rows: readonly DailyModelSummary[]): SummaryModel[
   }
   return [...byModel.values()]
     .map((entry) => ({ ...entry, cost_usd: Math.round(entry.cost_usd * 1e4) / 1e4 }))
-    .sort((a, b) => b.total - a.total || (a.model < b.model ? -1 : a.model > b.model ? 1 : 0));
+    .sort(
+      (a, b) =>
+        FAMILY_RANK[modelFamily(a.model)] - FAMILY_RANK[modelFamily(b.model)] ||
+        b.total - a.total ||
+        (a.model < b.model ? -1 : a.model > b.model ? 1 : 0),
+    );
 }

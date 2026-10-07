@@ -1,5 +1,5 @@
 import { MODEL_BG } from "@/lib/chart-colors";
-import { tokensLabel } from "@/lib/daily-summary";
+import { costLabel, tokensLabel } from "@/lib/daily-summary";
 import { modelFamily, modelShortName } from "@/lib/model-usage";
 import type { SummaryModel } from "@/types/adw";
 import { ColumnChart } from "./ColumnChart";
@@ -11,14 +11,18 @@ interface ModelColumnChartProps {
 }
 
 /**
- * A day's tokens by model, one column per model id, the total above and the
- * short name below; hover or focus shows the full id and the four-way split.
- * With no models it keeps its caption and height and says so.
+ * A day's tokens by model, one column per model id in sumModelUsage's
+ * capability order (Haiku, Sonnet, Opus, then any other model), the total on
+ * the bar and the short name below; hover or focus shows the full id, the
+ * four-way split and the cost. With no models it keeps its caption and plot
+ * height and says so.
  */
 export function ModelColumnChart({ models, day }: ModelColumnChartProps) {
   return (
     <ColumnChart
       title="Tokens by model"
+      subtitle="All tokens, including cache reads"
+      swatchClass={MODEL_BG.opus}
       idPrefix={`tokens-by-model-${day}`}
       summary={
         models.length === 0
@@ -31,14 +35,15 @@ export function ModelColumnChart({ models, day }: ModelColumnChartProps) {
         value: m.total,
         valueLabel: tokensLabel(m.total),
         name: modelShortName(m.model),
-        ariaLabel: `${m.model}: ${tokensLabel(m.total)} tokens`,
+        ariaLabel: `${modelShortName(m.model)} (${m.model}): ${tokensLabel(m.total)} tokens`,
         colorClass: MODEL_BG[modelFamily(m.model)],
         detail: [
           { label: "Model", value: m.model },
           { label: "Input", value: tokensLabel(m.input) },
           { label: "Cache read", value: tokensLabel(m.cache_read) },
-          { label: "Cache creation", value: tokensLabel(m.cache_creation) },
+          { label: "Cache write", value: tokensLabel(m.cache_creation) },
           { label: "Output", value: tokensLabel(m.output) },
+          { label: "Cost", value: costLabel(m.cost_usd) },
         ],
       }))}
     />

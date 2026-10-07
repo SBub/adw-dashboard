@@ -101,7 +101,45 @@ describe("sumModelUsage", () => {
     ]);
   });
 
-  it("orders by total, largest first, then by model id", () => {
+  it("orders the families from least to most capable, never by total", () => {
+    const models = sumModelUsage([
+      row({ model: "claude-opus-4-1", input: 900 }),
+      row({ model: "claude-haiku-4-5", input: 1 }),
+      row({ model: "claude-sonnet-4-5", input: 50 }),
+    ]);
+    expect(models.map((m) => modelShortName(m.model))).toEqual(["Haiku", "Sonnet", "Opus"]);
+  });
+
+  it("keeps the order of the families present when one is missing", () => {
+    const models = sumModelUsage([
+      row({ model: "claude-opus-4-1", input: 1 }),
+      row({ model: "claude-haiku-4-5", input: 2 }),
+    ]);
+    expect(models.map((m) => m.model)).toEqual(["claude-haiku-4-5", "claude-opus-4-1"]);
+  });
+
+  it("puts any other model after opus, even with the largest total", () => {
+    const models = sumModelUsage([
+      row({ model: "gpt-x", input: 10_000 }),
+      row({ model: "claude-opus-4-1", input: 1 }),
+    ]);
+    expect(models.map((m) => m.model)).toEqual(["claude-opus-4-1", "gpt-x"]);
+  });
+
+  it("keeps two versions of one family adjacent, larger total first", () => {
+    const models = sumModelUsage([
+      row({ model: "claude-opus-4-1", input: 1 }),
+      row({ model: "claude-haiku-4-5", input: 5 }),
+      row({ model: "claude-opus-4-6", input: 3 }),
+    ]);
+    expect(models.map((m) => m.model)).toEqual([
+      "claude-haiku-4-5",
+      "claude-opus-4-6",
+      "claude-opus-4-1",
+    ]);
+  });
+
+  it("orders within a family by total, largest first, then by model id", () => {
     const models = sumModelUsage([
       row({ model: "b", output: 5 }),
       row({ model: "a", output: 5 }),
