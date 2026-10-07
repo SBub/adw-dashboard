@@ -2,14 +2,14 @@ import type { ReactNode } from "react";
 import { formatDay } from "@/lib/format-date";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import type { SummaryDay } from "@/types/adw";
-import { ClassDistributionBar } from "./ClassDistributionBar";
+import { DayCharts } from "./DayCharts";
 import { ProjectBreakdownTable } from "./ProjectBreakdownTable";
 
 /**
- * One day of the summary, with its heading, counts, class bar and per-project
- * table. Stateless and without "use client", so both the server-rendered past
- * days (DailySummaryList) and the client today card (TodaySummary) render the
- * same markup. `title` replaces the date heading's content, `actions` sits at
+ * One day of the summary, with its heading, counts, class and model charts
+ * and per-project table. Stateless and without "use client", so both the
+ * server-rendered past days (DailySummaryList) and the client today card
+ * (TodaySummary) render the same markup. `title` replaces the date heading's content, `actions` sits at
  * the end of the header row.
  */
 export function SummaryDayCard({
@@ -47,7 +47,7 @@ export function SummaryDayCard({
         )}
         {actions}
       </header>
-      <ClassDistributionBar counts={totals} />
+      <DayCharts day={day} />
       {day.projects.length > 0 && (
         <ProjectBreakdownTable rows={day.projects} totals={totals} label={label} />
       )}

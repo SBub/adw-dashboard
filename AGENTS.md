@@ -79,7 +79,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   never a `queryFn`. The seventh, `getSummaryToday(today)`, is called on the
   server only from the summary page's `getTodayState` scope and is the
   `queryFn` of `TodaySummary`; it reads no clock (`today` always comes from
-  the caller). `getProjects`, `getActiveRuns` and
+  the caller). Both read `daily_model_summary` for the same days in the same
+  `Promise.all` as their `daily_summary` read. `getProjects`, `getActiveRuns` and
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
@@ -103,12 +104,14 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   factory only; it never reads Supabase.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
   `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
-  `daily_summary`) in `src/data/index.ts`.
+  `daily_summary`, `DailyModelSummary[]` for `daily_model_summary`) in
+  `src/data/index.ts`.
   Those casts are the only place the shapes are asserted; do not add another
   in a page or component. When touching the `runs` select, keep the column
   list equal to the fields of `Run`, `QUEUE_COLUMNS` equal to the fields
-  of `QueueItem`, and `DAILY_SUMMARY_COLUMNS` equal to the fields of
-  `DailySummary`, all in `src/types/adw.ts`.
+  of `QueueItem`, `DAILY_SUMMARY_COLUMNS` equal to the fields of
+  `DailySummary`, and `DAILY_MODEL_SUMMARY_COLUMNS` equal to the fields of
+  `DailyModelSummary`, all in `src/types/adw.ts`.
 - `getActiveRuns` is called on the server only from inside `getRunsState`,
   the page's `"use cache"` function: both the page body and `generateMetadata`
   go through it. Do not call `getActiveRuns` directly from a page, layout or
@@ -246,6 +249,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`) and the view
   model (`ProjectSummary`) in clearly separated sections. Row types mirror the
   schema column for column; `ProjectSummary` is produced by the data layer.
+  `DailySummary` and `DailyModelSummary` mirror the summary views' columns and
+  sit with the view models, beside the report types (`SummaryDay`,
+  `SummaryModel`) assembled from them.
   There is no run or queue item view model; do not add one for a label that a component can
   format from the row's own fields.
 - Server components by default; `"use client"` only where the browser must
@@ -261,10 +267,12 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   the summary page's bare query client, and `TodaySummary`, which reads today's
   card from the query cache and refetches it). `HistoryLinks`,
   `RunHistoryList`, `SectionNav`,
-  `DailySummaryList`, `SummaryDayCard`, `ClassDistributionBar` and
+  `DailySummaryList`, `SummaryDayCard`, `DayCharts`, `ColumnChart`,
+  `ClassColumnChart`, `ModelColumnChart`, `ClassDistributionBar` and
   `ProjectBreakdownTable` are components with no state; do not put
   `"use client"` on them or give them a filter that needs one.
-  `SummaryDayCard`, `ClassDistributionBar` and `ProjectBreakdownTable` are
+  `SummaryDayCard`, `DayCharts`, `ColumnChart`, `ClassColumnChart`,
+  `ModelColumnChart`, `ClassDistributionBar` and `ProjectBreakdownTable` are
   also rendered by the client `TodaySummary`, so they must stay stateless and
   free of server-only imports. The left and
   right arrows of `HistoryLinks` are plain `next/link` hrefs that
@@ -557,9 +565,21 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Everything that shapes the report lives in `src/lib/daily-summary.ts`
   (`SUMMARY_DEFAULT_DAYS` defined there and nowhere else), pure and tested in
   `src/lib/daily-summary.test.ts`; every change to it goes with a test case.
-- Charts are inline SVG with their values also as text; no charting library.
-  Class hues match `IssueClassBadge`; completed and failed counts use
-  `STATUS_COLORS`.
+- Charts are inline SVG or CSS columns with their values also as text; no
+  charting library. Class colours come only from `CLASS_FILL`/`CLASS_BG` and
+  model colours only from `MODEL_BG` in `src/lib/chart-colors.ts`; class hues
+  match `IssueClassBadge`; completed and failed counts use `STATUS_COLORS`.
+  The column geometry (`classCounts`, `columnHeights`) lives in
+  `src/lib/daily-summary.ts`; each chart scales to its own maximum.
+- Each day card shows two column charts under its header, runs by class and
+  tokens by model (`DayCharts`); the per-project table keeps its compact
+  `ClassDistributionBar`. Model aggregation and names (`modelFamily`,
+  `modelShortName`, `sumModelUsage`) live in `src/lib/model-usage.ts`, pure
+  and tested in `src/lib/model-usage.test.ts`; every change to it goes with a
+  test case. `adw.daily_model_summary` keys on the UTC day of `started_at`,
+  `adw.daily_summary` on `finished_at`; a day with model rows but no finished
+  run gets no card. A column is as wide as its name (`min-w-12`, no fixed
+  width, no `truncate`), so `/feature` is never cut; the plot box stays `h-12`.
 - The today card is a React Query entry under `SummaryProviders`, but not a
   live section: no Realtime reducer, no catch-up read and no `setQueryData`
   touch it. Its Refresh button calls `refetch()` on that query only; never

@@ -16,10 +16,11 @@ import { SummaryDayCard } from "./SummaryDayCard";
  * cache hit and the server HTML already holds the card.
  *
  * Refresh is refetch() and nothing else: no router.refresh(), no server
- * action, no navigation. Only today's rows (and the project list that names
- * them) travel, through the browser Supabase client. A failed refetch keeps
- * the last data (useSuspenseQuery throws to the boundary only when there is
- * none), so the card keeps its figures and says the refresh failed.
+ * action, no navigation. Only today's rows, daily and per model (and the
+ * project list that names them), travel, through the browser Supabase
+ * client. A failed refetch keeps the last data (useSuspenseQuery throws to
+ * the boundary only when there is none), so the card keeps its figures and
+ * says the refresh failed.
  */
 export function TodaySummary({ today }: { today: string }) {
   const { data, refetch, isFetching, isRefetchError } = useSuspenseQuery({
