@@ -39,31 +39,38 @@ which column
    `[data-value-placement="inside"]` element inside the bar whose computed `color` is
    `rgb(255, 255, 255)`; and any `[data-value-placement="above"]` element sits outside its bar
    (not a descendant of the coloured bar).
-7. When the model figure has a column, hover it (`browser_hover`) or focus it (`browser_press_key`
+7. **Verify** with `browser_evaluate`, for each of the three figures of the card that has two or
+   more columns, that the bars (each `li`'s coloured bar, the element with an inline `height` style
+   inside the plot) all have the same `getBoundingClientRect().width` within 1px, and that the
+   distances between the centres (`left + width / 2`) of adjacent bars are equal within 1px. Note
+   which column counts (2, 3, 5) the page offered.
+8. When the model figure has a column, hover it (`browser_hover`) or focus it (`browser_press_key`
    Tab) and **Verify** the tooltip shows `Model`, `Input`, `Cache read`, `Cache write`, `Output`
    and `Cost` with a `$` value. When the phase figure has a column, hover it and then focus it with
    Tab and **Verify** in both cases the tooltip shows `Input`, `Cache read`, `Cache write`,
    `Output`, `Time` and `Runs`. Hover a class column and **Verify** the tooltip shows `Runs` and
    `Share` with a `%` value.
-8. **Verify** each label under a bar is text with a colour dot (no `img` or `svg` in the label
+9. **Verify** each label under a bar is text with a colour dot (no `img` or `svg` in the label
    row) and is shown in full (with `browser_evaluate`, its `scrollWidth <= clientWidth`).
-9. **Verify** the per-project table below still has its compact class bars (an `svg` with an
-   `aria-label` starting `Issue classes:` inside the table).
-10. **Verify** the server-rendered HTML (`browser_evaluate` `fetch("/").then((r) => r.text())`)
+10. **Verify** the per-project table below still has its compact class bars (an `svg` with an
+    `aria-label` starting `Issue classes:` inside the table).
+11. **Verify** the server-rendered HTML (`browser_evaluate` `fetch("/").then((r) => r.text())`)
     contains `Work by class`, `Tokens by model` and `Cost by phase`.
-11. Take a screenshot at 1920x1080.
-12. Resize to 1024x768 and **Verify** the three cards still share one row (the same `top`) with no
+12. Take a screenshot at 1920x1080.
+13. Resize to 1024x768 and **Verify** the three cards still share one row (the same `top`) with no
     horizontal page overflow (`document.documentElement.scrollWidth <= window.innerWidth`).
     **Verify** with `browser_evaluate` that the `Cost by phase` figure's `ul` and every one of its
     `li`s and name rows (`li > span.mt-2`) lie inside the figure's content box (the figure's
     `getBoundingClientRect()` inset by its border and padding: each `left >=` the content left and
     each `right <=` the content right, 0.5px tolerance), and that no two name rows overlap (each
-    one's `right <=` the next one's `left`). Take a screenshot at 1024x768.
-13. Resize to 375x667 and **Verify** the three cards are stacked (each figure's `top` is at or
+    one's `right <=` the next one's `left`). **Verify** the same bar width and centre-distance check
+    as in step 7 for every figure with two or more columns. Take a screenshot at 1024x768.
+14. Resize to 375x667 and **Verify** the three cards are stacked (each figure's `top` is at or
     below the previous figure's `bottom`) with no horizontal page overflow
     (`document.documentElement.scrollWidth <= window.innerWidth`). **Verify** the same
-    `Cost by phase` containment and no-overlap check as in step 12.
-14. Take a screenshot at 375x667. The colour scheme follows the OS; note which one the screenshots
+    `Cost by phase` containment and no-overlap check as in step 13, and the same bar width and
+    centre-distance check as in step 7 for every figure with two or more columns.
+15. Take a screenshot at 375x667. The colour scheme follows the OS; note which one the screenshots
     show, no toggle is needed.
 
 ## Success Criteria
@@ -77,6 +84,8 @@ which column
 - Phase values are dollar amounts with two decimals (or `<$0.01`).
 - The tallest bar shows its value in white inside it; a short bar shows it above.
 - Labels under the bars are text with a colour dot, shown in full.
+- The bars in each chart have equal widths and equally spaced centres (within 1px) at 1920, 1024
+  and 375 wide, whatever the names under them.
 - Model tooltips show the token split and the cost; phase tooltips show the token split, the time
   and the runs, on hover and on keyboard focus; class tooltips show the runs and the share.
 - The phase chart's five columns and their names stay inside their card's content box, without

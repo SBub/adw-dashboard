@@ -1231,7 +1231,8 @@ bar shares), `Haiku`, `Sonnet`, `Opus`, then any other model
 (`sumModelUsage`), and `Plan`, `Build`, `Test`, `Review`, `Document`
 (`sumPhaseUsage`; CI has no cost and is never shown); absent entries are
 omitted. The plot is 180px high with faint dotted guide lines and bars with
-rounded tops and a capped width; the value (run count, token label or cost in
+rounded tops and a capped width; every column takes the same slot width
+whatever its name, so the bars are evenly spaced; the value (run count, token label or cost in
 dollars) sits in
 white inside its bar, or just above a bar too short for it (`barValueInside`).
 Under each bar is its name (the class without its slash, the short model
