@@ -1209,22 +1209,29 @@ nothing from the request, so old filtered links land on the plain page.
 
 `/` shows what the toolkit finished per UTC day, newest first, today on top
 in its own card with a Refresh button: runs
-completed and failed (halted when there are any), then two bordered chart
-cards, side by side from 640px and stacked below, each with a title and a
+completed and failed (halted when there are any), then three bordered chart
+cards, in one row from 1024px and stacked below, each with a title and a
 muted subtitle: "Work by class" ("Runs finished that day", one
-column per class present) and "Tokens by model" ("All tokens, including cache
-reads", one column per model). The order is fixed every day and comes from the
-data shape, never from the values: `feature`, `chore`, `bug`, `patch`, `other`
-(`classCounts`, which the per-project table's class bar shares) and `Haiku`,
-`Sonnet`, `Opus`, then any other model (`sumModelUsage`); absent entries are
+column per class present), "Tokens by model" ("All tokens, including cache
+reads", one column per model) and "Cost by phase" ("What each pipeline step
+cost that day", one column per pipeline phase). The order is fixed every day
+and comes from the data shape, never from the values: `feature`, `chore`,
+`bug`, `patch`, `other` (`classCounts`, which the per-project table's class
+bar shares), `Haiku`, `Sonnet`, `Opus`, then any other model
+(`sumModelUsage`), and `Plan`, `Build`, `Test`, `Review`, `Document`
+(`sumPhaseUsage`; CI has no cost and is never shown); absent entries are
 omitted. The plot is 180px high with faint dotted guide lines and bars with
-rounded tops and a capped width; the value (run count or token label) sits in
+rounded tops and a capped width; the value (run count, token label or cost in
+dollars) sits in
 white inside its bar, or just above a bar too short for it (`barValueInside`).
-Under each bar is its name (the class without its slash, or the short model
-name) beside a dot of the bar's colour. Hovering or focusing a column shows a
-tooltip: the full model id, input, cache read, cache write, output and the
-day's cost for a model; the run count and the share of the day's runs for a
-class. Each chart scales to its own maximum. It always covers 30 days
+Under each bar is its name (the class without its slash, the short model
+name or the phase name) beside a dot of the bar's colour. Hovering or focusing
+a column shows a tooltip: the full model id, input, cache read, cache write,
+output and the day's cost for a model; input, cache read, cache write, output,
+the total time and the runs for a phase; the run count and the share of the
+day's runs for a class. Each chart scales to its own maximum. A chart with
+nothing to show keeps its caption and plot height and says so ("No per-phase
+usage published." for the phase chart). It always covers 30 days
 (`SUMMARY_DEFAULT_DAYS`) across every public project, with a per-project table
 under each day (Project, Runs, Completed, Failed, Classes, Total duration,
 Tokens in, Cache read, Tokens out, Cost) that ends in a Total row with the
@@ -1261,7 +1268,14 @@ rows of visible projects are summed per day and model by `sumModelUsage`
 (`src/lib/model-usage.ts`) into each day's `models`. The model view keys on
 the UTC day of `runs.started_at`, not `finished_at`, so a run that spans
 midnight UTC sits on its start day in the model chart and on its finish day in
-the counts, and a day with model rows but no finished run gets no card. Everything
+the counts, and a day with model rows but no finished run gets no card.
+The third read in the same `Promise.all` is the `adw.daily_phase_summary`
+view (one row per project, pipeline phase and UTC day of `runs.finished_at`,
+like `daily_summary`, with `runs`, `input`, `cache_read`, `cache_creation`,
+`output`, `cost_usd` and `duration_s`), cast to `DailyPhaseSummary`; its rows
+of visible projects are summed per day and phase by `sumPhaseUsage`
+(`src/lib/phase-usage.ts`, which also holds the phase order and names) into
+each day's `phases`. Everything
 that shapes the report (today's day, the window, the totals, the bar's
 segments, the chart columns, the labels) lives in that file, pure and unit-tested. A day is shown as
 `DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
@@ -1316,8 +1330,8 @@ open across midnight keeps refreshing that day until it is reloaded.
 scope on every completion they handle, and a fresh visitor sees the run
 without pressing Refresh. Not covered by a tag drop: a run that finishes
 `failed` or `halted` (neither fires the action or the webhook), and tokens and
-cost (per-model usage included) that the toolkit writes after the completion.
-The model rows are read in the same scopes as the day rows, so the same tags
+cost (per-model and per-phase usage included) that the toolkit writes after
+the completion. The model and phase rows are read in the same scopes as the day rows, so the same tags
 and lifetimes cover them. The 60-second `revalidate`
 of the today scope and the Refresh button bound both. The router cache's
 `staleTimes.dynamic` (300 seconds) is above that `stale`, so a client

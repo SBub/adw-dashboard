@@ -3,11 +3,14 @@
 // section holds what the data layer reads from a view or assembles for a
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
 // DailySummary (the daily_summary columns the page reads), DailyModelSummary
-// (the daily_model_summary columns) and the summary page's report (assembled
-// by toSummaryReport in src/lib/daily-summary.ts).
+// (the daily_model_summary columns), DailyPhaseSummary (the
+// daily_phase_summary columns) and the summary page's report (assembled by
+// toSummaryReport in src/lib/daily-summary.ts).
 // Runs and queue items have
 // no view model; the screens render Run and QueueItem rows as stored (the
 // clock-dependent labels are removed pending issue #3).
+
+import type { PhaseKey } from "@/lib/phase-usage";
 
 // ---------------------------------------------------------------------------
 // Database rows
@@ -130,6 +133,29 @@ export interface DailyModelSummary {
   cost_usd: number;
 }
 
+/**
+ * One row of the adw.daily_phase_summary view: one project's usage of one
+ * pipeline phase (`phase` is the toolkit's step key, such as `adw_plan_iso`)
+ * on one UTC calendar day. Like DailySummary, and unlike DailyModelSummary,
+ * `day` is the day of runs.finished_at, so the phases line up with the day's
+ * run counts; unfinished runs are absent. The four token columns are the
+ * toolkit's split, `duration_s` the summed phase time in seconds, `runs` the
+ * runs that had the phase. Runs that published no per-phase metrics are
+ * absent.
+ */
+export interface DailyPhaseSummary {
+  project_id: string;
+  day: string;
+  phase: string;
+  runs: number;
+  input: number;
+  cache_read: number;
+  cache_creation: number;
+  output: number;
+  cost_usd: number;
+  duration_s: number;
+}
+
 /** A project as the summary page names it: its slug and display name. */
 export interface SummaryProject {
   slug: string;
@@ -159,16 +185,34 @@ export interface SummaryModel {
 }
 
 /**
+ * One pipeline phase's usage on one day, summed over the visible projects
+ * (sumPhaseUsage in src/lib/phase-usage.ts).
+ */
+export interface SummaryPhase {
+  phase: PhaseKey;
+  runs: number;
+  input: number;
+  cache_read: number;
+  cache_creation: number;
+  output: number;
+  cost_usd: number;
+  duration_s: number;
+}
+
+/**
  * One UTC day of the summary. `totals` adds every count and every sum across
  * the day's projects. `models` is the day's usage per model summed over the
  * visible projects, largest total first; empty when no run of that day
- * published per-model metrics.
+ * published per-model metrics. `phases` is the day's usage per pipeline phase
+ * summed over the visible projects, in pipeline order; empty when no run of
+ * that day published per-phase metrics.
  */
 export interface SummaryDay {
   day: string;
   totals: Omit<DailySummary, "project_id">;
   projects: SummaryProjectDay[];
   models: SummaryModel[];
+  phases: SummaryPhase[];
 }
 
 /**

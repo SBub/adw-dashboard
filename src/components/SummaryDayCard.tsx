@@ -6,7 +6,7 @@ import { DayCharts } from "./DayCharts";
 import { ProjectBreakdownTable } from "./ProjectBreakdownTable";
 
 /**
- * One day of the summary, with its heading, counts, class and model charts
+ * One day of the summary, with its heading, counts, class, model and phase charts
  * and per-project table. Stateless and without "use client", so both the
  * server-rendered past days (DailySummaryList) and the client today card
  * (TodaySummary) render the same markup. `title` replaces the date heading's content, `actions` sits at
