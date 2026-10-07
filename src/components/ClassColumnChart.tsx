@@ -23,7 +23,6 @@ export function ClassColumnChart({ counts, day }: ClassColumnChartProps) {
     <ColumnChart
       title="Work by class"
       subtitle="Runs finished that day"
-      swatchClass={CLASS_BG["/feature"]}
       idPrefix={`runs-by-class-${day}`}
       summary={`Work by class: ${present.map(({ key, count }) => `${count} ${classLabel(key)}`).join(", ")}`}
       columns={present.map(({ key, count }) => ({

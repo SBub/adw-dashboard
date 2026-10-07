@@ -22,7 +22,10 @@ which column
 2. **Verify** directly below its header there are two `figure`s, one captioned `Work by class` with
    the subtitle `Runs finished that day`, the other `Tokens by model` with the subtitle
    `All tokens, including cache reads`, side by side at 1920x1080 (with `browser_evaluate`, the
-   same `getBoundingClientRect().top` for both).
+   same `getBoundingClientRect().top` for both). **Verify** with `browser_evaluate` that each
+   `figcaption` holds only text, no decorative marker before the title
+   (`figcaption.querySelector('[aria-hidden="true"]') === null` for both figures), and that the
+   title's and the subtitle's `getBoundingClientRect().left` are equal.
 3. **Verify** with `browser_evaluate` that the `aria-label`s of the class figure's `li`s (like
    `feature: 3 runs`) name classes that are a subsequence of `feature`, `chore`, `bug`, `patch`,
    `other` in that order, and that their counts add up to the header's `N runs`.
@@ -53,6 +56,7 @@ which column
 
 - Every day card with runs shows a `Work by class` and a `Tokens by model` chart card under its
   header, each with its subtitle, side by side on desktop and stacked without overflow on mobile.
+- Chart card titles have no marker before them and align with their subtitles.
 - Classes are in the order feature, chore, bug, patch, other and models Haiku, Sonnet, Opus, other;
   absent entries are omitted.
 - The tallest bar shows its value in white inside it; a short bar shows it above.
