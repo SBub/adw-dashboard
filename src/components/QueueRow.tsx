@@ -20,8 +20,9 @@ const BADGE =
  * holds the marker (filled `next` for the head, the ordinal otherwise, both
  * from the `position` prop) and is reserved for a future drag handle. The
  * source is parsed from the row's own column by queueSource; everything else
- * is a column. The card is one line: the issue link, the title, the hint for a
- * manual item, `Queued <time>` and the status pill. Nothing here reads the clock.
+ * is a column. The card is one row: the issue link, the title (shown in full,
+ * wrapping), the hint for a manual item, `Queued <time>` and the status pill,
+ * all top-aligned on the title's first line. Nothing here reads the clock.
  * A manual item carries a visible hint (a title alone is invisible on touch):
  * removing the issue's label does not take it out of the queue. The queued
  * badge uses the same colour map as run rows.
@@ -56,7 +57,7 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
         )}
       </div>
       <div className="min-w-0 flex-1 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
           <a
             href={`https://github.com/${projectSlug}/issues/${item.issue_number}`}
             target="_blank"
@@ -66,24 +67,26 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
             #{item.issue_number}
           </a>
           {item.issue_title !== null && (
-            <span className="min-w-0 flex-1 basis-40 truncate text-sm" title={item.issue_title}>
+            <span className="min-w-0 flex-1 basis-40 wrap-break-word text-sm leading-6">
               {item.issue_title}
             </span>
           )}
           {source?.kind === "manual" && (
             <>
-              <span
-                className={BADGE}
-                title="Added by hand with adw_queue.py add. Removing the issue's label does not take it out of the queue."
-              >
-                manual
+              <span className="flex h-6 items-center">
+                <span
+                  className={BADGE}
+                  title="Added by hand with adw_queue.py add. Removing the issue's label does not take it out of the queue."
+                >
+                  manual
+                </span>
               </span>
-              <span className="text-xs text-neutral-500 dark:text-neutral-400">
+              <span className="text-xs leading-6 text-neutral-500 dark:text-neutral-400">
                 Removing the label does not remove it.
               </span>
             </>
           )}
-          <span className="ml-auto text-xs text-neutral-500 dark:text-neutral-400">
+          <span className="ml-auto text-xs leading-6 text-neutral-500 dark:text-neutral-400">
             Queued{" "}
             {item.queued_at !== null ? (
               <Timestamp value={item.queued_at} />
@@ -91,7 +94,9 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
               <span className="text-neutral-400 dark:text-neutral-600">none</span>
             )}
           </span>
-          <StatusBadge status="queued" />
+          <span className="flex h-6 shrink-0 items-center">
+            <StatusBadge status="queued" />
+          </span>
         </div>
       </div>
     </li>

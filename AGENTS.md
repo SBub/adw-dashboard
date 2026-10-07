@@ -34,7 +34,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)`); no view model is built
-  anywhere for runs.
+  anywhere for runs. Run and queue row titles are shown in full and wrap; the
+  row is `items-start` and every element sits in a 24px first-line box
+  (`leading-6` or an `h-6 items-center` wrapper), so the status pill is on the
+  title's first line. The detail grid's `Field` keeps its `truncate`.
 - No clock reads outside the cached boundary. There are exactly two
   argument-less `new Date()` / `Date.now()` sites in the codebase
   (`new Date(ms)` on a parsed input, as in `formatTimestamp`, is not a clock
@@ -333,8 +336,10 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   index. `byQueuePosition` in the same file is the one ledger comparator,
   shared by `queuePositions` and `applyQueueChange`; both are pure and tested
   in `src/lib/queue-order.test.ts`, and every change to them goes with a test
-  case. A row is one line: issue link, title, the manual hint for a manual
-  item, `Queued <time>` and the status pill; it shows no label chip, no wait
+  case. A row holds the issue link, the title, the manual hint for a manual
+  item, `Queued <time>` and the status pill; the title is shown in full and
+  wraps (never `truncate`, `line-clamp` or a `title` tooltip for it), and
+  every element is top-aligned on the title's first line; it shows no label chip, no wait
   and no start hint. Rows stay keyed by `issue_number`, and the
   left gutter stays reserved for the marker and the future drag handle. The
   rail line and the `next` marker take their colours from

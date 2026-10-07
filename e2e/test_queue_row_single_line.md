@@ -1,6 +1,6 @@
 # E2E Test: Queue Row Single Line
 
-Checks that each row of a project's Queue section is one line (issue number, title, `Queued <time>`,
+Checks that each row of a project's Queue section is one row, the title may wrap (issue number, title, `Queued <time>`,
 status pill), with no `label:` chip, no wait and no start hint, and that the rail markers (`next`,
 then the ordinals) are intact. The hosted database is read only: the journey never adds items, it
 looks for a project that already has queued items.
@@ -8,7 +8,7 @@ looks for a project that already has queued items.
 ## User Story
 
 As a person watching the ADW queue
-I want each queued item on one compact line
+I want each queued item in one compact row (the title may wrap)
 So that the queue reads as a list of what runs next, without repeated labels and hints
 
 ## Test Steps
@@ -34,7 +34,7 @@ So that the queue reads as a list of what runs next, without repeated labels and
 ## Success Criteria
 
 - Queue rows show the `next` marker on the head and ordinals on the others.
-- Every Queue row holds `#<number>`, `Queued` and the `queued` pill, on one line.
+- Every Queue row holds `#<number>`, `Queued` and the `queued` pill, in one row (the title may wrap).
 - No Queue row shows `label:`, a wait (`waiting`) or a start hint (`starts `).
 - A manual item keeps its `manual` badge and visible hint.
 - 2 screenshots are taken.
