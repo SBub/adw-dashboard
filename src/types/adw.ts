@@ -62,7 +62,7 @@ export interface QueueItem {
   issue_title: string | null;
   queued_at: string | null;
   adw_id: string | null;
-  note: string | null;
+  reason: string | null;
   updated_at: string;
 }
 

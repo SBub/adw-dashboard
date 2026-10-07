@@ -70,7 +70,7 @@ const RUN_COLUMNS =
 
 /** The columns of adw.queue_items the screens read, which are exactly the fields of QueueItem. */
 const QUEUE_COLUMNS =
-  "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, note, updated_at";
+  "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, reason, updated_at";
 
 /** The columns of adw.daily_summary the summary page reads, which are exactly the fields of DailySummary. */
 const DAILY_SUMMARY_COLUMNS =

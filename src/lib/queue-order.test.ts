@@ -12,7 +12,7 @@ function item(issue: number, position: number, overrides: Partial<QueueItem> = {
     issue_title: `Issue ${issue}`,
     queued_at: "2026-10-05T09:00:00Z",
     adw_id: null,
-    note: null,
+    reason: null,
     updated_at: "2026-10-05T09:00:00Z",
     ...overrides,
   };
