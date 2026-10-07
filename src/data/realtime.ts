@@ -97,25 +97,23 @@ export function startRealtime(queryClient: QueryClient, options: RealtimeOptions
 
 /**
  * One adw.runs event into the two entries it touches, plus the history
- * callback. The event names the project by id; the slug the runs key is built
- * from comes from the cached project list, so an event for a project that list
- * does not hold (a private project, or a list that is not in the cache at all)
- * is dropped. That is the correct outcome, not an error: nothing on screen
- * could show it.
+ * callback. The event names the project by id; the slug the history callback
+ * takes comes from the cached project list, so an event for a project that
+ * list does not hold (a private project, or a list that is not in the cache at
+ * all) is dropped. That is the correct outcome, not an error: nothing on
+ * screen could show it.
  *
- * Order matters. The previous status of the run is read from the active runs
- * cache BEFORE that entry is rewritten: Supabase sends `old` with only the
- * primary key columns under the default replica identity, so an UPDATE or
- * DELETE event does not say what status the run had, and both the counts
- * reducer and the history test need it. Then the active entry, then the
- * project list, each through its reducer and `current && ...`, and last the
- * history callback, so by the time the server re-renders the completed run is
- * already out of the Active entry (step one of the move; see Providers for
- * steps two and three).
- *
- * The history callback does not depend on the active entry being cached: a
- * completion for a project whose page is not open still drops that project's
- * server cache, so its next visit is fresh.
+ * Order matters. The previous status of the run is read from the one Active
+ * entry (every project's running and failed runs) BEFORE that entry is
+ * rewritten: Supabase sends `old` with only the primary key columns under the
+ * default replica identity, so an UPDATE or DELETE event does not say what
+ * status the run had, and both the completed count and the history test need
+ * it. Because the entry holds every project, the previous status of an active
+ * run is always known, whichever page is open. Then the Active entry, then
+ * the project list, each through its reducer and `current && ...`, and last
+ * the history callback, so by the time the server re-renders the completed
+ * run is already out of the Active entry (step one of the move; see Providers
+ * for steps two and three).
  */
 function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: RealtimeOptions) {
   const key = ev.eventType === "DELETE" ? ev.old : ev.new;
@@ -127,14 +125,14 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: Realtim
     ?.find((candidate) => candidate.id === projectId);
   if (!project) return;
 
-  const runsKey = queryKeys.runs(project.slug);
   const oldStatus =
     ev.eventType === "INSERT"
       ? undefined
-      : (ev.old.status ?? runStatusIn(queryClient.getQueryData<ActiveRuns | null>(runsKey), adwId));
+      : (ev.old.status ??
+        runStatusIn(queryClient.getQueryData<ActiveRuns>(queryKeys.activeRuns), projectId, adwId));
 
-  queryClient.setQueryData<ActiveRuns | null>(
-    runsKey,
+  queryClient.setQueryData<ActiveRuns>(
+    queryKeys.activeRuns,
     (current) => current && applyRunChange(current, ev),
   );
   queryClient.setQueryData<ProjectSummary[]>(
@@ -190,13 +188,14 @@ function cachedSlugs(queryClient: QueryClient, prefix: readonly string[]): strin
 }
 
 /**
- * Refreshes every cached entry from the database, on every SUBSCRIBED.
+ * Refreshes the cached entries from the database, on every SUBSCRIBED.
  *
  * Why on every SUBSCRIBED and not only after a drop. Events that happen while
  * the channel is down are never delivered, so a reconnect must re-read. But
- * the first connect has the same gap: the page's data comes from a static
- * shell whose cache entries may be minutes old (the server caches them for 15
- * minutes), and anything that changed between that fill and the moment the
+ * the first connect has the same gap: the project list and the queue come
+ * from a static shell whose cache entries may be minutes old (the server
+ * caches them for 15 minutes), the Active entry from a read made when the
+ * page was served, and anything that changed between that fill and the moment the
  * channel joined was never an event this browser saw. One path for both
  * cases, with no "was I disconnected" flag to keep in step.
  *
@@ -213,11 +212,16 @@ function cachedSlugs(queryClient: QueryClient, prefix: readonly string[]): strin
  * missed while disconnected leaves that page's History as the server has it,
  * which is refilled on the cache lifetime or the next completion anyone sees.
  *
- * Cost: one project_summaries read, plus one getActiveRuns (two reads) per
- * runs entry and one getQueue (two reads) per queue entry in the cache, per
- * (re)connect. The cache holds the project list and the active runs and queue
- * of each project visited this session, so this is a handful of small reads. In development React's strict mode connects twice on
- * mount, so it runs twice there.
+ * The Active entry is written unconditionally, unlike the per-event updaters
+ * (`current && ...`): getActiveRuns is the complete list read from the
+ * database, not a one-row seed, so writing it when it was absent cannot make
+ * a partial list look complete. The queue entries are only refreshed where
+ * they are cached (one per project page visited this session).
+ *
+ * Cost: one project_summaries read, one runs read, and one getQueue (two
+ * reads) per queue entry in the cache, per (re)connect: a handful of small
+ * reads. In development React's strict mode connects twice on mount, so it
+ * runs twice there.
  *
  * Failures are logged and swallowed: a failed refresh leaves the cache as it
  * was, which is the state before the refresh, and the next event or
@@ -231,12 +235,7 @@ async function catchUp(queryClient: QueryClient) {
     const projects = await getProjects();
     queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, projects);
 
-    await Promise.all(
-      cachedSlugs(queryClient, queryKeys.allRuns).map(async (slug) => {
-        const runs = await getActiveRuns(slug);
-        queryClient.setQueryData<ActiveRuns | null>(queryKeys.runs(slug), runs);
-      }),
-    );
+    queryClient.setQueryData<ActiveRuns>(queryKeys.activeRuns, await getActiveRuns());
     await Promise.all(
       cachedSlugs(queryClient, queryKeys.allQueues).map(async (slug) => {
         const items = await getQueue(slug);

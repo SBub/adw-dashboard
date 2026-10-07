@@ -19,7 +19,7 @@ So that the summary at `/`, a cached report, never shows a pill stuck at `connec
 3. Take a screenshot of the summary page.
 4. Click `Projects` in the header's `Sections` navigation.
 5. **Verify** the URL is `/projects`, the `Projects` navigation (the sidebar) and the
-   `Select a project` heading are present.
+   `Active` heading (level 2) are present.
 6. **Verify** an element with role `status` is present and within 15 seconds its text is `live`
    (in development it may read `connecting` once before that; wait and re-snapshot).
 7. Take a screenshot of the project overview.
@@ -29,7 +29,12 @@ So that the summary at `/`, a cached report, never shows a pill stuck at `connec
 10. Click `ADW Dashboard` (the header brand).
 11. **Verify** the URL is `/` and the `What an AI developer workflow gets done` heading is present.
 12. **Verify** the accessibility snapshot contains no element with role `status`, and no text
-    `connecting`, `live` or `reconnecting` outside the summary content.
+    `connecting`, `live` or `reconnecting` outside the summary content. Judge this from
+    `browser_snapshot` (and the screenshot), never from a raw DOM query such as
+    `document.querySelector('[role=status]')`: with `cacheComponents`, Next keeps the previous
+    route's subtree in the document inside a hidden React `Activity` (`display: none`, effects
+    unmounted, so the hidden pill reads `connecting`). That subtree is not rendered, is absent from
+    the accessibility snapshot and does not count as present.
 13. Click `Projects` in the header's `Sections` navigation, then the same project link as in step 8.
 14. **Verify** the URL is the project page from step 9 and a `status` element is present and within
     15 seconds reads `live` again.

@@ -1,20 +1,17 @@
-// The cache tags that key one project's server-rendered history, its Active
-// prefetch and the summary page's (`/`) two halves, spelled in exactly one
-// place. The project page's two "use cache" scopes tag themselves with
-// historyTag and runsTag, the summary page's with summaryPastTag and
-// summaryTodayTag; the revalidateHistory server action and the /api/revalidate
-// route handler drop three of them through historyTags (never summaryPastTag).
+// The cache tags that key one project's server-rendered history and the
+// summary page's (`/`) two halves, spelled in exactly one place. The project
+// page's history scope tags itself with historyTag, the summary page's scopes
+// with summaryPastTag and summaryTodayTag; the revalidateHistory server action
+// and the /api/revalidate route handler drop two of them through historyTags
+// (never summaryPastTag). Active has no tag: it is read per request (see
+// getActiveRunsState in src/data/active-runs-state.ts) and never cached on
+// the server.
 // A tag that differs by one character on either side is a cache entry nothing
 // can expire, so never write these strings inline.
 
 /** The tag of the page's history scope (`getHistory`): the completed runs of one project. */
 export function historyTag(slug: string): string {
   return `history:${slug}`;
-}
-
-/** The tag of the page's Active prefetch scope (`getRunsState`) for one project. */
-export function runsTag(slug: string): string {
-  return `runs:${slug}`;
 }
 
 /**
@@ -36,13 +33,12 @@ export function summaryTodayTag(): string {
 }
 
 /**
- * The three tags a completion (or the deletion of a completed run)
- * invalidates for a project, history first. The action and the route handler
- * iterate this; see README, "The move" and "Webhook revalidation", for why the
- * Active scope is dropped alongside history, and "Summary" for the today
- * scope (a completion changes today's counts). The past days tag is never
- * here.
+ * The two tags a completion (or the deletion of a completed run) invalidates
+ * for a project, history first. The action and the route handler iterate
+ * this; see README, "The move" and "Webhook revalidation", and "Summary" for
+ * the today scope (a completion changes today's counts). The past days tag is
+ * never here, and there is no Active tag: Active is read per request.
  */
-export function historyTags(slug: string): readonly [string, string, string] {
-  return [historyTag(slug), runsTag(slug), summaryTodayTag()];
+export function historyTags(slug: string): readonly [string, string] {
+  return [historyTag(slug), summaryTodayTag()];
 }
