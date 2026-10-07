@@ -143,7 +143,7 @@ export default function SummaryPage() {
         and documents the change, then opens a pull request and merges it once checks are green.
         This page is its public ledger: every finished run per day across the connected
         repositories, what kind of work it was, how long it took, how many tokens it used and what
-        it cost. Pick a project in the header to watch runs live.
+        it cost.
       </p>
       <p className="mt-2 text-xs text-neutral-500 dark:text-neutral-400">
         Times are UTC. Tokens and cost count runs that published metrics.
