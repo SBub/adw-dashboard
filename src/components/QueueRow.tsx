@@ -50,7 +50,7 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
           </span>
         ) : (
           <span
-            className={`relative z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-white text-xs text-neutral-500 tabular-nums dark:bg-neutral-950 dark:text-neutral-400 ${STATUS_COLORS.neutral.border}`}
+            className={`relative z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-background text-xs text-neutral-500 tabular-nums dark:text-neutral-400 ${STATUS_COLORS.neutral.border}`}
           >
             {position}
           </span>
