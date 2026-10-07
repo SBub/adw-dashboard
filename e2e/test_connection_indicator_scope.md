@@ -19,7 +19,7 @@ So that the summary at `/`, a cached report, never shows a pill stuck at `connec
 3. Take a screenshot of the summary page.
 4. Click `Projects` in the header's `Sections` navigation.
 5. **Verify** the URL is `/projects`, the `Projects` navigation (the sidebar) and the
-   `Select a project` heading are present.
+   `Active` heading (level 2) are present.
 6. **Verify** an element with role `status` is present and within 15 seconds its text is `live`
    (in development it may read `connecting` once before that; wait and re-snapshot).
 7. Take a screenshot of the project overview.

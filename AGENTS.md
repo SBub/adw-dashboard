@@ -39,7 +39,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   argument-less `new Date()` / `Date.now()` sites in the codebase
   (`new Date(ms)` on a parsed input, as in `formatTimestamp`, is not a clock
   read): `getActiveRuns`'s `fetched_at` stamp, which
-  on the server only ever executes inside the page's `"use cache"` scope (in
+  on the server only ever executes inside `getActiveRunsState`, directly
+  after its `await connection()`, so only at request time (in
   the browser it runs as a `queryFn` on a cache miss and in the realtime
   catch-up, where a clock read is fine), and `utcDay(Date.now())` in the
   summary page's `requestToday` (`src/app/page.tsx`, a plain function, not a
@@ -84,9 +85,11 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
-  `project_summaries` view, `getActiveRuns` reads the same view by slug and
-  then the `runs` table by `project_id` with `status in (running, failed)`,
-  `getCompletedRuns(slug, bookmark, q)` the same with `status = completed`
+  `project_summaries` view, `getActiveRuns()` (no argument) reads the `runs`
+  table with `status in (running, failed)` for every visible project,
+  `updated_at desc`, and returns `{ active, fetched_at }`,
+  `getCompletedRuns(slug, bookmark, q)` the view by slug and then `runs` by
+  `project_id` with `status = completed`
   (narrowed by `historySearchFilter(q)` when `q` is not `null`), one
   keyset page at a time in either direction (rows strictly older than an
   `after` bookmark, or strictly newer than a `before` bookmark read ascending
@@ -100,8 +103,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   Changing what is read
   means changing `src/data/index.ts` while keeping those signatures, and
   nothing elsewhere. The
-  query layer (`query-keys.ts`, `query-client.ts`) holds keys and the client
-  factory only; it never reads Supabase.
+  query layer (`query-keys.ts`, `query-client.ts`, `active-runs-query.ts`,
+  `active-runs-state.ts`) holds keys, the client factory, the Active query
+  options and the Active prefetch only; it calls boundary functions and never
+  reads Supabase itself.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
   `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
   `daily_summary`, `DailyModelSummary[]` for `daily_model_summary`) in
@@ -112,27 +117,50 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   of `QueueItem`, `DAILY_SUMMARY_COLUMNS` equal to the fields of
   `DailySummary`, and `DAILY_MODEL_SUMMARY_COLUMNS` equal to the fields of
   `DailyModelSummary`, all in `src/types/adw.ts`.
-- `getActiveRuns` is called on the server only from inside `getRunsState`,
-  the page's `"use cache"` function: both the page body and `generateMetadata`
-  go through it. Do not call `getActiveRuns` directly from a page, layout or
-  metadata function; its `fetched_at` clock read is only allowed inside a cache
-  scope, and the cached call deduplicates the read per slug. Likewise
-  `getCompletedRuns` is called only from `getHistory`, the page's second
+- Active is one query entry for every project, `queryKeys.activeRuns`. On
+  the server `getActiveRuns` is called only from `getActiveRunsState` in
+  `src/data/active-runs-state.ts`: React `cache()` around
+  `await connection()` and then `prefetch(queryKeys.activeRuns,
+getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
+  from the frozen Resume Data Cache, issue #69), and never called from a page
+  body, a layout body or `generateMetadata`: only from the request-time
+  islands that consume it (`SidebarActiveRuns` in the dashboard layout,
+  `AllActiveRuns` on `/projects`, `ProjectActiveRuns` on the project page),
+  each under a `SectionBoundary`, each rendering its own `HydrationBoundary`
+  with the returned state as the ancestor of its consumer, so the entry
+  exists before the consumer renders. React `cache()` makes them one read per
+  request; this is the one `cache()` in the codebase (the rule against a
+  `cache()` wrapper below is about `getHistory`, which Next already joins).
+  `activeRunsQuery` in `src/data/active-runs-query.ts` is the one spelling of
+  the Active query options (key, `queryFn: getActiveRuns`,
+  `staleTime: "static"`, `refetchOnMount: false`); every reader spreads it and
+  adds only a `select`. `getCompletedRuns` is called only from `getHistory`, the page's second
   `"use cache"` function, tagged `historyTag(slug)`; that tag is the contract
   with the `revalidateHistory` action and the `/api/revalidate` route handler,
   and all three take the spelling from `src/lib/history-tags.ts`. `getQueue`
-  is called on the server only from `getQueueState`, the page's third
+  is called on the server only from `getQueueState`, a page
   `"use cache"` function (untagged: no server writer drops it), awaited
-  together with `getRunsState` in one `Promise.all`; `generateMetadata` does
+  together with `getProject` in one `Promise.all`; `generateMetadata` does
   not call it.
+- Every screen narrows the one Active entry through the pure helpers in
+  `src/lib/active-runs.ts` (tested in `src/lib/active-runs.test.ts`; every
+  change to them goes with a test case): `activeRunsOf(runs, projectId)` is
+  `ActiveRunsView`'s `select`, `activeRunCounts(runs)` is `ProjectNav`'s, and
+  `groupActiveRuns(runs, projects)` groups the `/projects` overview in
+  sidebar order. The sidebar's running and failed counts come only from
+  `activeRunCounts`, never from `ProjectSummary.running` or `.failed` (those
+  mirror the view and nothing renders them), so the sidebar, `/projects` and
+  every project page show the same rows.
 - The Queue section sits below Active through `ActiveRunsView`'s `queue` slot
   prop: the page builds it (its own `HydrationBoundary` around its own
   `QueryBoundary` around `QueueView`) and passes it in, and `ActiveRunsView`
-  renders it after the Active section, never in the not-found branch. Do
+  renders it after the Active section. Do
   not read the queue inside `ActiveRunsView`, merge it into the runs entry,
   or share one boundary between the two. The Queue and
   Active headings arrive the same way, as the `heading` slot props of
-  `QueueView` and `ActiveRunsView`, and the not-found branch renders neither.
+  `QueueView` and `ActiveRunsView`. The project header (`PageHeader`) is
+  rendered by the page, not by `ActiveRunsView`, which has no not-found
+  branch.
 - Section headings come from `SectionHeading` (`src/components/SectionHeading.tsx`),
   a server component with no state: title, an always-visible muted
   description, and an optional detail behind an info button. The detail is
@@ -153,7 +181,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - The project route is `projects/[owner]/[repo]`. The slug is assembled from
   `owner` and `repo` only in the page (`${owner}/${repo}`, once); no other
   file splits or joins it, and everything below the page (data boundary,
-  `queryKeys.runs(slug)`, `runsTag`/`historyTag`, the bookmark,
+  `queryKeys.queue(slug)`, `historyTag`, the bookmark,
   `revalidateHistory`) takes the slug as is. `generateStaticParams` in the
   same file is the one place that splits a slug, into the two params. URLs
   never carry the project id. Do not reintroduce a catch-all segment.
@@ -164,43 +192,49 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   turns into `notFound()` at request time. Keep that guard when touching the
   function.
 - `getProjects()` runs at build time (layout prefetch and
-  `generateStaticParams`), and `getActiveRuns()` and `getCompletedRuns()` run
-  at build time for every slug (page prefetch and history scope), so
+  `generateStaticParams`), and `getCompletedRuns()` and `getQueue()` run
+  at build time for every slug (history and queue scopes), so
   `yarn build` needs `.env.local` with the two
   Supabase variables. A missing file fails the build on purpose; do not add a
   fallback that returns an empty list.
 - Every query key is defined in `src/data/query-keys.ts` (`queryKeys.projects`,
-  `queryKeys.runs(slug)`, the active runs, `queryKeys.queue(slug)`, the queued
-  items, and the catch-up prefixes `queryKeys.allRuns` and
-  `queryKeys.allQueues`, and `queryKeys.summaryToday(day)`, the summary
+  `queryKeys.activeRuns`, the one Active entry, `queryKeys.queue(slug)`, the
+  queued items, the catch-up prefix `queryKeys.allQueues`, and
+  `queryKeys.summaryToday(day)`, the summary
   page's today card) and imported from there: in the layout's and the
-  pages' prefetches, in `ProjectNav`'s, `ActiveRunsView`'s, `QueueView`'s and
+  pages' prefetches, in `activeRunsQuery`, in `ProjectNav`'s,
+  `ActiveRunsOverview`'s, `QueueView`'s and
   `TodaySummary`'s `useSuspenseQuery`,
   and in every `setQueryData` the Realtime listeners do. Never build a key inline and never
   add a key literal elsewhere: a key that differs by one element is a cache
-  miss, which means a second fetch in the browser. The slug is part of the runs
-  key's hash; the slug is assembled once in the page; pass it as is.
+  miss, which means a second fetch in the browser. There is no per-project
+  runs key. The slug is part of the queue key's hash; the slug is assembled once in the page; pass it as is.
 - `makeQueryClient()` in `src/data/query-client.ts` is the one `QueryClient`
   factory. Every server prefetch, `Providers` and `SummaryProviders` build from it; do not call
   `new QueryClient()` anywhere else, or the dehydrate rule drifts between sides.
 - `prefetch(queryKey, queryFn)` in the same file is the one server prefetch.
   Every `"use cache"` state function (the layout's `getProjectsState`, the
-  project page's `getRunsState` and `getQueueState`, the summary page's
+  project page's `getQueueState`, the summary page's
   `getTodayState`) is a one-liner around it that adds only its
-  `cacheTag`s; do not inline `makeQueryClient` + `query()` + `dehydrate()`
+  `cacheTag`s, and `getActiveRunsState` is a one-liner around it after
+  `connection()`; do not inline `makeQueryClient` + `query()` + `dehydrate()`
   again in a page or layout, and do not add a `.catch` to the helper (an empty
   dehydrated cache ships the fallback silently). Whatever it returns must stay
-  plain JSON, because it is a `"use cache"` result.
-- A project page's not-found decision is read off the `data` half of
-  `getRunsState`'s result (`data === null`), not from a second
-  `getActiveRuns` call and not by searching the dehydrated state's queries by
-  hash, and never from the queue (`getQueue` returns `[]` for an unknown
+  plain JSON, because it is a `"use cache"` result or dehydrated into the
+  HTML.
+- A project page's not-found decision is `getProject(slug) === null`:
+  `getProject` is the page's `"use cache"` scope (tag `projects`, no clock
+  read) that finds the slug in `getProjects()`, shared by the page body,
+  the header and `generateMetadata`; never from the Active entry, never by
+  searching a dehydrated state's queries by hash, and never from the queue (`getQueue` returns `[]` for an unknown
   slug); the History islands render only after that decision, so
   `getCompletedRuns` returning an empty page for an unknown slug is never shown.
 - Two boundaries, never a bare `Suspense`. Any `useSuspenseQuery` is rendered
   inside `QueryBoundary` (`src/components/QueryBoundary.tsx`); any
   server-rendered section that can fail independently of its siblings (the
-  page's `HistoryPagination` and `CompletedRuns`, one boundary each) is
+  page's `HistoryPagination` and `CompletedRuns`, and the three Active
+  islands `SidebarActiveRuns`, `AllActiveRuns` and `ProjectActiveRuns`, one
+  boundary each) is
   rendered inside `SectionBoundary`
   (`src/components/SectionBoundary.tsx`). Without an error boundary a failed
   read escapes to the segment's `error.tsx` and unmounts the whole pane,
@@ -224,21 +258,22 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   cache ships the fallback silently, a thrown error fails the build loudly.
 - `cacheComponents` treats `Date.now()` as IO in both prerender passes. On the
   server, anything that reads the clock (React Query's `query()` and
-  `dehydrate` do) must sit inside a `"use cache"` function or the build fails.
+  `dehydrate` do) must sit inside a `"use cache"` function, or after
+  `connection()` (as in `getActiveRunsState`), or the build fails.
   In client components it does not fail the build: the first clock read
   silently aborts the client prerender and the component ships as its Suspense
-  fallback. That is why the sidebar and runs queries have
+  fallback. That is why the projects and Active queries have
   `staleTime: "static"`; keep it, and check the served HTML (not just the
   build) when adding client hooks to the prerendered shell: the run rows (an
   `adw_id` in a `<code>`) must be in the document. A `useSyncExternalStore`
   hook with a data-derived `getServerSnapshot` (`fetched_at`) is how a client
   component could depend on the time without that read; that is the shape
   issue #3 proposes, at the leaf level. When you
-  check, know that a pre-rendered project page may legitimately carry the runs
-  pane either inline or as a streamed Suspense completion (fallback plus
-  hidden segment plus `$RC` swap in the same document); the latter is the
-  page's cold SSR client chunk, not a cache miss or a clock read. See README,
-  "Prefetch and hydration of a project's runs".
+  check, know that the Active rows (sidebar counts, `/projects`, a project's
+  Active section) are request-time holes and always arrive as a streamed
+  Suspense completion (fallback plus hidden segment plus `$RC` swap in the
+  same document), not inline in the shell. See README, "Prefetch and
+  hydration of the Active runs".
 - The header's current section comes only from `headerSection` in
   `src/lib/header-section.ts` (pure, tested in
   `src/lib/header-section.test.ts`; every change to it goes with a test
@@ -257,7 +292,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - Server components by default; `"use client"` only where the browser must
   hold state (the React Query provider in `src/app/providers.tsx`,
   `ProjectNav`, which reads the pathname and the query cache,
-  `ActiveRunsView`, which reads the active runs from the query cache,
+  `ActiveRunsView`, which reads one project's active runs from the query cache,
+  `ActiveRunsOverview`, which reads every project's active runs and the
+  project list from the query cache on `/projects`,
   `QueueView`, which reads the queued items from the query cache,
   `ConnectionIndicator`, which subscribes to its store, `HeaderLink`, which
   reads the pathname to mark the header's current section, `HistorySearch`, which
@@ -366,8 +403,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `getHistory` stays out of the page body and `generateMetadata`, where it
   would be prerendered again. Do not swap the hole for a short `cacheLife`
   (`expire` under 5 minutes also makes a hole but gives up the long
-  lifetime). The Active scope (`runs:<slug>`) stays in the
-  shell on purpose; the browser keeps it current.
+  lifetime). Active has no cache scope at all: it is read per request after
+  `connection()` (`getActiveRunsState`) and kept current in the browser.
 - History is paged by a keyset bookmark. Everything that decides a page lives
   in `src/lib/history-bookmark.ts` (pure, tested in
   `src/lib/history-bookmark.test.ts`): `HISTORY_PAGE_SIZE` (defined there and
@@ -389,7 +426,7 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `SectionBoundary` or its fallback, so it is in the static shell.
 - `HistorySearchBox`, `HistoryPagination` and `CompletedRuns` are the only
   readers of `searchParams`, and each awaits it itself. The page passes the promise down
-  unawaited and never awaits it, nor do `getRunsState` or `generateMetadata`,
+  unawaited and never awaits it, nor do `getProject` or `generateMetadata`,
   or the whole page turns request-time. `?after` and `?before` are decoded by
   `readHistoryBookmark` and `?q` by `readHistoryQuery` in the islands,
   outside the cache scope (an error thrown inside `"use cache"` loses its
@@ -450,27 +487,24 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`, defined nowhere else) and returns early
   otherwise; for a valid slug it calls `updateTag` on each tag of
   `historyTags(slug)` and does nothing else. Do not add a database read or
-  write, a parameter beyond the slug, a return value, or a fourth tag without
-  deciding what an anonymous caller can do with it. The third, `summary:today`,
+  write, a parameter beyond the slug, a return value, or a third tag without
+  deciding what an anonymous caller can do with it. The second, `summary:today`,
   was decided: an anonymous caller can make the next render of the summary's
   (`/`) today card read the database once, nothing else. `updateTag`, not
   `revalidateTag(tag, "max")`: the latter is stale-while-revalidate and the
   refresh would be served the old history (see
   `node_modules/next/dist/docs/01-app/03-api-reference/04-functions/updateTag.md`).
-- The `runs:<slug>` tag is dropped alongside `history:<slug>` on purpose: it
-  is the Active prefetch scope, and on a full regeneration of the page (or a
-  host whose cache handler behaves differently) leaving it would let the
-  refresh (and the next visitor) hydrate an Active list that still holds the
-  completed run. Know that on a resumed prerender the tag does not reach that
-  scope (it is in the static shell); Realtime, the hydration rule and the
-  catch-up cover Active there. All three tag spellings live in one place,
-  `src/lib/history-tags.ts` (`historyTag`, `runsTag`, `summaryPastTag`,
-  `summaryTodayTag`, and `historyTags`, which returns history, runs and
+- There is no Active tag: Active is read per request and never cached on
+  the server, so a completion has nothing to drop for it. Do not add a
+  `runs:` tag or a `"use cache"` scope for Active back. The tag spellings
+  live in one place,
+  `src/lib/history-tags.ts` (`historyTag`, `summaryPastTag`,
+  `summaryTodayTag`, and `historyTags`, which returns history and
   today, history first, and never the past days tag): the pages'
   `cacheTag` calls, the action's `updateTag` calls
   and the route handler's `revalidateTag` calls all import from it, and
   `src/lib/history-tags.test.ts` pins the strings. Never write
-  `history:`/`runs:`/`summary:` inline anywhere.
+  `history:`/`summary:` inline anywhere.
 - Hydration after a refresh is safe because React Query only overwrites an
   existing entry when the incoming `dataUpdatedAt` is strictly newer
   (`src/data/hydration.test.ts` pins this against the installed
@@ -543,8 +577,9 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `next.config.ts` redirect for it (Next merges the query string into a
   config redirect's destination, and config redirects run before the
   handler).
-  The project overview (sidebar plus the "Select a project" panel) is
-  `/projects`, `src/app/(dashboard)/projects/page.tsx`; the header's
+  The project overview (sidebar plus every active run, grouped by project) is
+  `/projects`, `src/app/(dashboard)/projects/page.tsx`; its `Active`
+  heading is static in the page, above the `SectionBoundary` of its island; the header's
   `SectionNav` links to `/projects` only and the brand, rendered by
   `BrandLink` from the same file, links to `/`.
 - `/` has no filters (issue #97): it always shows every public project over
@@ -627,9 +662,14 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   `src/data/apply-queue-change.ts` for `adw.queue_items` events. The reducers take no
   cache, client or clock and never mutate their input; new event handling goes
   into a reducer and gets a test case, and `src/data/realtime.ts` stays a thin
-  wiring layer around them. `applyRunChange` holds the Active list only and
-  removes a run whose new status is `completed`; do not make it keep or
-  re-add completed rows. `applyQueueChange` holds state `queued` only and
+  wiring layer around them. `applyRunChange` holds the Active list of every
+  project, matches a run on `(project_id, adw_id)` (never `adw_id` alone, it
+  is unique per project only), and removes a run whose new status is
+  `completed`; do not make it keep or re-add completed rows.
+  `applyRunChangeToSummaries` never touches `running` or `failed` (they are
+  counted from the Active entry); it keeps `completed` (+1 on an INSERT of a
+  completed row and on an UPDATE to completed from a known running or failed
+  status) and `last_run_at`. `applyQueueChange` holds state `queued` only and
   removes an item whose new state is anything else; do not make it keep
   started or stopped items (they are runs). Never `invalidateQueries` or `refetchQueries` from
   the realtime module: every query here is `staleTime: "static"` and both skip
@@ -645,9 +685,10 @@ app is, how to run it, scripts) lives in `README.md`, not here.
 - `ev.old` carries only the primary key columns (`adw.runs`: `project_id`,
   `adw_id`; `adw.queue_items`: `project_id`, `issue_number`; `adw.projects`:
   `id`), because the tables use the default replica
-  identity. Never read another field off `ev.old`. The previous status a
-  counts delta (and `isHistoryChange`) needs is read from the Active cache
-  with `runStatusIn` BEFORE the entry is rewritten, and passed explicitly;
+  identity. Never read another field off `ev.old`. The previous status the
+  completed count (and `isHistoryChange`) needs is read from the Active entry
+  with `runStatusIn(current, projectId, adwId)` BEFORE the entry is
+  rewritten, and passed explicitly;
   keep that order when touching `applyRunEvent`, and keep the
   `onHistoryChange` call last, after both `setQueryData` writes. Likewise the
   previous queue membership is read with `queuedIn` BEFORE the queue entry is
@@ -656,9 +697,11 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   reconnect, one path, no flag) and writes with `setQueryData` through the
   boundary functions (`getProjects`, `getActiveRuns`, `getQueue`). It must
   never throw out of the socket callback: failures are `console.warn`ed and
-  swallowed. Enumerate the cached runs entries with `queryKeys.allRuns` and
-  the cached queue entries with `queryKeys.allQueues`, the prefixes in
-  `query-keys.ts`, not an inline `["runs"]` or `["queue"]`. It never reads
+  swallowed. It writes `getActiveRuns()` under `queryKeys.activeRuns`
+  unconditionally (a complete list read from the database, not a one-event
+  seed, so the `current &&` rule above does not apply to it). Enumerate the
+  cached queue entries with `queryKeys.allQueues`, the prefix in
+  `query-keys.ts`, not an inline `["queue"]`. It never reads
   history.
 - One channel, named `adw`, opened by `startRealtime` and started only from
   `Providers`, which is also the only place the `onHistoryChange` option is

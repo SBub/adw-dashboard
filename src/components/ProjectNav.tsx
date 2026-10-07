@@ -4,7 +4,9 @@ import { useSuspenseQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { getProjects } from "@/data";
+import { activeRunsQuery } from "@/data/active-runs-query";
 import { queryKeys } from "@/data/query-keys";
+import { activeRunCounts } from "@/lib/active-runs";
 import { STATUS_COLORS, type StatusKey } from "@/lib/status-colors";
 import type { ProjectSummary } from "@/types/adw";
 import { Timestamp } from "./Timestamp";
@@ -27,7 +29,17 @@ function Count({ status, value }: { status: StatusKey; value: number }) {
   );
 }
 
-function ProjectNavItem({ project, selected }: { project: ProjectSummary; selected: boolean }) {
+function ProjectNavItem({
+  project,
+  running,
+  failed,
+  selected,
+}: {
+  project: ProjectSummary;
+  running: number;
+  failed: number;
+  selected: boolean;
+}) {
   return (
     <li className="w-64 shrink-0 md:w-auto">
       <Link
@@ -45,9 +57,9 @@ function ProjectNavItem({ project, selected }: { project: ProjectSummary; select
         </span>
         <span className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs">
           <Count status="queued" value={project.queued} />
-          <Count status="running" value={project.running} />
+          <Count status="running" value={running} />
           <Count status="completed" value={project.completed} />
-          <Count status="failed" value={project.failed} />
+          <Count status="failed" value={failed} />
         </span>
         <span className="mt-1.5 block text-xs text-neutral-500 dark:text-neutral-400">
           {project.last_run_at ? (
@@ -69,6 +81,12 @@ function ProjectNavItem({ project, selected }: { project: ProjectSummary; select
  * React Query cache where a subscription can update it later. The list itself
  * is prefetched by the server layout and arrives hydrated, so the query below
  * is a cache hit on the first render and the server HTML already holds it.
+ *
+ * The running and failed counts are not the project row's: they are counted
+ * from the one Active entry (activeRunCounts), the same rows /projects and
+ * every project page show, so the three can never disagree. That entry is
+ * read per request and hydrated by the layout's sidebar island around this
+ * component. Queued, completed and last_run_at still come from the row.
  */
 export function ProjectNav() {
   const pathname = usePathname();
@@ -90,10 +108,15 @@ export function ProjectNav() {
     // The hydrated data is stale on arrival; refetching it is the fetch we avoided
     refetchOnMount: false,
   });
+  const { data: counts } = useSuspenseQuery({
+    ...activeRunsQuery,
+    select: (data) => activeRunCounts(data.active),
+  });
 
   // Live updates do not live here. src/data/realtime.ts (started once from
-  // Providers) writes each change into this same cache entry with
-  // queryClient.setQueryData(queryKeys.projects, ...), and React Query re-renders
+  // Providers) writes each change into these same cache entries with
+  // queryClient.setQueryData(queryKeys.projects, ...) and
+  // queryClient.setQueryData(queryKeys.activeRuns, ...), and React Query re-renders
   // this component from the cache; nothing in this file knows about the socket.
 
   if (projects.length === 0) {
@@ -111,6 +134,8 @@ export function ProjectNav() {
           <ProjectNavItem
             key={project.id}
             project={project}
+            running={counts.get(project.id)?.running ?? 0}
+            failed={counts.get(project.id)?.failed ?? 0}
             selected={pathname === `/projects/${project.slug}`}
           />
         ))}

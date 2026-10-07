@@ -6,10 +6,10 @@
 // trigger on adw.runs (the toolkit's supabase/migrations/*_history_webhook.sql)
 // posts here through pg_net whenever a run becomes completed, stops being
 // completed, or a completed run is deleted, whether or not anyone is watching.
-// It then drops the same three cache tags the action drops (the project's
-// history and Active scopes, and the summary page's today scope), so the
-// project's next render, and the next render of the summary page's (`/`)
-// today card, read the database. The summary's past days tag is never dropped.
+// It then drops the same two cache tags the action drops (the project's
+// history scope and the summary page's today scope), so the project's next
+// History render, and the next render of the summary page's (`/`) today
+// card, read the database. Active has no tag: it is read per request. The summary's past days tag is never dropped.
 // See README, "Webhook revalidation".
 //
 // It does nothing else. No database write, no second read beyond resolving

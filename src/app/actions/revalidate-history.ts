@@ -5,8 +5,8 @@ import { historyTags } from "@/lib/history-tags";
 import { isProjectSlug } from "@/lib/slug";
 
 /**
- * Drops the server cache for one project's history and active prefetch, so
- * the next render of that project page reads both from the database.
+ * Drops the server cache for one project's history, so the next render of
+ * that project page reads it from the database.
  *
  * Called from the browser (Providers, through the Realtime listener) right
  * after a run completes: the reducer has already removed the run from the
@@ -14,13 +14,11 @@ import { isProjectSlug } from "@/lib/slug";
  * three, router.refresh(), re-renders the server-rendered History with the new
  * row when that project's page is the route on screen. This step runs for
  * every completion regardless, so the project's next render is fresh for
- * whoever opens it. Three tags, from historyTags in src/lib/history-tags.ts,
- * the one place their spelling lives:
+ * whoever opens it. Two tags, from historyTags in src/lib/history-tags.ts,
+ * the one place their spelling lives (there is no Active tag: Active is read
+ * per request and patched in the browser):
  *
  * - history:<slug>, the "use cache" scope the page renders History from.
- * - runs:<slug>, the "use cache" scope of the Active prefetch, so the refresh
- *   (and the next visitor) does not get an Active list that still contains
- *   the completed run.
  * - the summary page's (`/`) today tag (summaryTodayTag), the "use cache"
  *   scope of the today card, so today's counts include the run. The past days
  *   tag (summaryPastTag) is never dropped: those days are over.
@@ -34,7 +32,7 @@ import { isProjectSlug } from "@/lib/slug";
  * the refresh that follows would be served the old History and the new row
  * would only show on a later visit. The deprecated one-argument revalidateTag
  * behaves like updateTag but is on its way out. The route handler in
- * src/app/api/revalidate/route.ts drops the same three tags for a completion no
+ * src/app/api/revalidate/route.ts drops the same two tags for a completion no
  * browser saw; it cannot use updateTag (Server Actions only) and uses
  * revalidateTag(tag, { expire: 0 }) instead, which has the same effect.
  *

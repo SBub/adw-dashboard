@@ -1,15 +1,16 @@
 // The single boundary between the screens and wherever the data comes from.
 // The pages and components only ever import from "@/data", so wiring a data
 // source is a change to this file alone. Every read is live: the project list
-// comes from the adw.project_summaries view, a project's runs from the
-// adw.runs table and its queue from the adw.queue_items table, through the one
+// comes from the adw.project_summaries view, the runs from the adw.runs table
+// and a project's queue from the adw.queue_items table, through the one
 // Supabase client.
 //
-// A project's runs are read in two halves with two different lifetimes:
+// The runs are read in two halves with two different lifetimes:
 //
 // - Active (status running or failed; a failed run can be resumed, so it is
-//   still live) is a React Query entry, prefetched on the server, hydrated,
-//   and patched in the browser by the Realtime listener. getActiveRuns.
+//   still live) is one React Query entry for every project, read per request
+//   on the server, hydrated, and patched in the browser by the Realtime
+//   listener; each screen narrows it to what it shows. getActiveRuns.
 // - History (status completed) is immutable. It is read one keyset page at a
 //   time and rendered on the server inside a "use cache" scope; every page of
 //   a project shares the one per-project tag, never enters the query cache,
@@ -49,8 +50,10 @@ import type {
 import { getSupabase } from "./supabase";
 
 export interface ActiveRuns {
-  project: ProjectSummary;
-  /** Runs with status "running" or "failed", most recently updated first. */
+  /**
+   * Every visible project's runs with status "running" or "failed", most
+   * recently updated first.
+   */
   active: Run[];
   /**
    * ISO timestamp of the moment the rows were read. Nothing in the UI reads it
@@ -108,7 +111,7 @@ export async function getProjects(): Promise<ProjectSummary[]> {
 /**
  * The project row for a slug (the same shape getProjects returns, so the header
  * and the sidebar agree), or null for an unknown slug. RLS limits it to public
- * projects. Shared by the runs and queue reads below.
+ * projects. Shared by the history and queue reads below.
  */
 async function getProjectBySlug(slug: string): Promise<ProjectSummary | null> {
   const { data, error } = await getSupabase()
@@ -152,39 +155,29 @@ export async function getProjectSlug(projectId: string): Promise<string | null> 
 }
 
 /**
- * One project with its live runs (status running or failed), or null for an
- * unknown slug.
+ * Every visible project's live runs (status running or failed), most recently
+ * updated first. One read of adw.runs, filtered to the two live statuses in
+ * SQL; RLS limits the rows to public projects. Completed runs are not read
+ * here: they are history, served by getCompletedRuns from a server-rendered
+ * cache scope. No label is derived from the current time anywhere (removed
+ * pending issue #3); the screens render the rows as stored, and each screen
+ * narrows the one list itself (src/lib/active-runs.ts).
  *
- * Also the queryFn for queryKeys.runs(slug): it runs on the server during the
- * page's prefetch (and at build time, through it, for every slug in
- * generateStaticParams), and in the browser only when the cache has nothing
- * under that key, which the hydration makes rare.
+ * Also the queryFn of queryKeys.activeRuns (activeRunsQuery in
+ * active-runs-query.ts). On the server it runs only inside getActiveRunsState
+ * (active-runs-state.ts), after connection(), so at request time and never in
+ * a prerender pass; nothing it returns is frozen into the static shell. In
+ * the browser it runs on a cache miss and in the realtime catch-up.
  *
- * Two reads. The project comes from adw.project_summaries by slug, and a
- * missing row is the not-found case. The runs come from adw.runs by
- * project_id, filtered to the two live statuses in SQL, most recently updated
- * first. Completed runs are not read here: they are history, served by
- * getCompletedRuns from a server-rendered cache scope. No label is derived
- * from the current time anywhere (removed pending issue #3); the screens
- * render the rows as stored.
- *
- * fetched_at is the one clock read in the data layer. On the server this
- * function runs inside the page's "use cache" scope (getRunsState), where
- * Cache Components permits reading the current time: the value is cached with
- * the rows and every visitor sees the same one until the entry is refilled.
- * Reading it outside a cache scope would fail the prerender
- * (next-prerender-current-time), so on the server this function must only be
- * called from inside one. In the browser (the queryFn on a cache miss, the
- * realtime catch-up) the clock read is unconstrained.
+ * fetched_at is the one clock read in the data layer. On the server it is
+ * allowed because it only ever runs after connection() (a clock read before
+ * it would fail the prerender, next-prerender-current-time); in the browser
+ * the clock read is unconstrained.
  */
-export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
-  const project = await getProjectBySlug(slug);
-  if (project === null) return null;
-
+export async function getActiveRuns(): Promise<ActiveRuns> {
   const { data, error } = await getSupabase()
     .from("runs")
     .select(RUN_COLUMNS)
-    .eq("project_id", project.id)
     .in("status", ["running", "failed"])
     .order("updated_at", { ascending: false });
   if (error) {
@@ -192,7 +185,6 @@ export async function getActiveRuns(slug: string): Promise<ActiveRuns | null> {
   }
 
   return {
-    project,
     // The selected columns are exactly the fields of Run, so this cast is the
     // one place the table's shape is asserted (getCompletedRuns casts the same
     // select).
@@ -232,8 +224,8 @@ function countOf({ count, error }: { count: number | null; error: { message: str
  * One page of a project's completed runs, at most `HISTORY_PAGE_SIZE` in the
  * display order `updated_at desc, adw_id desc`, with its position (page N of
  * M) and the cursors of its two arrows; page 1 of 1 with no rows for an
- * unknown slug (the page has already decided not-found from getActiveRuns by
- * the time this is called).
+ * unknown slug (the page has already decided not-found from the project list
+ * by the time this is called).
  *
  * Keyset in either direction, never an offset: `bookmark` (null for page one)
  * is already decoded and validated by the caller outside the cache scope
@@ -307,7 +299,7 @@ export async function getCompletedRuns(
  * One project's queued items (state queued), in ledger order: position, then
  * issue_number so equal positions (a move in progress) still sort the same
  * way every time. An empty list for an unknown slug: the page has already
- * decided not-found from getActiveRuns by the time this is read.
+ * decided not-found from the project list by the time this is read.
  *
  * Also the queryFn for queryKeys.queue(slug). On the server it runs only
  * inside the page's "use cache" scope (getQueueState); in the browser on a
