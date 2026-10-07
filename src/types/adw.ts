@@ -2,8 +2,9 @@
 // tables column for column; keep them in lockstep with the schema. The second
 // section holds what the data layer reads from a view or assembles for a
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
-// DailySummary (the daily_summary columns the page reads) and the summary
-// page's report (assembled by toSummaryReport in src/lib/daily-summary.ts).
+// DailySummary (the daily_summary columns the page reads), DailyModelSummary
+// (the daily_model_summary columns) and the summary page's report (assembled
+// by toSummaryReport in src/lib/daily-summary.ts).
 // Runs and queue items have
 // no view model; the screens render Run and QueueItem rows as stored (the
 // clock-dependent labels are removed pending issue #3).
@@ -108,6 +109,27 @@ export interface DailySummary {
   cost_usd_sum: number;
 }
 
+/**
+ * One row of the adw.daily_model_summary view: one project's usage of one
+ * model (`model` is the id, such as `claude-opus-4-1-20250805`) on one UTC
+ * calendar day. Unlike DailySummary, `day` is the day of runs.started_at, not
+ * finished_at, so a run spanning midnight UTC lands on different days in the
+ * two views. The four token columns are the toolkit's split (fresh input,
+ * cache read, cache creation, output); `runs` counts the runs that used the
+ * model. Runs that published no per-model metrics are absent.
+ */
+export interface DailyModelSummary {
+  project_id: string;
+  day: string;
+  model: string;
+  runs: number;
+  input: number;
+  cache_read: number;
+  cache_creation: number;
+  output: number;
+  cost_usd: number;
+}
+
 /** A project as the summary page names it: its slug and display name. */
 export interface SummaryProject {
   slug: string;
@@ -121,26 +143,42 @@ export interface SummaryProjectDay extends DailySummary {
 }
 
 /**
+ * One model's usage on one day, summed over the visible projects
+ * (sumModelUsage in src/lib/model-usage.ts). `total` adds the four token
+ * columns.
+ */
+export interface SummaryModel {
+  model: string;
+  runs: number;
+  input: number;
+  cache_read: number;
+  cache_creation: number;
+  output: number;
+  total: number;
+  cost_usd: number;
+}
+
+/**
  * One UTC day of the summary. `totals` adds every count and every sum across
- * the day's projects.
+ * the day's projects. `models` is the day's usage per model summed over the
+ * visible projects, largest total first; empty when no run of that day
+ * published per-model metrics.
  */
 export interface SummaryDay {
   day: string;
   totals: Omit<DailySummary, "project_id">;
   projects: SummaryProjectDay[];
+  models: SummaryModel[];
 }
 
 /**
  * The summary page's model. `from` and `to` bound the window (both
- * `YYYY-MM-DD`, `to` the newest day in the view for the selection), null when
- * the view has no row for it. `project` is the filtered project or null for
- * all; `projects` every project the filter can offer; `rows` newest day first.
+ * `YYYY-MM-DD`, `to` the newest day in the view), null when the view has no
+ * row. `rows` newest day first.
  */
 export interface SummaryReport {
   from: string | null;
   to: string | null;
   days: number;
-  project: SummaryProject | null;
-  projects: SummaryProject[];
   rows: SummaryDay[];
 }

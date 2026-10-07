@@ -1,6 +1,7 @@
 // Folds one Realtime change event on the adw.runs table into the two cache
-// entries it affects: the active runs of the project the run belongs to
-// (applyRunChange) and the project list's counts (applyRunChangeToSummaries),
+// entries it affects: the one Active entry, every visible project's running
+// and failed runs (applyRunChange), and the project list's completed count and
+// last_run_at (applyRunChangeToSummaries),
 // and says whether the event changed the project's history (isHistoryChange),
 // which is server-rendered and never in the cache. All three are pure: they
 // never touch the cache, the client or the clock, they just return the next
@@ -19,41 +20,56 @@ function isActive(status: RunStatus): boolean {
 }
 
 /**
- * The status the cached active runs hold for `adwId`, or undefined when the
- * run is not among them (it is completed, or was never loaded). The realtime
- * module reads this BEFORE applying the change, so the counts reducer can be
- * told what status it is leaving: Supabase sends `old` with only the primary
- * key columns unless the table's replica identity is FULL, so an UPDATE or
- * DELETE event does not carry the previous status.
+ * Whether `run` is the run with this primary key. adw_id is only unique within
+ * a project, so the entry, which holds every project's runs, is always
+ * matched on both columns.
  */
-export function runStatusIn(current: ActiveRuns | null | undefined, adwId: string) {
-  if (!current) return undefined;
-  return current.active.find((run) => run.adw_id === adwId)?.status;
+function isRun(run: Run, projectId: string, adwId: string): boolean {
+  return run.project_id === projectId && run.adw_id === adwId;
 }
 
-function without(runs: Run[], adwId: string): Run[] {
+/**
+ * The status the cached active runs hold for the run (`projectId`, `adwId`),
+ * or undefined when the run is not among them (it is completed, or the entry
+ * is not loaded). The realtime module reads this BEFORE applying the change,
+ * so the counts reducer and isHistoryChange can be told what status it is
+ * leaving: Supabase sends `old` with only the primary key columns unless the
+ * table's replica identity is FULL, so an UPDATE or DELETE event does not
+ * carry the previous status.
+ */
+export function runStatusIn(
+  current: ActiveRuns | null | undefined,
+  projectId: string,
+  adwId: string,
+) {
+  if (!current) return undefined;
+  return current.active.find((run) => isRun(run, projectId, adwId))?.status;
+}
+
+function without(runs: Run[], projectId: string, adwId: string): Run[] {
   // Same array back when nothing was removed, so the untouched list keeps its
   // identity and React skips re-rendering its rows.
-  const next = runs.filter((run) => run.adw_id !== adwId);
+  const next = runs.filter((run) => !isRun(run, projectId, adwId));
   return next.length === runs.length ? runs : next;
 }
 
 /**
- * Returns the project's active runs after applying `ev`:
+ * Returns the active runs of every project after applying `ev`. A run is
+ * matched on its primary key, (project_id, adw_id), never on adw_id alone:
  *
  * - INSERT prepends the row when its status is running or failed (the list is
- *   newest first) and ignores a completed row (that is history). If a run with
- *   that adw_id is already in the list the input is returned unchanged, so a
- *   replayed or duplicated event cannot create a second row.
- * - UPDATE replaces the row with the same adw_id in place while its status is
+ *   newest first) and ignores a completed row (that is history). If the run is
+ *   already in the list the input is returned unchanged, so a replayed or
+ *   duplicated event cannot create a second row.
+ * - UPDATE replaces the row with the same key in place while its status is
  *   running or failed (a failed run set back to running stays where it was),
  *   and REMOVES it when the new status is completed: the run has left the live
  *   set and belongs to the server-rendered history now (see isHistoryChange
  *   for what the caller does about that). A live run that is in the list of
  *   nobody is added as if inserted: the event carries the full row, and
  *   leaving it out would keep the pane behind the database for the session.
- * - DELETE removes the run whose adw_id is `ev.old.adw_id`. The runs primary
- *   key is (project_id, adw_id), so both are present in `old` under the
+ * - DELETE removes the run keyed by `ev.old.project_id` and `ev.old.adw_id`.
+ *   That is the runs primary key, so both are present in `old` under the
  *   default replica identity; nothing else is relied on.
  *
  * `fetched_at` is kept as is: it records when the rows were read, which a
@@ -65,15 +81,15 @@ export function applyRunChange(current: ActiveRuns, ev: RunChange): ActiveRuns {
   switch (ev.eventType) {
     case "INSERT": {
       if (!isActive(ev.new.status)) return current;
-      if (runStatusIn(current, ev.new.adw_id) !== undefined) return current;
+      if (runStatusIn(current, ev.new.project_id, ev.new.adw_id) !== undefined) return current;
       return { ...current, active: [ev.new, ...current.active] };
     }
     case "UPDATE": {
-      const adwId = ev.new.adw_id;
-      const previousIndex = current.active.findIndex((run) => run.adw_id === adwId);
+      const { project_id: projectId, adw_id: adwId } = ev.new;
+      const previousIndex = current.active.findIndex((run) => isRun(run, projectId, adwId));
       if (!isActive(ev.new.status)) {
         if (previousIndex === -1) return current;
-        return { ...current, active: without(current.active, adwId) };
+        return { ...current, active: without(current.active, projectId, adwId) };
       }
       const active = [...current.active];
       if (previousIndex === -1) active.unshift(ev.new);
@@ -81,10 +97,10 @@ export function applyRunChange(current: ActiveRuns, ev: RunChange): ActiveRuns {
       return { ...current, active };
     }
     case "DELETE": {
-      const adwId = ev.old.adw_id;
-      if (adwId === undefined) return current;
-      if (runStatusIn(current, adwId) === undefined) return current;
-      return { ...current, active: without(current.active, adwId) };
+      const { project_id: projectId, adw_id: adwId } = ev.old;
+      if (projectId === undefined || adwId === undefined) return current;
+      if (runStatusIn(current, projectId, adwId) === undefined) return current;
+      return { ...current, active: without(current.active, projectId, adwId) };
     }
   }
 }
@@ -115,18 +131,25 @@ export function isHistoryChange(ev: RunChange, previousStatus: RunStatus | undef
 
 /**
  * Returns the project list after a runs event, with the matching project's
- * counts and last_run_at adjusted. The counts come from the
- * adw.project_summaries view, which the projects listener never sees change
- * (a run event does not touch adw.projects), so they are maintained here by
- * status delta:
+ * completed count and last_run_at adjusted. The running and failed counts are
+ * never touched here: the sidebar counts them from the Active entry
+ * (activeRunCounts in src/lib/active-runs.ts), so they cannot disagree with
+ * the rows. The view's own running and failed columns are left as read.
  *
- * - INSERT: +1 for the new row's status.
- * - UPDATE: -1 for `oldStatus` and +1 for the new status. When `oldStatus`
- *   is unknown (the project's runs are not cached, or the run was not among
- *   them) the counts are left alone: without the previous status a delta
- *   cannot be computed, and guessing +1 would inflate a count on every phase
- *   heartbeat. The next catch-up (see realtime.ts) or page load corrects them.
- * - DELETE: -1 for `oldStatus`, or no change when it is unknown.
+ * The completed count comes from the adw.project_summaries view, which the
+ * projects listener never sees change (a run event does not touch
+ * adw.projects), so it is maintained here:
+ *
+ * - INSERT: +1 when the new row is completed.
+ * - UPDATE: +1 when the new status is completed and `oldStatus` is running or
+ *   failed (the run was in the Active entry, so this is the moment it
+ *   completed). When `oldStatus` is unknown the run was not active, so it was
+ *   already completed (a correction to a history row) or the entry is not
+ *   loaded; guessing +1 would inflate the count on every such update. The next
+ *   catch-up (see realtime.ts) or page load corrects it.
+ * - DELETE: no change. The event does not say whether the deleted run was
+ *   completed (`old` holds the primary key only, and a completed run is never
+ *   in the Active entry).
  *
  * `last_run_at` is the view's max(runs.updated_at), so on INSERT and UPDATE
  * it moves forward to `ev.new.updated_at` when that is later; a DELETE never
@@ -141,34 +164,23 @@ export function applyRunChangeToSummaries(
   ev: RunChange,
   oldStatus: RunStatus | undefined,
 ): ProjectSummary[] {
-  const projectId = ev.eventType === "DELETE" ? ev.old.project_id : ev.new.project_id;
-  if (projectId === undefined) return current;
+  if (ev.eventType === "DELETE") return current;
+  const projectId = ev.new.project_id;
   if (!current.some((project) => project.id === projectId)) return current;
+
+  const completes =
+    ev.new.status === "completed" &&
+    (ev.eventType === "INSERT" || (oldStatus !== undefined && isActive(oldStatus)));
 
   return current.map((project) => {
     if (project.id !== projectId) return project;
     const next = { ...project };
-    switch (ev.eventType) {
-      case "INSERT":
-        next[ev.new.status] += 1;
-        break;
-      case "UPDATE":
-        if (oldStatus !== undefined) {
-          next[oldStatus] = Math.max(0, next[oldStatus] - 1);
-          next[ev.new.status] += 1;
-        }
-        break;
-      case "DELETE":
-        if (oldStatus !== undefined) next[oldStatus] = Math.max(0, next[oldStatus] - 1);
-        break;
-    }
-    if (ev.eventType !== "DELETE") {
-      // Parsed, not compared as strings: the view and the event may format the
-      // same instant differently (fraction digits, "+00:00" against "Z").
-      const updatedAt = ev.new.updated_at;
-      if (next.last_run_at === null || Date.parse(updatedAt) > Date.parse(next.last_run_at)) {
-        next.last_run_at = updatedAt;
-      }
+    if (completes) next.completed += 1;
+    // Parsed, not compared as strings: the view and the event may format the
+    // same instant differently (fraction digits, "+00:00" against "Z").
+    const updatedAt = ev.new.updated_at;
+    if (next.last_run_at === null || Date.parse(updatedAt) > Date.parse(next.last_run_at)) {
+      next.last_run_at = updatedAt;
     }
     return next;
   });

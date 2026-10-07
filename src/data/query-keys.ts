@@ -8,27 +8,29 @@ export const queryKeys = {
   /** The project list: the layout's prefetch, ProjectNav, and realtime.ts. */
   projects: ["projects"] as const,
   /**
-   * The prefix every runs key starts with. Not a key anything is stored under;
-   * it is what realtime.ts hands queryCache.findAll to enumerate the runs
-   * entries present in the cache (React Query matches keys by prefix).
+   * The one Active entry: every visible project's running and failed runs.
+   * Prefetched per request by getActiveRunsState, read (through
+   * activeRunsQuery) by ProjectNav, ActiveRunsOverview and ActiveRunsView,
+   * each narrowing it with a select, and written by the runs listener and the
+   * catch-up in realtime.ts. There is no per-project runs key.
    */
-  allRuns: ["runs"] as const,
+  activeRuns: ["active-runs"] as const,
   /**
-   * One project's runs, by slug. The slug is part of the hash; the page
-   * assembles it once from the `owner` and `repo` params and every caller
-   * passes it as is.
-   */
-  runs: (slug: string) => ["runs", slug] as const,
-  /**
-   * The prefix every queue key starts with. Like allRuns, nothing is stored
-   * under it; realtime.ts hands it to queryCache.findAll in the catch-up to
+   * The prefix every queue key starts with. Nothing is stored under it; realtime.ts hands it to queryCache.findAll in the catch-up to
    * enumerate the queue entries present in the cache.
    */
   allQueues: ["queue"] as const,
   /**
    * One project's queued items, by slug: prefetched by the page, read by
-   * QueueView, written by the queue_items listener and the catch-up. Same slug
-   * rule as runs: passed as is.
+   * QueueView, written by the queue_items listener and the catch-up. The slug is
+   * part of the hash; the page assembles it once and every caller passes it
+   * as is.
    */
   queue: (slug: string) => ["queue", slug] as const,
+  /**
+   * The summary page's (`/`) today card, by UTC day: prefetched by the page's
+   * getTodayState, read by TodaySummary. The day is part of the hash, so an
+   * entry can never be read for another day.
+   */
+  summaryToday: (day: string) => ["summary-today", day] as const,
 } as const;

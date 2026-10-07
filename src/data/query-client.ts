@@ -1,6 +1,6 @@
 // The one QueryClient factory, and the one server prefetch built on it. The
-// server prefetches (the layout's project list, a project page's runs and its
-// queue) and the browser provider all build from the factory, so every side of
+// server prefetches (the layout's project list, the per-request Active
+// entry, a project page's queue and the summary's today card) and the browser provider all build from the factory, so every side of
 // the React Query cache agrees on the dehydrate rule. With query-keys.ts it is the whole
 // query layer: the fetchers are the data boundary functions in index.ts
 // themselves.
@@ -28,9 +28,9 @@ export function makeQueryClient(): QueryClient {
 /**
  * The server-side prefetch every `"use cache"` state function wraps: a fresh
  * client, one awaited query, and its dehydrated state. The resolved data is
- * returned next to the state so a caller that needs the value (the page's
- * not-found decision) reads it straight back, rather than digging it out of
- * the dehydrated queries by hash.
+ * returned next to the state so a caller that needs the value reads it
+ * straight back, rather than digging it out of the dehydrated queries by
+ * hash.
  *
  * The await means the query is settled when dehydrate runs, so the HTML holds
  * the data rather than a pending promise. The rejection is deliberately not
@@ -39,7 +39,8 @@ export function makeQueryClient(): QueryClient {
  * serve the fallback with no sign anything went wrong. Letting it throw fails
  * the build or the request loudly instead.
  *
- * Callers run this inside a `"use cache"` scope, so the return value must be
+ * Callers run this inside a `"use cache"` scope (or, for the Active entry,
+ * after connection() in getActiveRunsState), so the return value must be
  * serialisable: DehydratedState is plain JSON, and the data is plain rows (or
  * the plain object getActiveRuns builds from them).
  */

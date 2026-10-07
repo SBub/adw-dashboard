@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { costLabel, summaryHref, tokensLabel } from "@/lib/daily-summary";
+import { costLabel, tokensLabel } from "@/lib/daily-summary";
 import { secondsLabel } from "@/lib/run-view";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import type { SummaryDay, SummaryProjectDay } from "@/types/adw";
@@ -9,7 +8,6 @@ interface ProjectBreakdownTableProps {
   rows: SummaryProjectDay[];
   /** The day's sums over `rows` (`day.totals` from the report); rendered as the Total row, never recomputed here. */
   totals: SummaryDay["totals"];
-  days: number;
   /** The day's display date, for the table's caption. */
   label: string;
 }
@@ -25,7 +23,7 @@ function countClass(n: number, status: "completed" | "failed") {
  * One day's rows per project, each value that project's sum for the day,
  * and a last Total row with the day's sums as given. Scrolls horizontally inside its card on a narrow screen.
  */
-export function ProjectBreakdownTable({ rows, totals, days, label }: ProjectBreakdownTableProps) {
+export function ProjectBreakdownTable({ rows, totals, label }: ProjectBreakdownTableProps) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[44rem] text-sm">
@@ -70,18 +68,14 @@ export function ProjectBreakdownTable({ rows, totals, days, label }: ProjectBrea
               key={row.project_id}
               className="border-b border-neutral-100 last:border-0 dark:border-neutral-900"
             >
-              <td className="px-2 py-1.5">
-                <Link href={summaryHref(days, row.slug)} className="hover:underline">
-                  {row.display_name}
-                </Link>
-              </td>
+              <td className="px-2 py-1.5">{row.display_name}</td>
               <td className={NUM}>{row.runs}</td>
               <td className={`${NUM} ${countClass(row.completed, "completed")}`}>
                 {row.completed}
               </td>
               <td className={`${NUM} ${countClass(row.failed, "failed")}`}>{row.failed}</td>
               <td className="px-2 py-1.5">
-                <ClassDistributionBar counts={row} compact />
+                <ClassDistributionBar counts={row} />
               </td>
               <td className={NUM}>{secondsLabel(row.duration_sum_s)}</td>
               <td className={NUM}>{tokensLabel(row.tokens_in_sum)}</td>
@@ -102,7 +96,7 @@ export function ProjectBreakdownTable({ rows, totals, days, label }: ProjectBrea
             </td>
             <td className={`${NUM} ${countClass(totals.failed, "failed")}`}>{totals.failed}</td>
             <td className="px-2 py-1.5">
-              <ClassDistributionBar counts={totals} compact />
+              <ClassDistributionBar counts={totals} />
             </td>
             <td className={NUM}>{secondsLabel(totals.duration_sum_s)}</td>
             <td className={NUM}>{tokensLabel(totals.tokens_in_sum)}</td>

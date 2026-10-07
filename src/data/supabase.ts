@@ -25,8 +25,11 @@ let client: AdwClient | null = null;
  * The fetch the server-side client uses for its REST calls: the global fetch
  * with `cache: "no-store"` forced on every request.
  *
- * On the server, `fetch` is Next's patched fetch. Every read in src/data runs
- * inside a "use cache" scope (getProjectsState, getRunsState, getHistory), and
+ * On the server, `fetch` is Next's patched fetch. Almost every read in
+ * src/data runs inside a "use cache" scope (getProjectsState, getProject,
+ * getQueueState, getHistory, the summary's two scopes; the Active read runs
+ * per request after connection(), outside any scope, and no-store is simply
+ * correct there), and
  * per node_modules/next/dist/docs/01-app/02-guides/migrating-to-cache-components.md
  * ("`fetch` cache options") fetches inside such a scope are cached
  * automatically: Next stores the response in its own data cache

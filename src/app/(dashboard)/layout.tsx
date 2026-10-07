@@ -4,7 +4,9 @@ import type { ReactNode } from "react";
 import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 import { ProjectNav } from "@/components/ProjectNav";
 import { QueryBoundary } from "@/components/QueryBoundary";
+import { SectionBoundary } from "@/components/SectionBoundary";
 import { getProjects } from "@/data";
+import { getActiveRunsState } from "@/data/active-runs-state";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
 import { Providers } from "../providers";
@@ -39,11 +41,35 @@ async function getProjectsState() {
   return prefetch(queryKeys.projects, getProjects);
 }
 
+/**
+ * The sidebar's list, a request-time island. ProjectNav counts each project's
+ * running and failed runs from the one Active entry, which is read per
+ * request (getActiveRunsState awaits connection(), so this is a hole in the
+ * static shell and never frozen into it) and hydrated here, as the
+ * consumer's own ancestor, so the entry exists before ProjectNav renders.
+ * The page's Active islands call the same function in the same request and
+ * share its one read (React cache()).
+ */
+async function SidebarActiveRuns() {
+  const { state } = await getActiveRunsState();
+
+  return (
+    <HydrationBoundary state={state}>
+      <QueryBoundary
+        fallback={<p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>}
+        detail="The project list did not load."
+      >
+        <ProjectNav />
+      </QueryBoundary>
+    </HydrationBoundary>
+  );
+}
+
 // Master-detail shell shared by "/projects" and "/projects/[owner]/[repo]". The project
 // list is prefetched once here, in a server layout, into a React Query cache
-// that is dehydrated into the HTML and hydrated in the browser, so the sidebar
-// renders with its data on the first paint and never fetches it again on
-// mount. The sidebar is a client component so a later Realtime subscription
+// that is dehydrated into the HTML and hydrated in the browser, and the Active
+// entry is read per request by the sidebar island, so the sidebar renders
+// with its data on the first paint and never fetches either again on mount. The sidebar is a client component so a later Realtime subscription
 // can update the same cache entry in place.
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   // Only the dehydrated state is needed here; the sidebar reads the list from
@@ -64,26 +90,23 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </h2>
             <ConnectionIndicator />
           </div>
-          {/* The HydrationBoundary is scoped to the sidebar because ProjectNav
-              is the only consumer of the dehydrated project list; the page's
-              own boundary hydrates its runs into the same client Providers
-              holds, so nothing below needs to sit inside this one. The
-              fallback shows if the server ever hands over a still-pending
-              query, and in the partial-prerender shell for a slug outside
-              generateStaticParams, where usePathname suspends until request
-              time and the sidebar streams in behind it. A failed browser
-              fetch lands in the boundary's error panel, not in the segment's
-              error.tsx, so the shell stays up. QueryBoundary sits inside
-              Providers, where the query it guards has its client. */}
+          {/* The projects HydrationBoundary is scoped to the sidebar; the
+              /projects overview reads the same entry, which this boundary
+              has already filled in the client Providers holds by the time
+              the page's islands stream in. The list itself is a request-time
+              island (SidebarActiveRuns) under a SectionBoundary: its Suspense
+              is the hole the shell carries as the loading line, and a failed
+              Active read lands in its panel, not in the segment's error.tsx,
+              so the shell stays up. */}
           <HydrationBoundary state={state}>
-            <QueryBoundary
+            <SectionBoundary
               fallback={
                 <p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>
               }
               detail="The project list did not load."
             >
-              <ProjectNav />
-            </QueryBoundary>
+              <SidebarActiveRuns />
+            </SectionBoundary>
           </HydrationBoundary>
         </aside>
         <section className="min-w-0 flex-1">{children}</section>

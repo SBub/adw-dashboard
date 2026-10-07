@@ -32,15 +32,16 @@ export function Providers({ children }: { children: ReactNode }) {
         // A run completed (or a completed run was deleted). The listener has
         // already taken it out of the Active entry (step one of the move);
         // History is server-rendered and not in the cache, so: ask the server
-        // to drop that project's history and active-prefetch tags (step two),
+        // to drop that project's history tag (step two),
         // and only once that has resolved re-render the route (step three),
         // so the refreshed History is read from the database and holds the
         // new row. The order is what makes the refresh useful; the action
         // itself also ships a re-render in its response, the refresh is the
-        // guarantee. On that refresh the Active HydrationBoundary receives a
-        // dehydrated state again; React Query only overwrites an existing
-        // entry when the incoming dataUpdatedAt is newer, see
-        // src/data/hydration.test.ts, so the live entry is never set back.
+        // guarantee. On that refresh the Active islands re-read the entry per
+        // request and their HydrationBoundary receives a dehydrated state
+        // again; React Query only overwrites an existing entry when the
+        // incoming dataUpdatedAt is newer, see src/data/hydration.test.ts, so
+        // the live entry is never set back.
         // A failed action (offline, a deploy in flight) is swallowed: History
         // is stale until the cache lifetime, and nothing else is affected.
         //

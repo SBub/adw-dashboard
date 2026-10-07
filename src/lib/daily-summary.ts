@@ -1,31 +1,25 @@
-// Everything that shapes the summary page (`/`), pure: the two search parameters,
-// the window, the report assembled from adw.daily_summary rows, the class bar's
-// segments and the number labels. No clock, no cache, no IO, so every case is
-// unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The data
-// boundary (getDailySummary in src/data/index.ts) reads the rows and calls
-// toSummaryReport; the components only call the label helpers.
-import { isProjectSlug } from "@/lib/slug";
+// Everything that shapes the summary page (`/`), pure: today's UTC day from a
+// time the caller read, the past window that ends the day before it, the
+// report and the today card assembled from adw.daily_summary rows (and the
+// adw.daily_model_summary rows, summed per model by sumModelUsage in
+// src/lib/model-usage.ts), the class bar's segments, the column charts'
+// class counts and heights, and the number labels. No clock, no cache, no IO, so every
+// case is unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The
+// data boundary (getSummaryPast and getSummaryToday in src/data/index.ts)
+// reads the rows and calls toSummaryReport or toSummaryDay; the components
+// only call the label helpers.
 import type {
+  DailyModelSummary,
   DailySummary,
   SummaryDay,
   SummaryProject,
   SummaryProjectDay,
   SummaryReport,
 } from "@/types/adw";
+import { sumModelUsage } from "./model-usage";
 
-/** The window when `?days` is absent or invalid. */
+/** The window in days the summary page always shows. */
 export const SUMMARY_DEFAULT_DAYS = 30;
-
-/** The widest window `?days` can ask for. */
-export const SUMMARY_MAX_DAYS = 90;
-
-/** The windows the filter form offers. */
-export const SUMMARY_DAY_OPTIONS = [7, 30, 90] as const;
-
-// Static (not built from input), so the lint rule against non-literal regexps
-// is satisfied. Three digits at most: anything longer clamps to the maximum
-// anyway, and a short pattern cannot be made expensive by a caller.
-const DAYS = /^\d{1,3}$/;
 
 const DAY_MS = 86_400_000;
 
@@ -34,22 +28,14 @@ function pad2(value: number): string {
 }
 
 /**
- * The window in days from `?days`: decimal digits only, clamped to
- * [1, SUMMARY_MAX_DAYS]. Anything else (absent, repeated, empty, signed,
- * fractional, not a number) is SUMMARY_DEFAULT_DAYS. Never throws.
+ * The UTC calendar day (`YYYY-MM-DD`) of an epoch in milliseconds. Pure: the
+ * caller passes the time. It is the one place the summary page's request-time
+ * clock read (SummaryContent in src/app/page.tsx) becomes a day, so the past
+ * days and the today card split on the same UTC midnight.
  */
-export function readSummaryDays(raw: string | string[] | undefined): number {
-  if (typeof raw !== "string" || !DAYS.test(raw)) return SUMMARY_DEFAULT_DAYS;
-  return Math.min(SUMMARY_MAX_DAYS, Math.max(1, Number.parseInt(raw, 10)));
-}
-
-/**
- * The project filter from `?project`: the slug when it is one (isProjectSlug),
- * otherwise null, which is all projects (absent, the form's empty "All
- * projects" value, repeated, malformed). Never throws.
- */
-export function readSummaryProject(raw: string | string[] | undefined): string | null {
-  return isProjectSlug(raw) ? raw : null;
+export function utcDay(ms: number): string {
+  const date = new Date(ms);
+  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
 }
 
 /**
@@ -59,8 +45,17 @@ export function readSummaryProject(raw: string | string[] | undefined): string |
  * and leap-day boundaries are the calendar's. No clock is read.
  */
 export function summaryWindowStart(anchor: string, days: number): string {
-  const date = new Date(Date.parse(anchor) - (days - 1) * DAY_MS);
-  return `${date.getUTCFullYear()}-${pad2(date.getUTCMonth() + 1)}-${pad2(date.getUTCDate())}`;
+  return utcDay(Date.parse(anchor) - (days - 1) * DAY_MS);
+}
+
+/**
+ * The `days` days strictly before `today` (`YYYY-MM-DD`): `to` is the day
+ * before today, `from` is `days` days before it, both included. Today is
+ * never inside it; the today card shows it. The data layer's read mirrors it
+ * with `day >= from and day < today`.
+ */
+export function pastDaysWindow(today: string, days: number): { from: string; to: string } {
+  return { from: summaryWindowStart(today, days + 1), to: summaryWindowStart(today, 2) };
 }
 
 /** Adds one numeric field across a day's project rows. */
@@ -89,16 +84,20 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
 }
 
 /**
- * The page model from the view's rows and the visible projects. Rows are
+ * The page model from the views' rows and the visible projects. Rows are
  * grouped by day, newest first; each day's projects are named by project_id
  * (a row whose project is not in `projects` is dropped: RLS hides it) and
  * ordered by runs, then slug. A day's totals add every count and sum (cost
- * rounded to 4 decimals against float noise). Never mutates its inputs.
+ * rounded to 4 decimals against float noise). A day's `models` are its model
+ * rows of visible projects summed per model; a day with model rows but no
+ * daily_summary row is not added (the model view keys on started_at, so such
+ * a day only holds runs that finished later). Never mutates its inputs.
  */
 export function toSummaryReport(
   rows: readonly DailySummary[],
+  modelRows: readonly DailyModelSummary[],
   projects: readonly (SummaryProject & { id: string })[],
-  options: { days: number; project: SummaryProject | null; from: string | null; to: string | null },
+  options: { days: number; from: string | null; to: string | null },
 ): SummaryReport {
   const byId = new Map(projects.map((project) => [project.id, project]));
   const byDay = new Map<string, SummaryProjectDay[]>();
@@ -110,20 +109,53 @@ export function toSummaryReport(
     if (list) list.push(named);
     else byDay.set(row.day, [named]);
   }
+  const modelsByDay = new Map<string, DailyModelSummary[]>();
+  for (const row of modelRows) {
+    if (!byId.has(row.project_id)) continue;
+    const list = modelsByDay.get(row.day);
+    if (list) list.push(row);
+    else modelsByDay.set(row.day, [row]);
+  }
   const days = [...byDay.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
   return {
     from: options.from,
     to: options.to,
     days: options.days,
-    project: options.project,
-    projects: projects.map(({ slug, display_name }) => ({ slug, display_name })),
     rows: days.map((day) => {
       const list = (byDay.get(day) ?? []).sort(
         (a, b) => b.runs - a.runs || (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0),
       );
-      return { day, totals: dayTotals(day, list), projects: list };
+      return {
+        day,
+        totals: dayTotals(day, list),
+        projects: list,
+        models: sumModelUsage(modelsByDay.get(day) ?? []),
+      };
     }),
   };
+}
+
+/**
+ * One day's SummaryDay from the views' rows, assembled by toSummaryReport (so
+ * the same naming, hidden-project drop, ordering, totals and models), or null
+ * when no visible project finished a run that day. Rows of other days are
+ * ignored, in both arrays.
+ * The today card's server prefetch and its browser refetch both return this,
+ * so the two cannot drift. Never mutates its inputs.
+ */
+export function toSummaryDay(
+  rows: readonly DailySummary[],
+  modelRows: readonly DailyModelSummary[],
+  projects: readonly (SummaryProject & { id: string })[],
+  day: string,
+): SummaryDay | null {
+  const report = toSummaryReport(
+    rows.filter((row) => row.day === day),
+    modelRows.filter((row) => row.day === day),
+    projects,
+    { days: 1, from: day, to: day },
+  );
+  return report.rows[0] ?? null;
 }
 
 export type ClassKey = "/feature" | "/bug" | "/chore" | "/patch" | "other";
@@ -137,33 +169,57 @@ export interface ClassSegment {
   width: number;
 }
 
+export interface ClassCount {
+  key: ClassKey;
+  count: number;
+}
+
 /**
- * The stacked class bar's segments in a fixed order (/feature, /bug, /chore,
- * /patch, other), zero counts omitted, offsets and widths in percent. "other"
- * is the runs with no known class. The last segment ends at exactly 100. No
- * runs is no segment.
+ * A day's runs per issue class in a fixed order (/feature, /bug, /chore,
+ * /patch, other), zero counts omitted. "other" is the runs with no known
+ * class, floored at 0. Shared by the class bar and the class column chart.
+ */
+export function classCounts(
+  day: Pick<DailySummary, "runs" | "features" | "bugs" | "chores" | "patches">,
+): ClassCount[] {
+  const known = day.features + day.bugs + day.chores + day.patches;
+  const counts: ClassCount[] = [
+    { key: "/feature", count: day.features },
+    { key: "/bug", count: day.bugs },
+    { key: "/chore", count: day.chores },
+    { key: "/patch", count: day.patches },
+    { key: "other", count: Math.max(0, day.runs - known) },
+  ];
+  return counts.filter(({ count }) => count > 0);
+}
+
+/**
+ * The stacked class bar's segments in classCounts' order, offsets and widths
+ * in percent. The last segment ends at exactly 100. No runs is no segment.
  */
 export function classSegments(
   day: Pick<DailySummary, "runs" | "features" | "bugs" | "chores" | "patches">,
 ): ClassSegment[] {
-  const known = day.features + day.bugs + day.chores + day.patches;
-  const counts: [ClassKey, number][] = [
-    ["/feature", day.features],
-    ["/bug", day.bugs],
-    ["/chore", day.chores],
-    ["/patch", day.patches],
-    ["other", Math.max(0, day.runs - known)],
-  ];
-  const present = counts.filter(([, count]) => count > 0);
-  const total = present.reduce((sum, [, count]) => sum + count, 0);
+  const present = classCounts(day);
+  const total = present.reduce((sum, { count }) => sum + count, 0);
   if (total === 0) return [];
   let offset = 0;
-  return present.map(([key, count], i) => {
+  return present.map(({ key, count }, i) => {
     const width = i === present.length - 1 ? 100 - offset : (count / total) * 100;
     const segment = { key, count, offset, width };
     offset += width;
     return segment;
   });
+}
+
+/**
+ * Each value as a percent of the list's maximum (the maximum is 100, a zero
+ * is 0); all zeros when the maximum is 0. A column chart calls it on its own
+ * values, so each chart scales to its own maximum.
+ */
+export function columnHeights(values: readonly number[]): number[] {
+  const max = Math.max(0, ...values);
+  return values.map((value) => (max === 0 ? 0 : (value / max) * 100));
 }
 
 const TOKEN_UNITS = ["k", "M", "B"] as const;
@@ -190,16 +246,4 @@ export function costLabel(usd: number | null): string {
   if (usd === null) return "n/a";
   if (usd > 0 && usd < 0.01) return "<$0.01";
   return `$${(Math.round(usd * 100) / 100).toFixed(2)}`;
-}
-
-/**
- * The summary URL (`/`) for a window and a project filter, the default window and
- * "all projects" left out of the query string.
- */
-export function summaryHref(days: number, project: string | null): string {
-  const params = new URLSearchParams();
-  if (days !== SUMMARY_DEFAULT_DAYS) params.set("days", String(days));
-  if (project !== null) params.set("project", project);
-  const query = params.toString();
-  return query ? `/?${query}` : "/";
 }

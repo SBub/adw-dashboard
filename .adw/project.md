@@ -71,7 +71,11 @@ pinned hydration rule. There is no component test layer and no Playwright suite;
 change gets its browser evidence from the review phase's screenshots, not from a test.
 
 E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-driven journeys
-(currently `e2e/test_connection_indicator_scope.md`) that the test phase runs through the Playwright
+(currently `e2e/test_connection_indicator_scope.md`, `e2e/test_header_section_active.md`,
+`e2e/test_landing_no_filters.md`, `e2e/test_landing_today_refresh.md`,
+`e2e/test_queue_row_single_line.md`, `e2e/test_section_tooltip_layering.md`,
+`e2e/test_day_card_charts.md`, `e2e/test_active_runs_shared_entry.md` and
+`e2e/test_row_full_title_top_align.md`) that the test phase runs through the Playwright
 MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
@@ -118,10 +122,9 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 ## Review
 
-- Open at `http://localhost:$PORT`: `/` (the summary: heading, filters, day cards with class
-  bars, per-project tables; no sidebar, no pill), `/?project=SBub/issebya-homes-ai-system` (or the
-  first listed project; each day's table holds one project row plus Total), `/projects` (project sidebar plus the "Select a
-  project" panel) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
+- Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, the today card with a
+  Refresh button above the past day cards with their runs-by-class and tokens-by-model charts, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus every active run
+  grouped by project under an `Active` heading, or "No runs in progress." when none) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
   section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
 - The sidebar's connection indicator (dashboard routes only; `/` has none) moves from `connecting` to `live` once the Realtime channel

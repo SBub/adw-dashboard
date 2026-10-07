@@ -14,13 +14,6 @@ const nextConfig: NextConfig = {
   // Next 16 otherwise writes its own AGENTS.md and CLAUDE.md on every `next
   // dev`. This repo keeps those files by hand; see AGENTS.md.
   agentRules: false,
-  // The summary moved from /summary to / (issue #83). Old links and bookmarks
-  // keep working: Next passes the query string (`?days`, `?project`) through
-  // to the destination, and `permanent` answers 308. No page under
-  // src/app/summary/; see AGENTS.md.
-  async redirects() {
-    return [{ source: "/summary", destination: "/", permanent: true }];
-  },
   // Keep a visited project page's dynamic part in the client router cache
   // for five minutes. The History islands are request-time holes (they await
   // searchParams), holes are not prefetched, and the router cache keeps
