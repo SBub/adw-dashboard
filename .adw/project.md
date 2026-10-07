@@ -123,7 +123,7 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 ## Review
 
 - Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, the today card with a
-  Refresh button above the past day cards with their work-by-class and tokens-by-model chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus every active run
+  Refresh button above the past day cards with their work-by-class, tokens-by-model and cost-by-phase chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus every active run
   grouped by project under an `Active` heading, or "No runs in progress." when none) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
   section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.

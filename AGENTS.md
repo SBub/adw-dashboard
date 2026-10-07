@@ -83,8 +83,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   never a `queryFn`. The seventh, `getSummaryToday(today)`, is called on the
   server only from the summary page's `getTodayState` scope and is the
   `queryFn` of `TodaySummary`; it reads no clock (`today` always comes from
-  the caller). Both read `daily_model_summary` for the same days in the same
-  `Promise.all` as their `daily_summary` read. `getProjects`, `getActiveRuns` and
+  the caller). Both read `daily_model_summary` and `daily_phase_summary` for
+  the same days in the same `Promise.all` as their `daily_summary` read. `getProjects`, `getActiveRuns` and
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
@@ -112,14 +112,16 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   reads Supabase itself.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
   `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
-  `daily_summary`, `DailyModelSummary[]` for `daily_model_summary`) in
+  `daily_summary`, `DailyModelSummary[]` for `daily_model_summary`,
+  `DailyPhaseSummary[]` for `daily_phase_summary`) in
   `src/data/index.ts`.
   Those casts are the only place the shapes are asserted; do not add another
   in a page or component. When touching the `runs` select, keep the column
   list equal to the fields of `Run`, `QUEUE_COLUMNS` equal to the fields
   of `QueueItem`, `DAILY_SUMMARY_COLUMNS` equal to the fields of
-  `DailySummary`, and `DAILY_MODEL_SUMMARY_COLUMNS` equal to the fields of
-  `DailyModelSummary`, all in `src/types/adw.ts`.
+  `DailySummary`, `DAILY_MODEL_SUMMARY_COLUMNS` equal to the fields of
+  `DailyModelSummary`, and `DAILY_PHASE_SUMMARY_COLUMNS` equal to the fields
+  of `DailyPhaseSummary`, all in `src/types/adw.ts`.
 - Active is one query entry for every project, `queryKeys.activeRuns`. On
   the server `getActiveRuns` is called only from `getActiveRunsState` in
   `src/data/active-runs-state.ts`: React `cache()` around
@@ -287,9 +289,9 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`) and the view
   model (`ProjectSummary`) in clearly separated sections. Row types mirror the
   schema column for column; `ProjectSummary` is produced by the data layer.
-  `DailySummary` and `DailyModelSummary` mirror the summary views' columns and
-  sit with the view models, beside the report types (`SummaryDay`,
-  `SummaryModel`) assembled from them.
+  `DailySummary`, `DailyModelSummary` and `DailyPhaseSummary` mirror the
+  summary views' columns and sit with the view models, beside the report types
+  (`SummaryDay`, `SummaryModel`, `SummaryPhase`) assembled from them.
   There is no run or queue item view model; do not add one for a label that a component can
   format from the row's own fields.
 - Server components by default; `"use client"` only where the browser must
@@ -308,12 +310,13 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   card from the query cache and refetches it). `HistoryLinks`,
   `RunHistoryList`, `SectionNav`,
   `DailySummaryList`, `SummaryDayCard`, `DayCharts`, `ColumnChart`,
-  `ClassColumnChart`, `ModelColumnChart`, `ClassDistributionBar` and
-  `ProjectBreakdownTable` are components with no state; do not put
+  `ClassColumnChart`, `ModelColumnChart`, `PhaseColumnChart`,
+  `ClassDistributionBar` and `ProjectBreakdownTable` are components with no
+  state; do not put
   `"use client"` on them or give them a filter that needs one.
   `SummaryDayCard`, `DayCharts`, `ColumnChart`, `ClassColumnChart`,
-  `ModelColumnChart`, `ClassDistributionBar` and `ProjectBreakdownTable` are
-  also rendered by the client `TodaySummary`, so they must stay stateless and
+  `ModelColumnChart`, `PhaseColumnChart`, `ClassDistributionBar` and
+  `ProjectBreakdownTable` are also rendered by the client `TodaySummary`, so they must stay stateless and
   free of server-only imports. The left and
   right arrows of `HistoryLinks` are plain `next/link` hrefs that
   `HistoryPagination` builds with `historyHref` and passes in with `page` and
@@ -616,25 +619,32 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   `src/lib/daily-summary.test.ts`; every change to it goes with a test case.
 - Charts are inline SVG or CSS columns with their values also as text; no
   charting library. Class colours come only from `CLASS_FILL`/`CLASS_BG` and
-  model colours only from `MODEL_BG` in `src/lib/chart-colors.ts`; class hues
+  model colours only from `MODEL_BG` and phase colours only from `PHASE_BG`
+  in `src/lib/chart-colors.ts`; class hues
   match `IssueClassBadge`; completed and failed counts use `STATUS_COLORS`.
   The column geometry and labels (`classCounts`, `columnHeights`,
   `barValueInside`, `classLabel`, `shareLabel`) live in
   `src/lib/daily-summary.ts`; each chart scales to its own maximum.
-- Both chart orders are fixed and come from the data shape, never from a sort
-  by value in a component: classes `feature`, `chore`, `bug`, `patch`,
+- All three chart orders are fixed and come from the data shape, never from a
+  sort by value in a component: classes `feature`, `chore`, `bug`, `patch`,
   `other` from `classCounts` (shared with `ClassDistributionBar` through
   `classSegments`), models `Haiku`, `Sonnet`, `Opus`, then any other from
-  `sumModelUsage`. Absent entries are omitted; the components render the
+  `sumModelUsage`, phases `Plan`, `Build`, `Test`, `Review`, `Document` from
+  `sumPhaseUsage` (CI has no cost and is omitted, as is any unknown phase
+  key). Absent entries are omitted; the components render the
   arrays as given.
-- Each day card shows two chart cards under its header, work by class and
-  tokens by model (`DayCharts`), side by side from `sm` and stacked below; the per-project table keeps its compact
-  `ClassDistributionBar`. Model aggregation and names (`modelFamily`,
+- Each day card shows three chart cards under its header, work by class,
+  tokens by model and cost by phase (`DayCharts`), in one row from `lg` and
+  stacked below (at `sm` three cards are too narrow for five columns); the
+  per-project table keeps its compact `ClassDistributionBar`. Model aggregation and names (`modelFamily`,
   `modelShortName`, `sumModelUsage`) live in `src/lib/model-usage.ts`, pure
   and tested in `src/lib/model-usage.test.ts`; every change to it goes with a
+  test case. The phase keys, their order and names (`PHASE_ORDER`,
+  `phaseName`, `sumPhaseUsage`) live only in `src/lib/phase-usage.ts`, pure
+  and tested in `src/lib/phase-usage.test.ts`; every change to it goes with a
   test case. `adw.daily_model_summary` keys on the UTC day of `started_at`,
-  `adw.daily_summary` on `finished_at`; a day with model rows but no finished
-  run gets no card. A column is as wide as its name (`min-w-12`, no fixed
+  `adw.daily_summary` and `adw.daily_phase_summary` on `finished_at`; a day
+  with model or phase rows but no finished run gets no card. A column is as wide as its name (`min-w-12`, no fixed
   width, no `truncate`), so a name is never cut; the plot box is 180px
   (`h-45`) and the value placement (inside the bar or above it) comes only
   from `barValueInside`.

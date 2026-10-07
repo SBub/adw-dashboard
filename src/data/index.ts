@@ -24,8 +24,10 @@
 // getSummaryToday (today only, prefetched by a short-lived scope and refetched
 // in the browser as the today card's queryFn). Each half also reads the
 // adw.daily_model_summary view (usage per project, model and UTC day of
-// runs.started_at) for the same days, in the same Promise.all, for the day
-// cards' tokens by model chart.
+// runs.started_at) and the adw.daily_phase_summary view (usage per project,
+// pipeline phase and UTC day of runs.finished_at) for the same days, in the
+// same Promise.all, for the day cards' tokens by model and cost by phase
+// charts.
 import { pastDaysWindow, toSummaryDay, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
@@ -40,6 +42,7 @@ import {
 import { historySearchFilter } from "@/lib/history-search";
 import type {
   DailyModelSummary,
+  DailyPhaseSummary,
   DailySummary,
   ProjectSummary,
   QueueItem,
@@ -79,6 +82,10 @@ const DAILY_SUMMARY_COLUMNS =
 /** The columns of adw.daily_model_summary the summary page reads, which are exactly the fields of DailyModelSummary. */
 const DAILY_MODEL_SUMMARY_COLUMNS =
   "project_id, day, model, runs, input, cache_read, cache_creation, output, cost_usd";
+
+/** The columns of adw.daily_phase_summary the summary page reads, which are exactly the fields of DailyPhaseSummary. */
+const DAILY_PHASE_SUMMARY_COLUMNS =
+  "project_id, day, phase, runs, input, cache_read, cache_creation, output, cost_usd, duration_s";
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -350,11 +357,11 @@ async function getSummaryProjects(): Promise<{ id: string; slug: string; display
  * project. Today is never in it; the today card shows it (getSummaryToday).
  *
  * `today` comes from the caller, the page's one request-time clock read; this
- * function reads no clock. Three reads in parallel: the projects (to name the
+ * function reads no clock. Four reads in parallel: the projects (to name the
  * rows and drop the hidden ones), the daily_summary rows in the window
  * (pastDaysWindow in src/lib/daily-summary.ts, mirrored here as
- * `day >= from and day < today`) and the daily_model_summary rows in the same
- * window. Assembly is toSummaryReport's.
+ * `day >= from and day < today`), and the daily_model_summary and
+ * daily_phase_summary rows in the same window. Assembly is toSummaryReport's.
  *
  * Server only, and only from the summary page's past days "use cache" scope
  * (getPastDays). Never a queryFn, never in the React Query cache. `days` is
@@ -362,7 +369,7 @@ async function getSummaryProjects(): Promise<{ id: string; slug: string; display
  */
 export async function getSummaryPast(today: string, days: number): Promise<SummaryReport> {
   const { from, to } = pastDaysWindow(today, days);
-  const [projects, rows, modelRows] = await Promise.all([
+  const [projects, rows, modelRows, phaseRows] = await Promise.all([
     getSummaryProjects(),
     getSupabase()
       .from("daily_summary")
@@ -375,6 +382,11 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
       .select(DAILY_MODEL_SUMMARY_COLUMNS)
       .gte("day", from)
       .lt("day", today),
+    getSupabase()
+      .from("daily_phase_summary")
+      .select(DAILY_PHASE_SUMMARY_COLUMNS)
+      .gte("day", from)
+      .lt("day", today),
   ]);
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
@@ -382,12 +394,16 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
   if (modelRows.error) {
     throw new Error(`daily_model_summary: ${modelRows.error.message}`);
   }
-  // The selected columns are exactly the fields of DailySummary and
-  // DailyModelSummary, so these casts are the one place the views' shapes are
-  // asserted for this read.
+  if (phaseRows.error) {
+    throw new Error(`daily_phase_summary: ${phaseRows.error.message}`);
+  }
+  // The selected columns are exactly the fields of DailySummary,
+  // DailyModelSummary and DailyPhaseSummary, so these casts are the one place
+  // the views' shapes are asserted for this read.
   return toSummaryReport(
     (rows.data ?? []) as DailySummary[],
     (modelRows.data ?? []) as DailyModelSummary[],
+    (phaseRows.data ?? []) as DailyPhaseSummary[],
     projects,
     { days, from, to },
   );
@@ -396,8 +412,9 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
 /**
  * The summary page's (`/`) today card: the finished runs of the UTC day
  * `today` (`YYYY-MM-DD`) across every visible project, or null when none has
- * finished a run yet. Three reads in parallel (projects, that day's
- * daily_summary rows and its daily_model_summary rows), assembled by
+ * finished a run yet. Four reads in parallel (projects, that day's
+ * daily_summary rows, its daily_model_summary rows and its
+ * daily_phase_summary rows), assembled by
  * toSummaryDay, so the server prefetch and the browser refetch
  * return the same shape.
  *
@@ -408,10 +425,11 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
  * `today` always comes from the caller.
  */
 export async function getSummaryToday(today: string): Promise<SummaryDay | null> {
-  const [projects, rows, modelRows] = await Promise.all([
+  const [projects, rows, modelRows, phaseRows] = await Promise.all([
     getSummaryProjects(),
     getSupabase().from("daily_summary").select(DAILY_SUMMARY_COLUMNS).eq("day", today),
     getSupabase().from("daily_model_summary").select(DAILY_MODEL_SUMMARY_COLUMNS).eq("day", today),
+    getSupabase().from("daily_phase_summary").select(DAILY_PHASE_SUMMARY_COLUMNS).eq("day", today),
   ]);
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
@@ -419,11 +437,16 @@ export async function getSummaryToday(today: string): Promise<SummaryDay | null>
   if (modelRows.error) {
     throw new Error(`daily_model_summary: ${modelRows.error.message}`);
   }
-  // The selected columns are exactly the fields of DailySummary and
-  // DailyModelSummary, the same casts as in getSummaryPast.
+  if (phaseRows.error) {
+    throw new Error(`daily_phase_summary: ${phaseRows.error.message}`);
+  }
+  // The selected columns are exactly the fields of DailySummary,
+  // DailyModelSummary and DailyPhaseSummary, the same casts as in
+  // getSummaryPast.
   return toSummaryDay(
     (rows.data ?? []) as DailySummary[],
     (modelRows.data ?? []) as DailyModelSummary[],
+    (phaseRows.data ?? []) as DailyPhaseSummary[],
     projects,
     today,
   );
