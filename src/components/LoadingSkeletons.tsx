@@ -144,10 +144,12 @@ function QueueRowSkeleton() {
     <li className="group relative flex gap-3">
       <span
         aria-hidden="true"
-        className={`pointer-events-none absolute top-7 -bottom-10 left-5 border-l group-last:hidden ${STATUS_COLORS.neutral.border}`}
+        className={`pointer-events-none absolute top-[29px] -bottom-[41px] left-5 border-l group-last:hidden ${STATUS_COLORS.neutral.border}`}
       />
-      <div className="flex w-10 shrink-0 justify-center pt-4">
-        <Skeleton round className="relative h-6 w-6" />
+      <div className="flex w-10 shrink-0 justify-center pt-[17px]">
+        <span className="flex h-6 items-center">
+          <Skeleton round className="relative h-5 w-5" />
+        </span>
       </div>
       <div className={`min-w-0 flex-1 ${CARD} p-4`}>
         <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">

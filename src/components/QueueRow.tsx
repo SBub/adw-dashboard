@@ -34,27 +34,32 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
   return (
     <li className="group relative flex gap-3">
       {/* The rail: from this marker's centre to the next row's, through the
-          gutter's centre (the 12px row gap plus the next marker's 28px
+          gutter's centre (the 12px row gap plus the next marker's 29px
           offset). The last row draws none, so the line ends on its marker. */}
       <span
         aria-hidden
-        className={`pointer-events-none absolute top-7 -bottom-10 left-5 border-l group-last:hidden ${STATUS_COLORS.queued.border}`}
+        className={`pointer-events-none absolute top-[29px] -bottom-[41px] left-5 border-l group-last:hidden ${STATUS_COLORS.queued.border}`}
       />
-      {/* The gutter: the marker now, a drag handle later. */}
-      <div className="flex w-10 shrink-0 justify-center pt-4">
-        {isHead ? (
-          <span
-            className={`relative z-10 inline-flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-xs font-medium text-white ${STATUS_COLORS.queued.dot}`}
-          >
-            next
-          </span>
-        ) : (
-          <span
-            className={`relative z-10 inline-flex h-6 w-6 items-center justify-center rounded-full border bg-background text-xs text-neutral-500 tabular-nums dark:text-neutral-400 ${STATUS_COLORS.neutral.border}`}
-          >
-            {position}
-          </span>
-        )}
+      {/* The gutter: the marker now, a drag handle later. Its 24px box sits
+          level with the title's first line box (the card's 1px border plus
+          its 16px padding), and the 20px marker is centred in it, like the
+          status pill. */}
+      <div className="flex w-10 shrink-0 justify-center pt-[17px]">
+        <span className="flex h-6 items-center">
+          {isHead ? (
+            <span
+              className={`relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-xs font-medium text-white ${STATUS_COLORS.queued.dot}`}
+            >
+              next
+            </span>
+          ) : (
+            <span
+              className={`relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full border bg-background px-1 text-xs text-neutral-500 tabular-nums dark:text-neutral-400 ${STATUS_COLORS.neutral.border}`}
+            >
+              {position}
+            </span>
+          )}
+        </span>
       </div>
       <div className="min-w-0 flex-1 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
