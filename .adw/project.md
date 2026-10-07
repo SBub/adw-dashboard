@@ -71,8 +71,8 @@ pinned hydration rule. There is no component test layer and no Playwright suite;
 change gets its browser evidence from the review phase's screenshots, not from a test.
 
 E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-driven journeys
-(currently `e2e/test_connection_indicator_scope.md`, `e2e/test_header_section_active.md` and
-`e2e/test_landing_no_filters.md`) that the test phase runs through the Playwright
+(currently `e2e/test_connection_indicator_scope.md`, `e2e/test_header_section_active.md`,
+`e2e/test_landing_no_filters.md` and `e2e/test_landing_today_refresh.md`) that the test phase runs through the Playwright
 MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
@@ -119,8 +119,8 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 ## Review
 
-- Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, day cards with class
-  bars, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus the "Select a
+- Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, the today card with a
+  Refresh button above the past day cards with class bars, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus the "Select a
   project" panel) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
   section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.

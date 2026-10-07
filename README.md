@@ -127,6 +127,9 @@ HistoryCursor | null }` and `HistoryCursor` is `{ direction: "after" |
 "before"; cursor: string }` (from `src/lib/history-bookmark.ts`)
 - `getQueue(slug): Promise<QueueItem[]>`
 
+The summary page (`/`) reads two more, `getSummaryPast(today, days)` and
+`getSummaryToday(today)` (see "Summary").
+
 Nothing under `src/app/` or `src/components/` imports from anywhere else for
 data; the query keys and the `QueryClient` factory (next section) are cache
 plumbing, not data, and the server action in `src/app/actions/` touches no
@@ -153,15 +156,18 @@ to `notFound()` at request time.
 `src/data/query-keys.ts` and `src/data/query-client.ts` sit beside the boundary
 and are the query layer over it: what the server and the browser share so the
 two sides of the React Query cache cannot drift apart. There are no fetcher
-wrappers; the boundary functions `getProjects`, `getActiveRuns` and `getQueue`
-are the `queryFn`s themselves, passed straight from `@/data` at every call site.
-`getCompletedRuns` is not a `queryFn`: history is server-rendered and never
-enters the query cache.
+wrappers; the boundary functions `getProjects`, `getActiveRuns`, `getQueue`
+and `getSummaryToday` are the `queryFn`s themselves, passed straight from
+`@/data` at every call site. `getCompletedRuns` and `getSummaryPast` are not
+`queryFn`s: history and the summary's past days are server-rendered and never
+enter the query cache.
 
 - `queryKeys` in `query-keys.ts`, the single home of every query key:
   `queryKeys.projects` (`["projects"]`) for the project list and
   `queryKeys.runs(slug)` (`["runs", slug]`) for a project's active runs,
-  `queryKeys.queue(slug)` (`["queue", slug]`) for its queued items, and the two
+  `queryKeys.queue(slug)` (`["queue", slug]`) for its queued items,
+  `queryKeys.summaryToday(day)` (`["summary-today", day]`) for the summary
+  page's today card, and the two
   prefixes `queryKeys.allRuns` (`["runs"]`) and `queryKeys.allQueues`
   (`["queue"]`) that the catch-up enumerates cached entries with. A key is
   imported from there wherever a resource is prefetched, read or written by the
@@ -175,7 +181,8 @@ enters the query cache.
   it builds a client from the factory, awaits `queryClient.query()` and
   returns `{ data, state }`, the resolved value next to `dehydrate()` of the
   client. Every `"use cache"` state function (the layout's `getProjectsState`,
-  the page's `getRunsState` and `getQueueState`) is a one-liner around it, so
+  the project page's `getRunsState` and `getQueueState`, the summary page's
+  `getTodayState`) is a one-liner around it, so
   the prefetches
   cannot drift apart, and a caller that needs the value (the page's not-found
   decision) reads `data` instead of searching the dehydrated queries by hash.
@@ -223,6 +230,12 @@ because the realtime catch-up re-stamps it and issue #3 needs it as the
 clock-free server snapshot. `getCompletedRuns` reads no clock at all: history
 needs no snapshot, and its cache scope exists for the tag, not for a
 clock-read permission.
+
+There is one other argument-less clock read: `utcDay(Date.now())` in the
+summary page's `requestToday` (`src/app/page.tsx`), which turns the request
+time into today's UTC date. It runs only after `await connection()`, so only at
+request time, never in a prerender pass and never in client render, and the
+day it yields is passed down as an argument (see "Summary").
 
 ### Prefetch and hydration of the sidebar
 
@@ -485,9 +498,10 @@ When a run completes, three things happen in the browser, in this order:
    action validates the slug with `isProjectSlug` (`src/lib/slug.ts`, the
    pattern `^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`) and returns early otherwise;
    for a valid slug it calls `updateTag` on each tag of `historyTags(slug)`
-   (`src/lib/history-tags.ts`: `history:<slug>`, `runs:<slug>` and `summary`,
-   the same helpers the pages' `cacheTag` calls use), and nothing else. The
-   third tag is the summary page's (`/`) scope (see "Summary"). The second tag is
+   (`src/lib/history-tags.ts`: `history:<slug>`, `runs:<slug>` and
+   `summary:today`, the same helpers the pages' `cacheTag` calls use), and
+   nothing else. The third tag is the summary page's (`/`) today scope (see
+   "Summary"); its past days tag is never dropped. The second tag is
    the Active prefetch scope: on a full regeneration of the page it keeps the
    refresh (and the next visitor) from getting an Active list that still holds
    the finished run. On a resumed prerender it does not reach that scope (see
@@ -532,7 +546,7 @@ completion someone does see. The route handler `src/app/api/revalidate/route.ts`
 closes that gap from the database side: the toolkit's database tells the
 dashboard about every history change, watched or not, and the handler drops
 the same three tags the action drops (`history:<slug>`, `runs:<slug>` and
-`summary`).
+`summary:today`).
 
 **The trigger.** The toolkit owns the database, so the trigger lives in the
 toolkit repository (`adw-toolkit`, `supabase/migrations/*_history_webhook.sql`,
@@ -663,10 +677,11 @@ marker), so the shell stays the same for every page of History. The build's
 route table shows the project pages as "Partial Prerender" for this reason.
 
 The summary (`/`) is built the same way: its heading, intro and reading note
-are the static shell, and the report island awaits `connection()` before its
-`"use cache"` scope (`getSummary`, tag `summary`); it reads no `searchParams`,
-so `connection()` is its one request-time marker. The report is a
-request-time hole and the route is a partial prerender too.
+are the static shell, and the report island awaits `connection()` before it
+reads today's UTC date and calls its two `"use cache"` scopes (`getTodayState`,
+tag `summary:today`, and `getPastDays`, tag `summary:past`); it reads no
+`searchParams`, so `connection()` is its one request-time marker. The report is
+a request-time hole and the route is a partial prerender too.
 
 Two islands do not mean two reads. `getHistory` is a `"use cache"` function
 keyed by its arguments, the slug, a plain bookmark object and the search text, with the same
@@ -740,7 +755,8 @@ Two caveats of the design:
 - The server action is a public endpoint: anyone who can reach the site can
   call it with any string. That is why it validates the slug strictly and does
   nothing but drop three tags; the worst a caller can do is make the next
-  render of one project page, and of the summary (`/`), read the database once.
+  render of one project page, and of the summary's (`/`) today card, read the
+  database once.
 - A completion nobody is watching is not moved by the browser. The move is
   triggered by a browser that received the event; if no browser had the
   channel open when the run completed, nothing calls the action. The database
@@ -1146,7 +1162,8 @@ nothing from the request, so old filtered links land on the plain page.
 
 ## Summary
 
-`/` shows what the toolkit finished per UTC day, newest first: runs
+`/` shows what the toolkit finished per UTC day, newest first, today on top
+in its own card with a Refresh button: runs
 completed and failed (halted when there are any), the split by issue class as
 an inline-SVG stacked bar with its counts as text. It always covers 30 days
 (`SUMMARY_DEFAULT_DAYS`) across every public project, with a per-project table
@@ -1170,43 +1187,73 @@ sums: `duration_sum_s`, `tokens_in_sum`, `tokens_cache_read_sum`,
 that published metrics and are 0 when none did. Since the toolkit split token
 usage four ways, `tokens_in` is fresh (uncached) input only and small; cache
 read is the large figure, which is why it has its own column.
-`getDailySummary(days)` in `src/data/index.ts` reads the projects, the
-newest `day` in the view and the rows of the window, casts them to
-`DailySummary` (`src/types/adw.ts`), and hands them to `toSummaryReport` in
-`src/lib/daily-summary.ts`, which groups and adds them. Everything that shapes
-the report (the window, the totals, the bar's segments, the
-labels) lives in that file, pure and unit-tested. A day is shown as
+Two reads in `src/data/index.ts` take today's UTC date as an argument:
+`getSummaryPast(today, days)` reads the projects and the rows of the `days`
+days before today (`day >= from and day < today`) and hands them to
+`toSummaryReport`; `getSummaryToday(today)` reads the projects and today's
+rows and hands them to `toSummaryDay`, which returns that one day (or `null`).
+Both cast the rows to `DailySummary` (`src/types/adw.ts`), and both helpers
+live in `src/lib/daily-summary.ts`, which groups and adds the rows. Everything
+that shapes the report (today's day, the window, the totals, the bar's
+segments, the labels) lives in that file, pure and unit-tested. A day is shown as
 `DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
 by `secondsLabel` (`src/lib/run-view.ts`, the same format as a run's
 `durationLabel`); both are pure and read no clock.
 
-**The window.** "Last 30 days" needs a reference day, and reading the clock
-would be a second clock read in the data layer (the one permitted is
-`getActiveRuns`'s `fetched_at`). So the window ends on the newest day in the
-view, and the page states it ("30 days to 05.10.2026"). On
-an active installation that is today; on a quiet one it is the last day with a
-finished run.
+**The window.** The report splits on the current UTC day. `SummaryContent`
+calls `requestToday`, which awaits `connection()` and then reads the clock
+once, `utcDay(Date.now())`
+(the codebase's second argument-less clock read, request time only), and passes
+that `today` to both halves, so they can never disagree on the day. The past
+days are the 30 days strictly before it (`pastDaysWindow`), and the page
+states them ("30 days to 05.10.2026", yesterday); today is the card above. A
+run finished at 23:59 UTC yesterday is a past day, one at 00:01 is today's.
 
 **Totals.** Every value on the page is a sum. The day header's counts and the
 table's Total row are `day.totals`, the sum of the table's own rows
 (`dayTotals` in `src/lib/daily-summary.ts`), passed to `ProjectBreakdownTable`
 as a prop. Nothing is a median.
 
-**Cache.** `getSummary` in `src/app/page.tsx` is `"use cache"`, tagged
-`summary` (`summaryTag()` in `src/lib/history-tags.ts`; one report, one
-entry) with `cacheLife({ stale: 300, revalidate: 900, expire: 86400 })`. It
-is called only from the report island after its `await connection()`, so it
-is a request-time hole (see "What is prerendered and what is not"). Unlike
-History, which reads `searchParams`, the island has no other request-time
-read, so the `connection()` call is required here.
+**Cache.** Two `"use cache"` scopes in `src/app/page.tsx`, both called only
+below the island's `await connection()`, so both are request-time holes (see
+"What is prerendered and what is not"). Unlike History, which reads
+`searchParams`, the island has no other request-time read, so the
+`connection()` call is required here.
 
-**Revalidation.** `historyTags(slug)` includes `summary`, so the
-`revalidateHistory` action and the `/api/revalidate` webhook drop it on every
-completion they handle. Not covered by a tag drop: a run that finishes
+- `getPastDays(today)`, tagged `summary:past` (`summaryPastTag()` in
+  `src/lib/history-tags.ts`), with `cacheLife({ stale: 300, revalidate: 86400,
+expire: 172800 })`. `today` is in the cache key, so every request in one UTC
+  day reads one entry and the first request after midnight builds a new one
+  that includes yesterday: no cron and no tag drop for the rollover. Past days
+  are immutable, so no completion drops this tag; the one-day `revalidate`
+  bounds metrics written after midnight for a run finished just before it.
+- `getTodayState(today)`, tagged `summary:today` (`summaryTodayTag()`), with
+  `cacheLife({ stale: 60, revalidate: 60, expire: 300 })`, a one-liner around
+  `prefetch(queryKeys.summaryToday(today), () => getSummaryToday(today))`. Its
+  dehydrated state is hydrated into `SummaryProviders`
+  (`src/app/summary-providers.tsx`, a bare `QueryClientProvider` over
+  `makeQueryClient()`, no Realtime), mounted only around the today island, so
+  the today card (`TodaySummary`) is in the server HTML.
+
+**Refresh.** The today card's Refresh button calls `refetch()` on its own
+query and nothing else: `getSummaryToday(today)` runs in the browser through
+the same Supabase client (publishable key, RLS) and transfers today's rows and
+the project list, with no request to the app, no `router.refresh()`, no
+server action and no navigation. A failed refetch keeps the last figures and
+shows a retry line. The day is the prop the page rendered with, so a page left
+open across midnight keeps refreshing that day until it is reloaded.
+
+**Revalidation.** `historyTags(slug)` ends in `summary:today`, so the
+`revalidateHistory` action and the `/api/revalidate` webhook drop today's
+scope on every completion they handle, and a fresh visitor sees the run
+without pressing Refresh. Not covered by a tag drop: a run that finishes
 `failed` or `halted` (neither fires the action or the webhook), and tokens and
-cost that the toolkit writes after the completion. The 15-minute `revalidate`
-bounds both. The page is not live: it is outside `(dashboard)`, so no
-Realtime listener refreshes it on screen.
+cost that the toolkit writes after the completion. The 60-second `revalidate`
+of the today scope and the Refresh button bound both. The router cache's
+`staleTimes.dynamic` (300 seconds) is above that `stale`, so a client
+navigation back to `/` within five minutes may show the router-cached today
+card; Refresh is the remedy. The page has no Realtime listener: it is outside
+`(dashboard)`.
 
 ## Running it
 

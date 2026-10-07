@@ -31,4 +31,10 @@ export const queryKeys = {
    * rule as runs: passed as is.
    */
   queue: (slug: string) => ["queue", slug] as const,
+  /**
+   * The summary page's (`/`) today card, by UTC day: prefetched by the page's
+   * getTodayState, read by TodaySummary. The day is part of the hash, so an
+   * entry can never be read for another day.
+   */
+  summaryToday: (day: string) => ["summary-today", day] as const,
 } as const;
