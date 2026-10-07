@@ -35,7 +35,8 @@ export function summaryTodayTag(): string {
 /**
  * The two tags a completion (or the deletion of a completed run) invalidates
  * for a project, history first. The action and the route handler iterate
- * this; see README, "The move" and "Webhook revalidation", and "Summary" for
+ * this; see app_docs/history-revalidation.md ("The move" and "Webhook
+ * revalidation"), and app_docs/summary.md for
  * the today scope (a completion changes today's counts). The past days tag is
  * never here, and there is no Active tag: Active is read per request.
  */
