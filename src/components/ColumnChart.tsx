@@ -67,7 +67,7 @@ export function ColumnChart({ title, idPrefix, columns, summary, empty }: Column
                 aria-label={column.ariaLabel}
                 aria-describedby={detailId}
                 tabIndex={column.detail ? 0 : undefined}
-                className="group relative flex w-12 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
+                className="group relative flex min-w-12 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
               >
                 <span className="text-xs tabular-nums">{column.valueLabel}</span>
                 <span className="flex h-12 items-end">
@@ -76,7 +76,7 @@ export function ColumnChart({ title, idPrefix, columns, summary, empty }: Column
                     style={{ height: `${heights[i] ?? 0}%` }}
                   />
                 </span>
-                <span className="w-full truncate text-center text-xs">{column.name}</span>
+                <span className="whitespace-nowrap text-center text-xs">{column.name}</span>
                 {column.detail && (
                   <span
                     id={detailId}

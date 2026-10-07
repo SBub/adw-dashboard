@@ -19,7 +19,9 @@ So that I can compare days and spot which model carried the work without reading
    one captioned `Tokens by model`, side by side at 1920x1080.
 3. **Verify** the class chart has one column per class with a non-zero count, each with an
    `aria-label` like `/feature: N runs`, the count above and the class name below, and that the
-   counts add up to the header's `N runs`.
+   counts add up to the header's `N runs`. **Verify** each class name below a column is shown in
+   full: the visible text of the `/feature` column's name is `/feature`, not `/feat…`, and with
+   `browser_evaluate` the name span's `scrollWidth <= clientWidth`.
 4. **Verify** the model chart shows columns with a short name (`Opus`, `Sonnet` or `Haiku`, or
    another short id) and a token label above (such as `4.6M`), or the text
    `No per-model usage published.`
@@ -41,7 +43,8 @@ So that I can compare days and spot which model carried the work without reading
 
 - Every day card with runs shows a `Runs by class` and a `Tokens by model` chart under its header,
   side by side on desktop and wrapped without overflow on mobile.
-- Class columns carry their counts as text and as `aria-label`s, and add up to the day's runs.
+- Class columns carry their counts as text and as `aria-label`s, and add up to the day's runs,
+  with the class name shown in full below each column.
 - Model columns show a short name and a token label, and their split is visible on hover or focus;
   a day without per-model metrics says `No per-model usage published.`
 - No class legend under the header; the per-project table keeps its compact class bars.
