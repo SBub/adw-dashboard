@@ -22,7 +22,6 @@ export function ModelColumnChart({ models, day }: ModelColumnChartProps) {
     <ColumnChart
       title="Tokens by model"
       subtitle="All tokens, including cache reads"
-      swatchClass={MODEL_BG.opus}
       idPrefix={`tokens-by-model-${day}`}
       summary={
         models.length === 0

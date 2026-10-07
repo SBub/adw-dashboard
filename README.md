@@ -1210,8 +1210,8 @@ nothing from the request, so old filtered links land on the plain page.
 `/` shows what the toolkit finished per UTC day, newest first, today on top
 in its own card with a Refresh button: runs
 completed and failed (halted when there are any), then two bordered chart
-cards, side by side from 640px and stacked below, each with a coloured square,
-a title and a muted subtitle: "Work by class" ("Runs finished that day", one
+cards, side by side from 640px and stacked below, each with a title and a
+muted subtitle: "Work by class" ("Runs finished that day", one
 column per class present) and "Tokens by model" ("All tokens, including cache
 reads", one column per model). The order is fixed every day and comes from the
 data shape, never from the values: `feature`, `chore`, `bug`, `patch`, `other`

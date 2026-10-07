@@ -20,8 +20,6 @@ interface ColumnChartProps {
   title: string;
   /** One muted line under the title. */
   subtitle: string;
-  /** The caption's square, a full literal class string from src/lib/chart-colors.ts. */
-  swatchClass: string;
   /** Unique on the page; the detail ids derive from it. */
   idPrefix: string;
   columns: ChartColumn[];
@@ -40,13 +38,13 @@ function idPart(value: string): string {
 }
 
 /**
- * A chart card: a bordered figure with a coloured square, a title and a
- * muted subtitle, then CSS columns on a 180px plot (`h-45`) over faint dotted
- * guide lines, each scaled to the chart's own maximum (columnHeights), with
- * rounded tops and a capped width. The value sits inside the bar in white
- * when barValueInside says the bar holds it, otherwise just above the bar;
- * the name sits under the plot beside a dot of the bar's colour. A column
- * with `detail` is focusable and holds a CSS-only popover (group hover and
+ * A chart card: a bordered figure with a title and a muted subtitle, then
+ * CSS columns on a 180px plot (`h-45`) over faint dotted guide lines, each
+ * scaled to the chart's own maximum (columnHeights), with rounded tops and
+ * a capped width. The value sits inside the bar in white when
+ * barValueInside says the bar holds it, otherwise just above the bar; the
+ * name sits under the plot beside a dot of the bar's colour. A column with
+ * `detail` is focusable and holds a CSS-only popover (group hover and
  * focus-within, like SectionHeading's), always in the DOM and referenced by
  * `aria-describedby`. Stateless and without "use client": it computes no
  * business value and is rendered by the client TodaySummary too.
@@ -54,7 +52,6 @@ function idPart(value: string): string {
 export function ColumnChart({
   title,
   subtitle,
-  swatchClass,
   idPrefix,
   columns,
   summary,
@@ -65,10 +62,7 @@ export function ColumnChart({
   return (
     <figure className="min-w-0 rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
       <figcaption className="mb-3">
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-sm ${swatchClass}`} />
-          <span className="text-sm font-medium">{title}</span>
-        </span>
+        <span className="block text-sm font-medium">{title}</span>
         <span className="block text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</span>
       </figcaption>
       <p className="sr-only">{summary}</p>
