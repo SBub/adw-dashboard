@@ -43,11 +43,13 @@ function idPart(value: string): string {
  * scaled to the chart's own maximum (columnHeights), with rounded tops and
  * a capped width. The value sits inside the bar in white when
  * barValueInside says the bar holds it, otherwise just above the bar; the
- * name sits under the plot beside a dot of the bar's colour. Columns grow
- * from their content with a 48px floor on the plot (`min-w-12`), and the
- * name wraps under its dot only when the column is narrower than both; five
- * or more columns take a 4px gap, so the row fits a one-third card at 1024px
- * and a stacked card at 375px. A column with
+ * name sits under the plot beside a dot of the bar's colour. Every column
+ * takes an equal grid slot of at most 80px (`minmax(0, 5rem)`), never sized
+ * from its name; the bar is capped at 56px and centred in its slot, so
+ * adjacent bars are equally spaced. A name wider than its slot wraps under
+ * its dot and then inside the word, never widening the slot; five or more
+ * columns take a 4px gap, so the row fits a one-third card at 1024px and a
+ * stacked card at 375px. A column with
  * `detail` is focusable and holds a CSS-only popover (group hover and
  * focus-within, like SectionHeading's), always in the DOM and referenced by
  * `aria-describedby`. Stateless and without "use client": it computes no
@@ -86,7 +88,10 @@ export function ColumnChart({
               />
             ))}
           </div>
-          <ul className={`relative flex items-start justify-center ${gap}`}>
+          <ul
+            className={`relative grid items-start justify-center ${gap}`}
+            style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 5rem))` }}
+          >
             {columns.map((column, i) => {
               const detailId = column.detail
                 ? `${idPart(idPrefix)}-${idPart(column.key)}-detail`
@@ -99,9 +104,9 @@ export function ColumnChart({
                   aria-label={column.ariaLabel}
                   aria-describedby={detailId}
                   tabIndex={column.detail ? 0 : undefined}
-                  className="group relative flex max-w-20 grow flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
+                  className="group relative flex min-w-0 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
                 >
-                  <span className="flex h-45 w-full min-w-12 flex-col items-center justify-end">
+                  <span className="flex h-45 w-full flex-col items-center justify-end">
                     {!inside && (
                       <span data-value-placement="above" className="mb-1 text-xs tabular-nums">
                         {column.valueLabel}
@@ -121,12 +126,12 @@ export function ColumnChart({
                       )}
                     </span>
                   </span>
-                  <span className="mt-2 flex flex-wrap items-center justify-center gap-1 text-center text-xs">
+                  <span className="mt-2 flex w-full min-w-0 flex-wrap items-center justify-center gap-1 text-center text-xs">
                     <span
                       aria-hidden="true"
                       className={`size-2 shrink-0 rounded-full ${column.colorClass}`}
                     />
-                    {column.name}
+                    <span className="min-w-0 wrap-anywhere">{column.name}</span>
                   </span>
                   {column.detail && (
                     <span
