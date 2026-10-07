@@ -1397,4 +1397,8 @@ Next.js 16 (App Router), React 19, TypeScript 5.9 strict, Tailwind CSS v4 via
 active runs; history is server-rendered),
 `@supabase/supabase-js` for Realtime, vitest for unit tests. No component or
 icon library. Light and dark themes follow the system
-preference through Tailwind's `dark:` variants.
+preference through Tailwind's `dark:` variants. The page colour is defined once,
+as `--background` and `--foreground` in `src/app/globals.css`, painted on both
+`html` and `body` with `color-scheme: light dark` (so the canvas, scrollbar
+gutter and overscroll match the content), and exposed to Tailwind as
+`bg-background` for an element that must match it.

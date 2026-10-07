@@ -355,6 +355,15 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   same test file). Do not
   introduce `toLocaleString`, `Intl` or runtime-time-zone formatting, and every
   change to the format goes with a test case.
+- The page background is defined only in `src/app/globals.css` (the
+  `--background` and `--foreground` tokens, switched by
+  `prefers-color-scheme`, with `color-scheme: light dark` on `:root`) and
+  painted only on `html` and `body`. `html` must keep it: the canvas, the
+  scrollbar gutter and the overscroll area are painted from the root. No
+  page-level wrapper (`body` classes, `main`, a layout shell, a page root)
+  takes a `bg-` class, and an element that must match the page colour (the
+  queue rail's hollow marker) uses `bg-background`, never a copied
+  `bg-white dark:bg-neutral-950`.
 - Status colours come only from `STATUS_COLORS` in `src/lib/status-colors.ts`
   (queued amber, running emerald with the pulse dot, completed sky, failed
   rose, `neutral` for zeros), written as full literal class strings so
