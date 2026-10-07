@@ -578,7 +578,8 @@ app is, how to run it, scripts) lives in `README.md`, not here.
   and tested in `src/lib/model-usage.test.ts`; every change to it goes with a
   test case. `adw.daily_model_summary` keys on the UTC day of `started_at`,
   `adw.daily_summary` on `finished_at`; a day with model rows but no finished
-  run gets no card.
+  run gets no card. A column is as wide as its name (`min-w-12`, no fixed
+  width, no `truncate`), so `/feature` is never cut; the plot box stays `h-12`.
 - The today card is a React Query entry under `SummaryProviders`, but not a
   live section: no Realtime reducer, no catch-up read and no `setQueryData`
   touch it. Its Refresh button calls `refetch()` on that query only; never
