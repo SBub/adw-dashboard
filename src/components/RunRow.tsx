@@ -47,7 +47,7 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
   return (
     <li className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
       <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="flex min-w-0 flex-1 flex-wrap items-start gap-x-3 gap-y-2">
           {run.issue_number !== null ? (
             <a
               href={`https://github.com/${projectSlug}/issues/${run.issue_number}`}
@@ -58,19 +58,25 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
               #{run.issue_number}
             </a>
           ) : (
-            <span className="text-sm text-neutral-400 dark:text-neutral-600">no issue</span>
+            <span className="text-sm leading-6 text-neutral-400 dark:text-neutral-600">
+              no issue
+            </span>
           )}
           {run.issue_title !== null && (
-            <span className="min-w-0 flex-1 basis-40 truncate text-sm" title={run.issue_title}>
+            <span className="min-w-0 flex-1 basis-40 wrap-break-word text-sm leading-6">
               {run.issue_title}
             </span>
           )}
-          <IssueClassBadge issueClass={run.issue_class} />
-          <code className="font-mono text-xs text-neutral-500 dark:text-neutral-400">
+          {run.issue_class ? (
+            <span className="flex h-6 items-center">
+              <IssueClassBadge issueClass={run.issue_class} />
+            </span>
+          ) : null}
+          <code className="font-mono text-xs leading-6 text-neutral-500 dark:text-neutral-400">
             {run.adw_id}
           </code>
           {variant === "active" && (
-            <span className="ml-auto text-xs text-neutral-500 dark:text-neutral-400">
+            <span className="ml-auto text-xs leading-6 text-neutral-500 dark:text-neutral-400">
               Updated <Timestamp value={run.updated_at} />
             </span>
           )}

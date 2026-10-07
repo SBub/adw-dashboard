@@ -358,11 +358,13 @@ above the queue rail markers (`z-10`) and anything else positioned below a
 heading.
 
 Each run row shows the issue title (`adw.runs.issue_title`, published by the
-toolkit) after the issue number, on one line truncated with an ellipsis; runs
-published before the toolkit wrote it have no title and show the number alone.
-The title keeps a 10rem flex basis, so on a narrow screen the issue class badge
-and the `adw_id` wrap to the next line instead of squeezing the title to a
-single character; the full text is in the span's `title` attribute.
+toolkit) in full after the issue number, wrapping onto as many lines as it
+needs (a long unbroken token such as a URL or a path breaks too), with every
+other element of the row (the class badge, the `adw_id`, `Updated <time>` and
+the status pill) top-aligned on the title's first line; runs published before
+the toolkit wrote it have no title and show the number alone. The title keeps a
+10rem flex basis, so on a narrow screen the issue class badge and the `adw_id`
+wrap to the next line instead of squeezing the title to a single character.
 
 The project page renders its header and Active like this:
 
@@ -426,7 +428,10 @@ The project page renders its header and Active like this:
    `queued_at`, and a retry restamps it without moving the item. Beside the
    marker, the card holds the issue number as a GitHub
    link, the title (omitted when `null`), the source hint and `Queued <time>`
-   (`none` when `queued_at` is `null`), then the status pill, all on one line.
+   (`none` when `queued_at` is `null`), then the status pill, in one row: the
+   title shown in full and wrapping, every element top-aligned on its first
+   line. The rail line runs from marker centre to marker centre whatever the
+   card's height.
    The source is parsed from the stored `source` column by `queueSource` in
    `src/lib/queue-source.ts`: `manual` renders a `manual` badge plus a visible
    hint that removing the label does not remove the item, since a manually
