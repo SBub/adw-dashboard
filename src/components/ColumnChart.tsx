@@ -43,7 +43,11 @@ function idPart(value: string): string {
  * scaled to the chart's own maximum (columnHeights), with rounded tops and
  * a capped width. The value sits inside the bar in white when
  * barValueInside says the bar holds it, otherwise just above the bar; the
- * name sits under the plot beside a dot of the bar's colour. A column with
+ * name sits under the plot beside a dot of the bar's colour. Columns grow
+ * from their content with a 48px floor on the plot (`min-w-12`), and the
+ * name wraps under its dot only when the column is narrower than both; five
+ * or more columns take a 4px gap, so the row fits a one-third card at 1024px
+ * and a stacked card at 375px. A column with
  * `detail` is focusable and holds a CSS-only popover (group hover and
  * focus-within, like SectionHeading's), always in the DOM and referenced by
  * `aria-describedby`. Stateless and without "use client": it computes no
@@ -58,6 +62,7 @@ export function ColumnChart({
   empty,
 }: ColumnChartProps) {
   const heights = columnHeights(columns.map((column) => column.value));
+  const gap = columns.length >= 5 ? "gap-1" : "gap-2 sm:gap-4";
 
   return (
     <figure className="min-w-0 rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
@@ -81,7 +86,7 @@ export function ColumnChart({
               />
             ))}
           </div>
-          <ul className="relative flex items-start justify-center gap-2 sm:gap-4">
+          <ul className={`relative flex items-start justify-center ${gap}`}>
             {columns.map((column, i) => {
               const detailId = column.detail
                 ? `${idPart(idPrefix)}-${idPart(column.key)}-detail`
@@ -94,9 +99,9 @@ export function ColumnChart({
                   aria-label={column.ariaLabel}
                   aria-describedby={detailId}
                   tabIndex={column.detail ? 0 : undefined}
-                  className="group relative flex max-w-20 min-w-12 flex-1 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
+                  className="group relative flex max-w-20 grow flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
                 >
-                  <span className="flex h-45 w-full flex-col items-center justify-end">
+                  <span className="flex h-45 w-full min-w-12 flex-col items-center justify-end">
                     {!inside && (
                       <span data-value-placement="above" className="mb-1 text-xs tabular-nums">
                         {column.valueLabel}
@@ -116,7 +121,7 @@ export function ColumnChart({
                       )}
                     </span>
                   </span>
-                  <span className="mt-2 flex items-center gap-1 whitespace-nowrap text-xs">
+                  <span className="mt-2 flex flex-wrap items-center justify-center gap-1 text-center text-xs">
                     <span
                       aria-hidden="true"
                       className={`size-2 shrink-0 rounded-full ${column.colorClass}`}

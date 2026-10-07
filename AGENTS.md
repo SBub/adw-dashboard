@@ -644,8 +644,11 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   and tested in `src/lib/phase-usage.test.ts`; every change to it goes with a
   test case. `adw.daily_model_summary` keys on the UTC day of `started_at`,
   `adw.daily_summary` and `adw.daily_phase_summary` on `finished_at`; a day
-  with model or phase rows but no finished run gets no card. A column is as wide as its name (`min-w-12`, no fixed
-  width, no `truncate`), so a name is never cut; the plot box is 180px
+  with model or phase rows but no finished run gets no card. A column grows from its content with a 48px floor
+  (`min-w-12` on its plot box, no fixed width, no `truncate`), so a name is
+  never cut: when the column is narrower than its dot and name, the name
+  wraps under the dot, and a chart with five or more columns uses `gap-1` so
+  the row fits a one-third card at `lg` and a stacked card at 375px; the plot box is 180px
   (`h-45`) and the value placement (inside the bar or above it) comes only
   from `barValueInside`.
 - The today card is a React Query entry under `SummaryProviders`, but not a

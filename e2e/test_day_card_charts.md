@@ -53,11 +53,16 @@ which column
     contains `Work by class`, `Tokens by model` and `Cost by phase`.
 11. Take a screenshot at 1920x1080.
 12. Resize to 1024x768 and **Verify** the three cards still share one row (the same `top`) with no
-    horizontal page overflow (`document.documentElement.scrollWidth <= window.innerWidth`). Take a
-    screenshot at 1024x768.
+    horizontal page overflow (`document.documentElement.scrollWidth <= window.innerWidth`).
+    **Verify** with `browser_evaluate` that the `Cost by phase` figure's `ul` and every one of its
+    `li`s and name rows (`li > span.mt-2`) lie inside the figure's content box (the figure's
+    `getBoundingClientRect()` inset by its border and padding: each `left >=` the content left and
+    each `right <=` the content right, 0.5px tolerance), and that no two name rows overlap (each
+    one's `right <=` the next one's `left`). Take a screenshot at 1024x768.
 13. Resize to 375x667 and **Verify** the three cards are stacked (each figure's `top` is at or
     below the previous figure's `bottom`) with no horizontal page overflow
-    (`document.documentElement.scrollWidth <= window.innerWidth`).
+    (`document.documentElement.scrollWidth <= window.innerWidth`). **Verify** the same
+    `Cost by phase` containment and no-overlap check as in step 12.
 14. Take a screenshot at 375x667. The colour scheme follows the OS; note which one the screenshots
     show, no toggle is needed.
 
@@ -74,6 +79,8 @@ which column
 - Labels under the bars are text with a colour dot, shown in full.
 - Model tooltips show the token split and the cost; phase tooltips show the token split, the time
   and the runs, on hover and on keyboard focus; class tooltips show the runs and the share.
+- The phase chart's five columns and their names stay inside their card's content box, without
+  overlapping, at 1024px and at 375px.
 - The per-project table keeps its compact class bars.
 - All three charts are in the server HTML.
 - 3 screenshots are taken.
