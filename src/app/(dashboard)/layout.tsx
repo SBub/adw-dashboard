@@ -2,6 +2,7 @@ import { HydrationBoundary } from "@tanstack/react-query";
 import { cacheTag } from "next/cache";
 import type { ReactNode } from "react";
 import { ConnectionIndicator } from "@/components/ConnectionIndicator";
+import { ProjectNavSkeleton } from "@/components/LoadingSkeletons";
 import { ProjectNav } from "@/components/ProjectNav";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { SectionBoundary } from "@/components/SectionBoundary";
@@ -55,10 +56,7 @@ async function SidebarActiveRuns() {
 
   return (
     <HydrationBoundary state={state}>
-      <QueryBoundary
-        fallback={<p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>}
-        detail="The project list did not load."
-      >
+      <QueryBoundary fallback={<ProjectNavSkeleton />} detail="The project list did not load.">
         <ProjectNav />
       </QueryBoundary>
     </HydrationBoundary>
@@ -95,14 +93,14 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               has already filled in the client Providers holds by the time
               the page's islands stream in. The list itself is a request-time
               island (SidebarActiveRuns) under a SectionBoundary: its Suspense
-              is the hole the shell carries as the loading line, and a failed
+              is the hole the shell carries as the sidebar skeleton
+              (ProjectNavSkeleton, the same element as the inner
+              QueryBoundary's, never both at once), and a failed
               Active read lands in its panel, not in the segment's error.tsx,
               so the shell stays up. */}
           <HydrationBoundary state={state}>
             <SectionBoundary
-              fallback={
-                <p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>
-              }
+              fallback={<ProjectNavSkeleton />}
               detail="The project list did not load."
             >
               <SidebarActiveRuns />

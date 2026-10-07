@@ -284,7 +284,7 @@ fetches it again on mount:
    prerender, and whatever has not rendered yet is served as its Suspense
    fallback and rendered in the browser instead. With any numeric `staleTime`
    React Query reads the clock in `isStaleByTime` on every render, so the
-   sidebar would ship as "Loading..." in the static HTML. `"static"` returns
+   sidebar would ship as its skeleton in the static HTML. `"static"` returns
    before that read, and it suits this list: it changes only when something
    writes it with `setQueryData`, never on a timer. Note that
    `invalidateQueries` and `refetchQueries` skip static queries; updates go
@@ -295,7 +295,8 @@ fetches it again on mount:
    request-time island, `SidebarActiveRuns`, under a `SectionBoundary` inside
    the projects `HydrationBoundary` (next section). The `Projects` heading and
    the connection pill are in the static HTML; the list streams in behind the
-   boundary's "Loading..." line.
+   boundary's skeleton (`ProjectNavSkeleton`, three placeholder cards; the
+   inner `QueryBoundary` takes the same element).
 
 ### Prefetch and hydration of the Active runs
 
@@ -381,11 +382,16 @@ The project page renders its header and Active like this:
    refills (15 minutes, or `revalidateTag("projects")`), the lifetime the
    sidebar already has.
 3. It renders `PageHeader` (the project's name, slug and repository link)
-   itself, then a `SectionBoundary` ("Loading runs...") around
+   itself, then a `SectionBoundary` around
    `ProjectActiveRuns`, an async server component that awaits
    `getActiveRunsState()` (per request, see "Prefetch and hydration of the
    Active runs") and renders `<HydrationBoundary state={state}>` around
    `<QueryBoundary><ActiveRunsView projectId slug heading queue /></QueryBoundary>`.
+   Both boundaries take the same fallback element, built by the page:
+   `ActiveRunsViewSkeleton` with the real Active heading and two skeleton run
+   rows, then `QueueViewSkeleton` with the real Queue heading and two
+   skeleton rail rows. The headings are therefore in the static shell at their
+   final position while the rows stream in.
 
    The queue is a second entry beside it. A `"use cache"` function,
    `getQueueState(slug)`, returns
@@ -395,7 +401,7 @@ The project page renders its header and Active like this:
    `Promise.all`, so the two reads do not waterfall; the not-found decision
    reads only the project. The queue gets its own
    `<HydrationBoundary state={queue.state}>` around its own
-   `<QueryBoundary fallback="Loading queue..."><QueueView slug={slug} heading={queueHeading} /></QueryBoundary>`,
+   `<QueryBoundary fallback={<QueueViewSkeleton heading={queueHeading} />}><QueueView slug={slug} heading={queueHeading} /></QueryBoundary>`,
    passed to `ActiveRunsView` as its `queue` slot, which renders it after the
    Active section: the Queue sits below Active, and a failed queue read shows
    its panel in that slot while the header and Active stay up. The page builds the Queue and Active
@@ -453,11 +459,13 @@ History is rendered below that, by the same page:
    `controls` slot holds the `HistorySearchBox` island, right after the
    title, in a `SectionBoundary` (fallback the same box, disabled; detail
    "Search did not load."), and whose `actions` slot holds the
-   `HistoryPagination` island in another (fallback `null`, detail
+   `HistoryPagination` island in another (fallback `HistoryLinksSkeleton`,
+   the two arrow slots and an "N of M" bar; detail
    "Pagination did not load."), at the right edge of the row and, below
    `md`, on a second line, right-aligned. Below the row, the
-   `CompletedRuns` island sits in a third `SectionBoundary` (fallback
-   "Loading history...", detail "This project's history did not load.").
+   `CompletedRuns` island sits in a third `SectionBoundary` (fallback a
+   `RunListSkeleton` of `HISTORY_PAGE_SIZE` history rows, detail "This
+   project's history did not load.").
    The islands are async server components in the page file; each awaits the
    page's `searchParams`. `HistorySearchBox` normalises `?q` and hands it to
    the client `HistorySearch` as its initial text; the other two decode
@@ -529,7 +537,7 @@ History is rendered below that, by the same page:
    still expires every one, and both arrows carry `q`, so paging stays
    inside the search, and `N of M` counts only the matching runs. `HistoryTransition` shares the box's transition with
    `HistoryResults`, which dims the list while the new page streams in
-   instead of falling back to "Loading history...".
+   instead of falling back to its skeleton.
 
 #### The move: how a completion crosses from Active to History
 
@@ -712,15 +720,15 @@ Data Cache. So is the History heading, which the page renders outside any
 boundary, and on `/projects` the `Active` heading. The Active islands (the
 sidebar list, `/projects`' list and the project page's Active section) are
 **request-time holes**: they await `getActiveRunsState()`, which awaits
-`connection()`, so the shell carries their "Loading..." lines and the rows
+`connection()`, so the shell carries their skeletons and the rows
 stream in on every request. The three History
 islands (`HistorySearchBox`, `HistoryPagination` and `CompletedRuns`) are
 **request-time holes**: each awaits `searchParams` (the latter two before
 `getHistory`; the search island calls no cache scope and only needs `?q` for
 its initial text), a request-time read that stops prerendering at the
 island's own `SectionBoundary`, so the shell carries a disabled box in the
-search slot, nothing in the pagination slot and "Loading history..." for the
-list, and all three stream in on each server request (a client navigation back to a page seen
+search slot, a pagination skeleton in the pagination slot and a skeleton of
+the history rows for the list, and all three stream in on each server request (a client navigation back to a page seen
 within the last five minutes makes no request; see "Client router cache"
 below). They are the only readers of `searchParams` (for
 `?after`, `?before` and `?q`), and there is no `connection()` call (it would be a redundant second
@@ -824,8 +832,8 @@ exists should leave History on the next render rather than at cache expiry.
 One rendering detail to know when reading the served HTML of a pre-rendered
 project page. Active and History both stream in behind their Suspense
 boundaries on every request (see "What is prerendered and what is not"), so
-in the served document the "Loading runs..." and "Loading history..."
-fallbacks sit at their sections' positions, the rendered rows follow in
+in the served document the Active and History skeletons (`aria-busy="true"`
+containers) sit at their sections' positions, the rendered rows follow in
 hidden segments, and React's inline `$RC` script swaps them in as the
 document parses, before any bundle loads and without a fetch. That is not the
 query cache (the views' queries are cache hits during the server render,
@@ -838,7 +846,7 @@ a client component during the prerender produces.
 `experimental.staleTimes.dynamic` is 300 seconds in `next.config.ts`. Holes
 are not prefetched, and the router cache would otherwise keep dynamic content
 for 0 seconds, so every sidebar navigation would make an RSC request for the
-page's dynamic part and flash "Loading history...". With the window, a project
+page's dynamic part and flash the History skeleton. With the window, a project
 page visited within it is rendered from the client router cache on a sidebar
 navigation, with no RSC request and no History fallback; after the window, the
 next navigation refetches the dynamic part. Two paths keep it correct. For the
@@ -1178,7 +1186,9 @@ the build, and splits each slug into an `{ owner, repo }` pair; an empty list
 yields the placeholder pair `_` / `none`, because an empty result fails the
 build under `cacheComponents`); a slug that is not in that list still renders
 on demand. The segment's `loading.tsx` is the Suspense boundary
-that lets the shell prerender while the page streams in, and its `error.tsx` is
+that lets the shell prerender while the page streams in (its fallback is
+`ProjectPageSkeleton`, a skeleton of the header, Active, Queue and History),
+and its `error.tsx` is
 the client error boundary (message, digest, Retry) for anything the page body
 throws. A failure inside one of the pane's own boundaries (`QueryBoundary`
 around Active, `SectionBoundary` around History) stays in that section and

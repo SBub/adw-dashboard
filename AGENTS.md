@@ -257,6 +257,25 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   prerender on a project page outside `generateStaticParams`. Its fallback is
   the same link inactive, never a spinner or an empty node. No other
   `Suspense` may be bare.
+- Every loading fallback on the projects side (the sidebar, `/projects`,
+  the project page and its `loading.tsx`) is a skeleton from
+  `src/components/LoadingSkeletons.tsx`, built on the one `Skeleton`
+  primitive in `src/components/Skeleton.tsx` (a neutral surface,
+  `motion-safe:animate-pulse` so reduced motion gets static blocks, always
+  `aria-hidden`), inside a `role="status"` container with `aria-busy="true"`
+  and an `aria-label`; never a "Loading..." line, a spinner or `null`. No
+  other element takes the pulse class for a placeholder. A skeleton mirrors
+  its component's box classes (border, radius, padding, gaps) and line
+  count, with each text line a bar as tall as its line box, and changes in
+  the same commit as that component; `src/components/LoadingSkeletons.test.ts`
+  pins the row and field counts, the labels and the reduced-motion rule.
+  Nested boundaries around the same component (the outer `SectionBoundary`
+  and the inner `QueryBoundary`) take the same element, never two stacked.
+  The project page's Active fallback carries the real Active and Queue
+  headings (the page builds them before the boundary), so they are in the
+  static shell. `HistorySearchFallback` stays the real box, disabled, not a
+  skeleton, and the error panels are unchanged. The summary page (`/`) and
+  `HeaderLink`'s fallback are not part of this rule.
 - `queryClient.prefetchQuery` and `prefetchInfiniteQuery` are deprecated in
   the installed React Query; use `queryClient.query()` and `infiniteQuery()`.
   Do not swallow their rejection on the server prefetch: an empty dehydrated
@@ -311,7 +330,8 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   `RunHistoryList`, `SectionNav`,
   `DailySummaryList`, `SummaryDayCard`, `DayCharts`, `ColumnChart`,
   `ClassColumnChart`, `ModelColumnChart`, `PhaseColumnChart`,
-  `ClassDistributionBar` and `ProjectBreakdownTable` are components with no
+  `ClassDistributionBar`, `ProjectBreakdownTable`, `Skeleton` and the
+  skeletons in `LoadingSkeletons.tsx` are components with no
   state; do not put
   `"use client"` on them or give them a filter that needs one.
   `SummaryDayCard`, `DayCharts`, `ColumnChart`, `ClassColumnChart`,
