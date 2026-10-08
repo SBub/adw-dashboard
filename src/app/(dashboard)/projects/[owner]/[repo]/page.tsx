@@ -315,7 +315,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           ; removing the label withdraws it.
         </>
       }
-      detail="Items added by hand show a manual marker; those stay until removed by hand. The numbers follow the queue ledger's order, so moving an item changes them."
+      detail="Items added by hand stay until removed by hand. The numbers follow the queue ledger's order, so moving an item changes them."
     />
   );
   const activeHeading = (
