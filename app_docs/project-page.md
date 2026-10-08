@@ -127,8 +127,10 @@ History is rendered below that, by the same page:
 5. `getHistory(slug, bookmark, q)` is a second `"use cache"` function in the
    page, tagged `history:<slug>`, with an explicit
    `cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 })`, that
-   returns `getCompletedRuns(slug, bookmark, q)`: one page of plain rows, no
-   clock read, no React Query. The page renders the History heading row
+   returns `getCompletedRuns(slug, bookmark, q)`: one page of plain rows plus
+   `costs`, each shown run's cost, read by `getCompletedRuns` inside the same
+   tagged `"use cache"` scope (so the costs drop with `history:<slug>`
+   together with the rows), no clock read, no React Query. The page renders the History heading row
    itself, statically: a `SectionHeading` whose `<h2>History</h2>`,
    description and info button sit outside every boundary, and whose
    `controls` slot holds the `HistorySearchBox` island, right after the
@@ -149,8 +151,9 @@ History is rendered below that, by the same page:
    `HistoryLinks` with the two arrow links (`newerHref`, `olderHref`, built
    with `historyHref`, `null` when there is nothing in that direction) and
    the page's `page` and `pageCount`; `CompletedRuns` renders `RunHistoryList` with
-   the page's `items`, the slug and the empty-state text ("No completed runs
-   yet.", or "No completed runs match ..." during a search). Each boundary keeps Active and the other
+   the page's `items` and `costs`, the slug and the empty-state text ("No completed runs
+   yet.", or "No completed runs match ..." during a search), and
+   `RunHistoryList` passes each run's cost to its `RunRow`. Each boundary keeps Active and the other
    island on screen when its island fails: if `getHistory` throws (database
    down, an RLS change), the boundary shows its panel ("Could not load.", its
    detail, Retry) in its own slot, instead of the segment's `error.tsx`
@@ -163,9 +166,11 @@ History is rendered below that, by the same page:
    and `src/components/RunHistoryList.tsx` are server components with no
    state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant shows Branch (in
-   full, spanning two columns), Finished and Duration, on one row from `sm`
-   and stacked at 375px, in a 4-column grid that leaves room for two more
-   one-column fields on the next row; it has no `completed` pill, no `Final
+   full, spanning two of the 4 `sm` columns), Finished, Duration and Cost
+   (only when the run has a metrics row, formatted by `costLabel`), on one
+   row from `lg` (a grid where Branch takes the flexible width and Finished,
+   Duration and Cost their content width, so Finished is never ellipsized;
+   at `sm` the 4-column grid puts Cost on a second row) and stacked at 375px; it has no `completed` pill, no `Final
 phase` and no `Started`.
 
    History is paged three runs at a time. The URL of a later page carries
@@ -247,7 +252,8 @@ phase` and no `Started`.
   `STATUS_COLORS.neutral.border`.
 - History is server-rendered and never enters the React Query cache. It is
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
-  ``cacheTag(`history:${slug}`)``) and rendered by the page's two async
+  ``cacheTag(`history:${slug}`)``), and so are the shown runs' costs, by the
+  same call, never in the query cache, and rendered by the page's two async
   islands, `HistoryPagination` and `CompletedRuns`, each under its own
   `SectionBoundary` (the third island, `HistorySearchBox`, reads only `?q`
   and no history rows). No `queryKeys` entry, no `useSuspenseQuery`, no

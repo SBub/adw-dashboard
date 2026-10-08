@@ -149,8 +149,8 @@ export function RunRow({ run, projectSlug, variant, cost }: RunRowProps) {
           </Field>
         </dl>
       ) : (
-        <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4 lg:grid-cols-5">
-          <Field label="Branch" wrap className="sm:col-span-2">
+        <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+          <Field label="Branch" wrap className="sm:col-span-2 lg:col-span-1">
             <Branch branch={run.branch_name} projectSlug={projectSlug} />
           </Field>
           <Field label="Finished">
