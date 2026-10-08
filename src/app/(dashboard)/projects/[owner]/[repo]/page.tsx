@@ -321,8 +321,8 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const activeHeading = (
     <SectionHeading
       title="Active"
-      description="Runs in progress, and runs that failed and can be resumed. Each run plans, builds, tests, reviews and documents a change, then opens a pull request. The row updates live as phases complete."
-      detail="A failed run keeps its branch and can be resumed from the phase that failed, which is why it stays here rather than in history."
+      description="Runs in progress, and runs that failed and are not resolved yet. Each run plans, builds, tests, reviews and documents a change, then opens a pull request. The row updates live as phases complete."
+      detail="A failed run keeps its branch and stays here, not in history, until it is run again."
     />
   );
 

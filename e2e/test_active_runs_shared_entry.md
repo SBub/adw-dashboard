@@ -1,8 +1,8 @@
 # E2E Test: Active Runs Shared Entry
 
-Checks that `/projects` lists every active run (running, and failed that can be resumed) grouped
-by project, and that the sidebar's `running` and `failed` counts and a project page's Active
-section show the same runs, because all three read one shared Active entry.
+Checks that `/projects` lists every active run (running, and failed that are not resolved
+yet) grouped by project, and that the sidebar's `running` and `failed` counts and a project page's
+Active section show the same runs, because all three read one shared Active entry.
 
 ## User Story
 
