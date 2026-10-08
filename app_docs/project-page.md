@@ -6,6 +6,7 @@
 - specs/issue-134-adw-b6fb710c-sdlc_planner-remove-halted-from-summary.md
 - specs/issue-137-adw-b37d7caa-sdlc_planner-simplify-queue-row-layout.md
 - specs/issue-146-adw-7a7f315b-sdlc_planner-show-history-run-cost.md
+- specs/issue-148-adw-d2fdf4c1-sdlc_planner-history-page-turn-keep-scroll.md
 
 ## Overview
 
@@ -193,7 +194,13 @@ phase` and no `Started`.
    left arrow is `?before=` of the first shown row, or page one itself when
    the newer rows fit on one page, so the head of the list is always the full
    page one. A missing arrow keeps its slot, and the whole row is absent when
-   there is a single page. `N of M` is never in the URL: `N` is one plus the
+   there is a single page. A page turn keeps the scroll position: the arrows
+   (`src/components/HistoryPageLink.tsx`) push the new URL with
+   `scroll: false` (each page stays in the browser history) inside the
+   shared `HistoryTransition`, and `HistoryResults` dims the list
+   (`aria-busy="true"`) until the new rows arrive. The arrows remain real
+   links, so middle-click and open in a new tab use the same URL. `N of M`
+   is never in the URL: `N` is one plus the
    count of newer completed runs divided by the page size (rounded up), `M`
    is the total divided by the page size (rounded up, never less than `N`),
    both counted in the same cached `getHistory` entry as the rows. Every page
@@ -219,7 +226,7 @@ phase` and no `Started`.
    when the text is an integer, ANDed with the keyset filter. Each search is
    its own cache entry under the same `history:<slug>` tag, so a completion
    still expires every one, and both arrows carry `q`, so paging stays
-   inside the search, and `N of M` counts only the matching runs. `HistoryTransition` shares the box's transition with
+   inside the search, and `N of M` counts only the matching runs. `HistoryTransition` shares the transition of the box and the arrows with
    `HistoryResults`, which dims the list while the new page streams in
    instead of falling back to its skeleton.
 

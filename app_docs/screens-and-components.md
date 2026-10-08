@@ -122,8 +122,9 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `ConnectionIndicator`, which subscribes to its store, `HeaderLink`, which
   reads the pathname to mark the header's current section, `HistorySearch`, which
   holds the search box's local text and calls the router, and
-  `HistoryTransition`, which holds the one `useTransition` the box and
-  `HistoryResults` share, `SummaryProviders` in `src/app/summary-providers.tsx`,
+  `HistoryPageLink`, which navigates the History pages inside the shared
+  History transition, and `HistoryTransition`, which holds the one
+  `useTransition` the box, the arrows and `HistoryResults` share, `SummaryProviders` in `src/app/summary-providers.tsx`,
   the summary page's bare query client, and `TodaySummary`, which reads today's
   card from the query cache and refetches it). `HistoryLinks`,
   `RunHistoryList`, `SectionNav`,
@@ -137,10 +138,11 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `ModelColumnChart`, `PhaseColumnChart`, `ClassDistributionBar` and
   `ProjectBreakdownTable` are also rendered by the client `TodaySummary`, so they must stay stateless and
   free of server-only imports. The left and
-  right arrows of `HistoryLinks` are plain `next/link` hrefs that
+  right arrows of `HistoryLinks` are `HistoryPageLink`s with the hrefs
   `HistoryPagination` builds with `historyHref` and passes in with `page` and
-  `pageCount` (`null` hides an arrow); do not decode a bookmark, build a URL
-  or compute a page number in the component. The page number is derived from
+  `pageCount` (`null` hides an arrow); a plain click pushes the href with
+  `scroll: false` inside the shared transition. Do not decode a bookmark,
+  build a URL or compute a page number in either component. The page number is derived from
   the counts in the cached page and never carried in the URL.
   `HistorySearch` builds its URL only through `historyHref(slug, null, q)`
   (page one, so `?after` and `?before` are dropped), never by hand, from `usePathname` or
