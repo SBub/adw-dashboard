@@ -33,8 +33,8 @@ export default function ProjectsPage() {
     <section className="mb-10">
       <SectionHeading
         title="Active"
-        description="Runs in progress, and runs that failed and can be resumed, across every project. Each row updates live as phases complete."
-        detail="A failed run keeps its branch and can be resumed from the phase that failed, which is why it stays here rather than in history."
+        description="Runs in progress, and runs that failed and are not resolved yet, across every project. Each row updates live as phases complete."
+        detail="A failed run keeps its branch and stays here, not in history, until it is run again."
       />
       <SectionBoundary fallback={<ActiveRunsOverviewSkeleton />} detail="Active runs did not load.">
         <AllActiveRuns />
