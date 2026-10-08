@@ -4,7 +4,8 @@
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
 // DailySummary (the daily_summary columns the page reads), DailyModelSummary
 // (the daily_model_summary columns), DailyPhaseSummary (the
-// daily_phase_summary columns) and the summary page's report (assembled by
+// daily_phase_summary columns), RunMetrics (the run_metrics columns the
+// History page reads) and the summary page's report (assembled by
 // toSummaryReport in src/lib/daily-summary.ts).
 // Runs and queue items have
 // no view model; the screens render Run and QueueItem rows as stored (the
@@ -109,6 +110,17 @@ export interface DailySummary {
   tokens_cache_read_sum: number;
   tokens_out_sum: number;
   cost_usd_sum: number;
+}
+
+/**
+ * The columns of one adw.run_metrics row the History page reads: one run's
+ * total cost in US dollars. The table holds one row per run (keyed by
+ * project_id and adw_id) with tokens and a per-phase breakdown too; a run
+ * that published no metrics has no row.
+ */
+export interface RunMetrics {
+  adw_id: string;
+  cost_usd: number;
 }
 
 /**

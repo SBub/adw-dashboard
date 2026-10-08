@@ -1,9 +1,9 @@
 # E2E Test: History Card Fields
 
-Checks that a History run card shows only Branch, Finished and Duration (no `completed` status
-pill, no `Final phase`, no `Started`), that the branch is shown in full and selected whole by one
-click, with a GitHub tree link beside it, and that the three fields sit on one row at 1280px wide
-and stack at 375px. The hosted database is read only: the journey never writes to it. To get a long
+Checks that a History run card shows only Branch, Finished, Duration and, when the run published
+metrics, Cost (no `completed` status pill, no `Final phase`, no `Started`), that the branch is
+shown in full and selected whole by one click, with a GitHub tree link beside it, and that the
+fields sit on one row at 1280px wide and stack at 375px. The hosted database is read only: the journey never writes to it. To get a long
 branch it sets the text of an existing row's branch `code` in the test browser through
 `browser_evaluate` (a DOM-only change, nothing is sent anywhere).
 
@@ -29,15 +29,24 @@ So that I can copy it without opening GitHub or guessing the truncated part
    that follows the `Branch` `dt`: its `textContent` and `getComputedStyle(code).userSelect`; for
    that `dd`: `getComputedStyle(dd).textOverflow`, `whiteSpace`, and whether
    `dd.scrollWidth <= dd.clientWidth`; the `href`, `target`, `rel` and `aria-label` of the `a` in
-   that `dd`; and the `getBoundingClientRect().top` of the `dd`s under `Branch`, `Finished` and
-   `Duration`.
-6. **Verify**: the `dt` texts are exactly `Branch`, `Finished`, `Duration`; no element's text is
+   that `dd`; the text of the `dd` after a `Cost` `dt`, or null when there is none; and the
+   `getBoundingClientRect().top` of the `dd`s under `Branch`, `Finished`, `Duration` and (when
+   present) `Cost`.
+6. **Verify**: the `dt` texts are exactly `Branch`, `Finished`, `Duration`, optionally followed by
+   `Cost`; when `Cost` is present its value matches `/^\$\d+\.\d{2}$/` or is `<$0.01`, and is
+   never `$0.00` unless the stored cost rounds to zero; no element's text is
    `completed`; there is no `Final phase` and no `Started`; the branch text does not end in `...`;
    `textOverflow` is not `ellipsis`, `whiteSpace` is not `nowrap` and there is no overflow;
    `userSelect` is `all`; the link's `href` is
    `https://github.com/<owner>/<repo>/tree/<branch>` (the project's slug and the branch text),
    `target` is `_blank`, `rel` is `noreferrer` and the `aria-label` is
-   `Open branch <branch> on GitHub`; the three tops are within 2px of each other (one row).
+   `Open branch <branch> on GitHub`; the tops of all present field `dd`s are within 2px of each
+   other (one row).
+   If the first card has no `Cost`, page through History with the right arrow until a card with a
+   `Cost` field is found and **verify** its value's format as above, then return to the first
+   History page; or note in the result that no run in this project published metrics. Only the
+   format is checked here: the rounding is proven by the unit tests and the value against the
+   database by the review phase.
 7. Click once on the branch `code` with `browser_click`. **Verify** with `browser_evaluate` that
    `window.getSelection().toString()` equals the branch name exactly. Clear the selection
    (`window.getSelection().removeAllRanges()`), then triple-click the same `code` with
@@ -52,20 +61,22 @@ So that I can copy it without opening GitHub or guessing the truncated part
 10. Take a screenshot of the project page at 1280x800, and check in it that Finished is not
     ellipsized.
 11. Resize the browser to 375x667 and re-measure the first History `li` (the long branch is still
-    set). **Verify** the tops of the `Branch`, `Finished` and `Duration` `dd`s strictly increase
+    set). **Verify** the tops of the present `Branch`, `Finished`, `Duration` and `Cost` `dd`s strictly
+    increase
     (stacked), the branch wraps (a `Range` over the `code`'s text node has client rects at more than
     one rounded `top`) and neither the `dd` nor the `li` overflows horizontally.
 12. Take a screenshot of the project page at 375x667.
 
 ## Success Criteria
 
-- A History card shows exactly Branch, Finished and Duration, with no `completed` pill, no
+- A History card shows exactly Branch, Finished and Duration, plus Cost (`$x.xx` or `<$0.01`) when
+  the run published metrics and no Cost field when it did not, with no `completed` pill, no
   `Final phase` and no `Started`.
 - The branch is shown in full, never ellipsized, with `user-select: all`, and one click or a
   triple-click selects exactly the branch name.
 - A link to `https://github.com/<owner>/<repo>/tree/<branch>` opens in a new tab beside the name,
   with an accessible label.
-- At 1280x800 the three fields sit on one row; at 375x667 they stack and a long branch wraps with
+- At 1280x800 the fields sit on one row; at 375x667 they stack and a long branch wraps with
   no horizontal overflow.
 - The Active row still shows Phase, Branch, Started and its status pill.
 - 2 screenshots are taken.

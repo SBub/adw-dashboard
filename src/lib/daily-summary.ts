@@ -286,10 +286,3 @@ export function tokensLabel(n: number | null): string {
   }
   return String(n);
 }
-
-/** A cost in US dollars with two decimals, "<$0.01" under a cent, "n/a" for null. */
-export function costLabel(usd: number | null): string {
-  if (usd === null) return "n/a";
-  if (usd > 0 && usd < 0.01) return "<$0.01";
-  return `$${(Math.round(usd * 100) / 100).toFixed(2)}`;
-}

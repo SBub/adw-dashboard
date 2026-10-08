@@ -66,7 +66,12 @@ The runs are read in two halves, because they have two lifetimes:
   the same filter, the total and the rows strictly newer than the first shown
   row (than the bookmark itself when a bookmarked page comes back empty, so
   the left arrow still leads back), which give the page number and the page
-  count. It reads no clock.
+  count. A non-empty page also reads `adw.run_metrics` once for the shown
+  runs (`adw_id, cost_usd` where `project_id = <id>` and
+  `adw_id in (<the page's ids>)`), in the same `Promise.all` as the newer
+  count, and returns their costs as `costs` keyed by `adw_id` (a run with no
+  metrics row has no key; an empty page or an unknown slug gets `costs: {}`
+  and no read). It reads no clock.
 
 In SQL terms:
 
@@ -102,8 +107,10 @@ returns):
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(): Promise<ActiveRuns>`, where `ActiveRuns` is
   `{ active: Run[]; fetched_at: string }`
-- `getCompletedRuns(slug, bookmark, q): Promise<HistoryPage>`, where
-  `HistoryPage` is `{ items: Run[]; page: number; pageCount: number;
+- `getCompletedRuns(slug, bookmark, q): Promise<CompletedRunsPage>`, where
+  `CompletedRunsPage` (exported from `src/data/index.ts`) is `HistoryPage`
+  plus `costs: Record<string, number>` (each shown run's cost in US dollars
+  keyed by `adw_id`), `HistoryPage` is `{ items: Run[]; page: number; pageCount: number;
 hasNewer: boolean; newerCursor: HistoryCursor | null; olderCursor:
 HistoryCursor | null }` and `HistoryCursor` is `{ direction: "after" |
 "before"; cursor: string }` (from `src/lib/history-bookmark.ts`)
@@ -119,7 +126,9 @@ data at all (it drops cache tags). The Supabase client is untyped (no
 generated `Database` type yet), so the boundary casts rows once: the view's
 rows to `ProjectSummary`, the runs rows to `Run[]` (the shared `RUN_COLUMNS`
 select is exactly the fields of `Run`) and the queue rows to `QueueItem[]`
-(`QUEUE_COLUMNS`, exactly the fields of `QueueItem`). Generating types for the
+(`QUEUE_COLUMNS`, exactly the fields of `QueueItem`) and the `run_metrics`
+rows to `RunMetrics[]` (`RUN_METRICS_COLUMNS`, exactly the fields of
+`RunMetrics`). Generating types for the
 `adw` schema is a follow-up.
 
 Because the layout prefetch and `generateStaticParams` both call
@@ -297,7 +306,12 @@ on the server no channel is ever subscribed, so no socket is opened there.
   `HISTORY_PAGE_SIZE` rows plus two counts on the same filter, the total and
   the rows newer than the first shown row, assembled by `toHistoryPage` into
   `{ items, page, pageCount, hasNewer, newerCursor, olderCursor }`; never an
-  offset), `getQueue(slug)`
+  offset; then, for a non-empty page, one read of `run_metrics`
+  (`adw_id, cost_usd`, `project_id = <id>`, `adw_id in (<the page's ids>)`)
+  in the same `Promise.all` as the newer count, assembled by `runCosts`
+  (`src/lib/run-view.ts`) into `costs`: one extra read per page, never one
+  per run, and never in the query cache, since it is read inside the same
+  `history:<slug>` cache scope and drops with the tag), `getQueue(slug)`
   the same view by slug (unknown slug: `[]`) and then `queue_items` by
   `project_id` with `state = queued`, ordered `position asc, issue_number asc`.
   Changing what is read
@@ -306,19 +320,21 @@ on the server no channel is ever subscribed, so no socket is opened there.
   query layer (`query-keys.ts`, `query-client.ts`, `active-runs-query.ts`,
   `active-runs-state.ts`) holds keys, the client factory, the Active query
   options and the Active prefetch only; it calls boundary functions and never
-  reads Supabase itself.
+  reads Supabase itself. Do not read run metrics per run.
 - The boundary casts the untyped Supabase rows (`ProjectSummary` for the view,
   `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
   `daily_summary`, `DailyModelSummary[]` for `daily_model_summary`,
-  `DailyPhaseSummary[]` for `daily_phase_summary`) in
+  `DailyPhaseSummary[]` for `daily_phase_summary`, `RunMetrics[]` for
+  `run_metrics`) in
   `src/data/index.ts`.
   Those casts are the only place the shapes are asserted; do not add another
   in a page or component. When touching the `runs` select, keep the column
   list equal to the fields of `Run`, `QUEUE_COLUMNS` equal to the fields
   of `QueueItem`, `DAILY_SUMMARY_COLUMNS` equal to the fields of
   `DailySummary`, `DAILY_MODEL_SUMMARY_COLUMNS` equal to the fields of
-  `DailyModelSummary`, and `DAILY_PHASE_SUMMARY_COLUMNS` equal to the fields
-  of `DailyPhaseSummary`, all in `src/types/adw.ts`.
+  `DailyModelSummary`, `DAILY_PHASE_SUMMARY_COLUMNS` equal to the fields
+  of `DailyPhaseSummary`, and `RUN_METRICS_COLUMNS` equal to the fields of
+  `RunMetrics`, all in `src/types/adw.ts`.
 - `getProjects()` runs at build time (layout prefetch and
   `generateStaticParams`), and `getCompletedRuns()` and `getQueue()` run
   at build time for every slug (history and queue scopes), so

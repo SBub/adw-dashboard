@@ -35,8 +35,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   the last update, then a Queue section for the issues waiting in the
   project's queue ledger, in the order they will run, and a History section
   for `completed` runs, its card showing the branch in full (wrapping, one
-  click selects it, with a small link to the branch on GitHub), Finished and
-  Duration, with no status pill, no final phase and no start time. The Active
+  click selects it, with a small link to the branch on GitHub), Finished,
+  Duration and Cost (only for a run with metrics), with no status pill, no final phase and no start time. The Active
   row's phase is shown as a label (Planning, Building, ..., Complete), with
   the raw step key as the hover title. History's `?q`
   search matches the raw column, not the label (searching "Planning" finds
@@ -56,9 +56,13 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)` and
-  `branchTreeHref(projectSlug, run.branch_name)` from `src/lib/run-view.ts`, and
+  `branchTreeHref(projectSlug, run.branch_name)` and `costLabel(cost)` (shared
+  with the summary's charts and table) from `src/lib/run-view.ts`, and
   `phaseLabel(run.phase)` from `src/lib/run-phase.ts`);
-  no view model is built anywhere for runs. Run and queue row titles are shown in full and wrap; the
+  no view model is built anywhere for runs. `RunRow` and `RunHistoryList`
+  also take the run's cost as a prop (`cost`, `costs`), read by the data
+  layer, not computed by the component; a run with no metrics row shows no
+  Cost field, never `$0.00`. Run and queue row titles are shown in full and wrap; the
   row is `items-start` and every element sits in a 24px first-line box
   (`leading-6` or an `h-6 items-center` wrapper), so the status pill is on the
   title's first line. The detail grid's `Field` keeps its `truncate`, except

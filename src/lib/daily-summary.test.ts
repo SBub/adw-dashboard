@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { DailyModelSummary, DailyPhaseSummary, DailySummary } from "@/types/adw";
-import { secondsLabel } from "./run-view";
+import { costLabel, secondsLabel } from "./run-view";
 import {
   barValueInside,
   classCounts,
   classLabel,
   classSegments,
   columnHeights,
-  costLabel,
   pastDaysWindow,
   shareLabel,
   summaryWindowStart,
@@ -748,24 +747,5 @@ describe("tokensLabel", () => {
 
   it("moves to the next unit when rounding reaches a thousand", () => {
     expect(tokensLabel(999_960)).toBe("1.0M");
-  });
-});
-
-describe("costLabel", () => {
-  it("is n/a for null", () => {
-    expect(costLabel(null)).toBe("n/a");
-  });
-
-  it("is $0.00 for zero", () => {
-    expect(costLabel(0)).toBe("$0.00");
-  });
-
-  it("shows two decimals", () => {
-    expect(costLabel(12.345)).toBe("$12.35");
-    expect(costLabel(0.01)).toBe("$0.01");
-  });
-
-  it("marks a cost under one cent", () => {
-    expect(costLabel(0.0042)).toBe("<$0.01");
   });
 });

@@ -19,14 +19,13 @@ import { QueueView } from "@/components/QueueView";
 import { RunHistoryList } from "@/components/RunHistoryList";
 import { SectionBoundary } from "@/components/SectionBoundary";
 import { SectionHeading } from "@/components/SectionHeading";
-import { getCompletedRuns, getProjects, getQueue } from "@/data";
+import { type CompletedRunsPage, getCompletedRuns, getProjects, getQueue } from "@/data";
 import { getActiveRunsState } from "@/data/active-runs-state";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
 import {
   HISTORY_PAGE_SIZE,
   type HistoryBookmark,
-  type HistoryPage,
   historyHref,
   readHistoryBookmark,
 } from "@/lib/history-bookmark";
@@ -145,7 +144,7 @@ async function getHistory(
   slug: string,
   bookmark: HistoryBookmark | null,
   q: string | null,
-): Promise<HistoryPage> {
+): Promise<CompletedRunsPage> {
   "use cache";
   cacheTag(historyTag(slug));
   cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 });
@@ -232,10 +231,11 @@ async function HistoryPagination({ slug, searchParams }: HistoryIslandProps) {
 }
 
 async function CompletedRuns({ slug, searchParams }: HistoryIslandProps) {
-  const { q, items } = await readHistory(slug, searchParams);
+  const { q, items, costs } = await readHistory(slug, searchParams);
   return (
     <RunHistoryList
       runs={items}
+      costs={costs}
       projectSlug={slug}
       emptyMessage={q ? `No completed runs match "${q}".` : "No completed runs yet."}
     />

@@ -15,7 +15,9 @@
 //   time and rendered on the server inside a "use cache" scope; every page of
 //   a project shares the one per-project tag, never enters the query cache,
 //   and a completion in the browser asks the server to drop that tag and
-//   re-render. getCompletedRuns.
+//   re-render. Each non-empty page also reads adw.run_metrics once for the
+//   shown runs' costs (never once per run), inside the same cache scope.
+//   getCompletedRuns.
 //
 // The summary page (`/`) reads the adw.daily_summary view (finished runs per
 // project per UTC day) in two halves split on today's UTC date, which the page
@@ -40,6 +42,7 @@ import {
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
+import { runCosts } from "@/lib/run-view";
 import type {
   DailyModelSummary,
   DailyPhaseSummary,
@@ -47,6 +50,7 @@ import type {
   ProjectSummary,
   QueueItem,
   Run,
+  RunMetrics,
   SummaryDay,
   SummaryReport,
 } from "@/types/adw";
@@ -71,6 +75,9 @@ export interface ActiveRuns {
 const RUN_COLUMNS =
   "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
 
+/** The columns of adw.run_metrics the History page reads, which are exactly the fields of RunMetrics. */
+const RUN_METRICS_COLUMNS = "adw_id, cost_usd";
+
 /** The columns of adw.queue_items the screens read, which are exactly the fields of QueueItem. */
 const QUEUE_COLUMNS =
   "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, reason, updated_at";
@@ -86,6 +93,14 @@ const DAILY_MODEL_SUMMARY_COLUMNS =
 /** The columns of adw.daily_phase_summary the summary page reads, which are exactly the fields of DailyPhaseSummary. */
 const DAILY_PHASE_SUMMARY_COLUMNS =
   "project_id, day, phase, runs, input, cache_read, cache_creation, output, cost_usd, duration_s";
+
+/**
+ * One History page plus each shown run's cost in US dollars, keyed by adw_id.
+ * A run with no adw.run_metrics row has no key.
+ */
+export interface CompletedRunsPage extends HistoryPage {
+  costs: Record<string, number>;
+}
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -228,6 +243,30 @@ function countOf({ count, error }: { count: number | null; error: { message: str
 }
 
 /**
+ * The cost of each of these runs that published metrics, keyed by adw_id: one
+ * read of adw.run_metrics for the whole page, never one per run.
+ */
+async function getRunCosts(
+  projectId: string,
+  runs: readonly Run[],
+): Promise<Record<string, number>> {
+  const { data, error } = await getSupabase()
+    .from("run_metrics")
+    .select(RUN_METRICS_COLUMNS)
+    .eq("project_id", projectId)
+    .in(
+      "adw_id",
+      runs.map((run) => run.adw_id),
+    );
+  if (error) {
+    throw new Error(`run_metrics: ${error.message}`);
+  }
+  // The selected columns are exactly the fields of RunMetrics, so this cast is
+  // the one place the table's shape is asserted.
+  return runCosts((data ?? []) as RunMetrics[]);
+}
+
+/**
  * One page of a project's completed runs, at most `HISTORY_PAGE_SIZE` in the
  * display order `updated_at desc, adw_id desc`, with its position (page N of
  * M) and the cursors of its two arrows; page 1 of 1 with no rows for an
@@ -249,6 +288,11 @@ function countOf({ count, error }: { count: number | null; error: { message: str
  * toHistoryPage turns the two into the page number, the page count and both
  * arrows, so no N + 1 row is fetched.
  *
+ * A non-empty page makes one more read, of adw.run_metrics for the shown
+ * runs (getRunCosts), in the same Promise.all as the newer count: their cost
+ * keyed by adw_id, a run with no metrics row having no key. One extra read per
+ * page, never per run; none for an empty page or an unknown slug.
+ *
  * `q` is the search text, already normalised by the caller outside the cache
  * scope (readHistoryQuery in src/lib/history-search.ts), or null for no
  * search. It narrows the rows and both counts through historySearchFilter,
@@ -257,8 +301,8 @@ function countOf({ count, error }: { count: number | null; error: { message: str
  * the two.
  *
  * Server only, and only from inside the page's "use cache" scope for history
- * (tagged history:<slug>, shared by every page), so the counts drop with the
- * tag together with the rows. It never enters the React Query cache and reads
+ * (tagged history:<slug>, shared by every page), so the counts and the costs
+ * drop with the tag together with the rows. It never enters the React Query cache and reads
  * no clock: there is no fetched_at here, and nothing in it needs the current
  * time. A completed run never changes, so the cached pages are only refilled
  * when the browser asks the server to drop the tag after a completion
@@ -269,9 +313,11 @@ export async function getCompletedRuns(
   slug: string,
   bookmark: HistoryBookmark | null,
   q: string | null,
-): Promise<HistoryPage> {
+): Promise<CompletedRunsPage> {
   const project = await getProjectBySlug(slug);
-  if (project === null) return toHistoryPage([], { slug, newer: 0, total: 0 });
+  if (project === null) {
+    return { ...toHistoryPage([], { slug, newer: 0, total: 0 }), costs: {} };
+  }
 
   let rowsQuery = completedRuns(project.id, q, RUN_COLUMNS);
   if (bookmark) rowsQuery = rowsQuery.or(historyKeysetFilter(bookmark));
@@ -292,14 +338,15 @@ export async function getCompletedRuns(
   const items = historyItems((rows.data ?? []) as Run[], bookmark);
 
   const anchor = items[0] ?? bookmark;
-  const newer = anchor
-    ? countOf(
-        await completedRuns(project.id, q, "adw_id", { count: "exact", head: true }).or(
-          historyNewerFilter(anchor),
-        ),
-      )
-    : 0;
-  return toHistoryPage(items, { slug, newer, total });
+  const [newer, costs] = await Promise.all([
+    anchor
+      ? completedRuns(project.id, q, "adw_id", { count: "exact", head: true })
+          .or(historyNewerFilter(anchor))
+          .then(countOf)
+      : 0,
+    items.length > 0 ? getRunCosts(project.id, items) : {},
+  ]);
+  return { ...toHistoryPage(items, { slug, newer, total }), costs };
 }
 
 /**
