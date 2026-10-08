@@ -24,7 +24,16 @@ describe("phaseLabel", () => {
     ["adw_patch_iso:failed", "Patching"],
     ["ensure_adw_id:failed", "Starting"],
     ["queue:classification:failed", "Classifying"],
+    ["adw_plan_iso:complete", "Plan done"],
+    ["adw_build_iso:complete", "Build done"],
+    ["adw_test_iso:complete", "Tests done"],
+    ["adw_review_iso:complete", "Review done"],
+    ["adw_document_iso:complete", "Docs done"],
+    ["adw_ci_iso:complete", "CI done"],
+    ["adw_patch_iso:complete", "Patch done"],
     ["adw_sdlc_iso:complete", "Complete"],
+    ["adw_plan_build_iso:complete", "Complete"],
+    ["foo:complete", "Complete"],
   ])("labels %s as %s", (raw, label) => {
     expect(phaseLabel(raw)).toBe(label);
   });
@@ -43,6 +52,12 @@ describe("phaseLabel", () => {
   it.each(PHASE_ORDER)("labels the costed key %s with a word, not the key", (key) => {
     const label = phaseLabel(key);
     expect(label).not.toBe(key);
+    expect(label?.startsWith("adw_")).toBe(false);
+  });
+
+  it.each(PHASE_ORDER)("labels %s:complete with a done label, not Complete", (key) => {
+    const label = phaseLabel(`${key}:complete`);
+    expect(label).not.toBe("Complete");
     expect(label?.startsWith("adw_")).toBe(false);
   });
 });
