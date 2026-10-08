@@ -37,12 +37,12 @@ describe("ProjectNavSkeleton", () => {
 });
 
 describe("RunListSkeleton", () => {
-  it("renders a page of history rows with five fields each", () => {
+  it("renders a page of history rows with three fields each", () => {
     const html = render(
       createElement(RunListSkeleton, { variant: "history", rows: HISTORY_PAGE_SIZE }),
     );
     expect(count(html, "<li")).toBe(HISTORY_PAGE_SIZE);
-    expect(count(html, 'data-skeleton="field"')).toBe(HISTORY_PAGE_SIZE * 5);
+    expect(count(html, 'data-skeleton="field"')).toBe(HISTORY_PAGE_SIZE * 3);
     expect(html).toContain('aria-label="Loading history"');
     expect(count(html, 'aria-busy="true"')).toBe(1);
   });
@@ -52,6 +52,13 @@ describe("RunListSkeleton", () => {
     expect(count(html, "<li")).toBe(2);
     expect(count(html, 'data-skeleton="field"')).toBe(6);
     expect(html).toContain('aria-label="Loading runs"');
+  });
+
+  it("gives active rows a round pill and history rows none", () => {
+    const history = render(createElement(RunListSkeleton, { variant: "history", rows: 3 }));
+    const active = render(createElement(RunListSkeleton, { variant: "active", rows: 2 }));
+    expect(count(history, "rounded-full")).toBe(0);
+    expect(count(active, "rounded-full")).toBe(2);
   });
 });
 
@@ -111,7 +118,7 @@ describe("ProjectPageSkeleton", () => {
   it("is labelled for the project and holds every section's rows", () => {
     expect(html.indexOf('aria-label="Loading project"')).toBeLessThan(html.indexOf("<li"));
     expect(count(html, "<li")).toBe(2 + 2 + HISTORY_PAGE_SIZE);
-    expect(count(html, 'data-skeleton="field"')).toBe(2 * 3 + HISTORY_PAGE_SIZE * 5);
+    expect(count(html, 'data-skeleton="field"')).toBe(2 * 3 + HISTORY_PAGE_SIZE * 3);
   });
 });
 

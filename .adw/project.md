@@ -77,8 +77,8 @@ E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-dri
 `e2e/test_queue_row_single_line.md`, `e2e/test_section_tooltip_layering.md`,
 `e2e/test_day_card_charts.md`, `e2e/test_active_runs_shared_entry.md`,
 `e2e/test_row_full_title_top_align.md`, `e2e/test_single_background_color.md`,
-`e2e/test_projects_skeleton_fallbacks.md`, `e2e/test_sticky_header.md` and
-`e2e/test_run_row_phase_label.md`) that the test
+`e2e/test_projects_skeleton_fallbacks.md`, `e2e/test_sticky_header.md`,
+`e2e/test_run_row_phase_label.md` and `e2e/test_history_card_fields.md`) that the test
 phase runs through the Playwright MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and

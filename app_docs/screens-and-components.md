@@ -33,9 +33,11 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   resumed, so it is still live), with phase, branch and the absolute time of
   the last update, then a Queue section for the issues waiting in the
   project's queue ledger, in the order they will run, and a History section
-  for `completed` runs (final phase, timings, duration). The Active row's
-  phase and History's final phase are shown as a label (Planning, Building,
-  ..., Complete), with the raw step key as the hover title. History's `?q`
+  for `completed` runs, its card showing the branch in full (wrapping, one
+  click selects it, with a small link to the branch on GitHub), Finished and
+  Duration, with no status pill, no final phase and no start time. The Active
+  row's phase is shown as a label (Planning, Building, ..., Complete), with
+  the raw step key as the hover title. History's `?q`
   search matches the raw column, not the label (searching "Planning" finds
   nothing).
   Active is a React Query entry patched by Realtime; History is rendered on
@@ -52,11 +54,16 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   and `CompletedRuns` are the async components that await data, and they live
   in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
-  `durationLabel(run.started_at, run.finished_at)` and `phaseLabel(run.phase)`);
+  `durationLabel(run.started_at, run.finished_at)` and
+  `branchTreeHref(projectSlug, run.branch_name)` from `src/lib/run-view.ts`, and
+  `phaseLabel(run.phase)` from `src/lib/run-phase.ts`);
   no view model is built anywhere for runs. Run and queue row titles are shown in full and wrap; the
   row is `items-start` and every element sits in a 24px first-line box
   (`leading-6` or an `h-6 items-center` wrapper), so the status pill is on the
-  title's first line. The detail grid's `Field` keeps its `truncate`.
+  title's first line. The detail grid's `Field` keeps its `truncate`, except
+  History's Branch, which opts out (`wrap`): shown in full with `break-all`,
+  `select-all` on the name only, and the GitHub tree link beside it, never on
+  the name. History's card has no status pill; do not add one back.
 - A run row's phase label comes only from `phaseLabel` in
   `src/lib/run-phase.ts` (one helper, never a second mapping in a
   component). Exact keys match first (`queue:classification` contains a
