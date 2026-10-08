@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { branchTreeHref, costLabel, durationLabel, runCosts, secondsLabel } from "./run-view";
+import {
+  branchTreeHref,
+  costLabel,
+  durationLabel,
+  pullRequestHref,
+  runCosts,
+  secondsLabel,
+} from "./run-view";
 
 // The module under test never reads the clock, so nothing here depends on
 // when the suite runs; every case is two fixed timestamps.
@@ -101,5 +108,13 @@ describe("runCosts", () => {
 
   it("has no key for a run without a metrics row", () => {
     expect(runCosts([{ adw_id: "a6d2347d", cost_usd: 4.2935 }])["deadbeef"]).toBeUndefined();
+  });
+});
+
+describe("pullRequestHref", () => {
+  it("links the pull request on GitHub", () => {
+    expect(pullRequestHref("SBub/adw-dashboard", 143)).toBe(
+      "https://github.com/SBub/adw-dashboard/pull/143",
+    );
   });
 });

@@ -27,6 +27,7 @@ function run(adw_id: string, updated_at: string): Run {
     issue_title: null,
     issue_class: "feature",
     branch_name: "feat/x",
+    pr_number: null,
     phase: "document",
     status: "completed",
     state: {},

@@ -6,6 +6,7 @@
 - specs/issue-134-adw-b6fb710c-sdlc_planner-remove-halted-from-summary.md
 - specs/issue-137-adw-b37d7caa-sdlc_planner-simplify-queue-row-layout.md
 - specs/issue-146-adw-7a7f315b-sdlc_planner-show-history-run-cost.md
+- specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-148-adw-d2fdf4c1-sdlc_planner-history-page-turn-keep-scroll.md
 
 ## Overview
@@ -168,11 +169,14 @@ History is rendered below that, by the same page:
    and `src/components/RunHistoryList.tsx` are server components with no
    state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant shows Branch (in
-   full, spanning two of the 4 `sm` columns), Finished, Duration and Cost
-   (only when the run has a metrics row, formatted by `costLabel`), on one
-   row from `lg` (a grid where Branch takes the flexible width and Finished,
-   Duration and Cost their content width, so Finished is never ellipsized;
-   at `sm` the 4-column grid puts Cost on a second row) and stacked at 375px; it has no `completed` pill, no `Final
+   full, spanning two of the 4 `sm` columns), Finished, Duration, PR (only
+   when the run has a `pr_number`: `#<n>` linking to
+   `https://github.com/<slug>/pull/<n>` in a new tab, built by
+   `pullRequestHref`) and Cost (only when the run has a metrics row,
+   formatted by `costLabel`), on one row from `lg` (a grid where Branch takes
+   the flexible width and Finished, Duration, PR and Cost their content
+   width, so Finished is never ellipsized; at `sm` the 4-column grid puts PR
+   and Cost on a second row) and stacked at 375px; it has no `completed` pill, no `Final
 phase` and no `Started`.
 
    History is paged three runs at a time. The URL of a later page carries

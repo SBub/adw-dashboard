@@ -6,6 +6,7 @@
 - specs/issue-141-adw-ab53aaef-sdlc_planner-sticky-header.md
 - specs/issue-142-adw-0093e1de-sdlc_planner-friendly-run-phase-labels.md
 - specs/issue-145-adw-6726a682-sdlc_planner-history-card-full-branch.md
+- specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-152-adw-a6b99270-sdlc_planner-fix-between-phase-complete-label.md
 
 ## Overview
@@ -37,7 +38,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   project's queue ledger, in the order they will run, and a History section
   for `completed` runs, its card showing the branch in full (wrapping, one
   click selects it, with a small link to the branch on GitHub), Finished,
-  Duration and Cost (only for a run with metrics), with no status pill, no final phase and no start time. The Active
+  Duration, PR (only for a run with a `pr_number`, linking the pull request
+  in a new tab) and Cost (only for a run with metrics), with no status pill, no final phase and no start time. The Active
   row's phase is shown as a label (Planning, Building, ..., Complete), with
   the raw step key as the hover title; a run between phases shows the
   finished step's done label (e.g. `Build done`), never `Complete`. History's `?q`
@@ -58,7 +60,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
   `durationLabel(run.started_at, run.finished_at)` and
-  `branchTreeHref(projectSlug, run.branch_name)` and `costLabel(cost)` (shared
+  `branchTreeHref(projectSlug, run.branch_name)`,
+  `pullRequestHref(projectSlug, run.pr_number)` and `costLabel(cost)` (shared
   with the summary's charts and table) from `src/lib/run-view.ts`, and
   `phaseLabel(run.phase)` from `src/lib/run-phase.ts`);
   no view model is built anywhere for runs. `RunRow` and `RunHistoryList`
