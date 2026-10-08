@@ -4,6 +4,7 @@
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
 - specs/issue-141-adw-ab53aaef-sdlc_planner-sticky-header.md
+- specs/issue-142-adw-0093e1de-sdlc_planner-friendly-run-phase-labels.md
 
 ## Overview
 
