@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { phaseLabel } from "@/lib/run-phase";
 import { durationLabel } from "@/lib/run-view";
 import type { Run } from "@/types/adw";
 import { IssueClassBadge } from "./IssueClassBadge";
@@ -34,15 +35,17 @@ function Mono({ value }: { value: string | null }) {
 }
 
 /**
- * One run, as stored. Every value shown is a column or, for Duration, a pure
- * function of two columns (durationLabel, which is null while finished_at is
- * null, so a running run shows no duration). Nothing here reads the clock:
+ * One run, as stored. Every value shown is a column or a pure function of the
+ * row's columns: durationLabel for Duration (null while finished_at is null,
+ * so a running run shows no duration) and phaseLabel for the phase (the raw
+ * step key stays on the hover title). Nothing here reads the clock:
  * "updated 2m ago", the stale badge and the elapsed time of a running run are
  * removed pending issue #3. The issue title is a column shown as stored; runs
  * published before the toolkit started writing it have none and show no title.
  */
 export function RunRow({ run, projectSlug, variant }: RunRowProps) {
   const duration = durationLabel(run.started_at, run.finished_at);
+  const phase = phaseLabel(run.phase);
 
   return (
     <li className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
@@ -87,7 +90,11 @@ export function RunRow({ run, projectSlug, variant }: RunRowProps) {
       </div>
       <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
         <Field label={variant === "history" ? "Final phase" : "Phase"}>
-          <Mono value={run.phase} />
+          {phase ? (
+            <span title={run.phase ?? undefined}>{phase}</span>
+          ) : (
+            <span className="text-neutral-400 dark:text-neutral-600">none</span>
+          )}
         </Field>
         <Field label="Branch">
           <Mono value={run.branch_name} />

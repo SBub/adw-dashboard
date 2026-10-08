@@ -82,7 +82,8 @@ like `daily_summary`, with `runs`, `input`, `cache_read`, `cache_creation`,
 `output`, `cost_usd` and `duration_s`), cast to `DailyPhaseSummary`; its rows
 of visible projects are summed per day and phase by `sumPhaseUsage`
 (`src/lib/phase-usage.ts`, which also holds the phase order and names) into
-each day's `phases`. Everything
+each day's `phases`. The same `PHASE_ORDER` is the key list run rows label
+through `src/lib/run-phase.ts`; the chart names are unchanged. Everything
 that shapes the report (today's day, the window, the totals, the bar's
 segments, the chart columns, the labels) lives in that file, pure and unit-tested. A day is shown as
 `DD.MM.YYYY` by `formatDay` (`src/lib/format-date.ts`) and `duration_sum_s`
