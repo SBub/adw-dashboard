@@ -36,6 +36,7 @@ export interface Run {
   issue_title: string | null;
   issue_class: string | null;
   branch_name: string | null;
+  pr_number: number | null;
   phase: string | null;
   status: RunStatus;
   state: Record<string, unknown>;

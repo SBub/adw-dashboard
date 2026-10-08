@@ -20,6 +20,7 @@ function run(adwId: string, overrides: Partial<Run> = {}): Run {
     issue_title: null,
     issue_class: "/feature",
     branch_name: `feat/${adwId}`,
+    pr_number: null,
     phase: "adw_build_iso",
     status: "running",
     state: {},
@@ -216,6 +217,14 @@ describe("applyRunChange", () => {
 
       expect(next.active[0]).toMatchObject({ issue_title: title, phase: "adw_test_iso" });
       expect(next.active[1]?.issue_title).toBeNull();
+    });
+
+    it("keeps a pr_number set on a live run", () => {
+      const current = active([run("aaaa")]);
+      const next = applyRunChange(current, update(run("aaaa", { pr_number: 160 })));
+
+      expect(next.active).toHaveLength(1);
+      expect(next.active[0]?.pr_number).toBe(160);
     });
 
     it("removes a run that completes", () => {

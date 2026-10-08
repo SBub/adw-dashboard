@@ -1,7 +1,7 @@
 # E2E Test: History Card Fields
 
-Checks that a History run card shows only Branch, Finished, Duration and, when the run published
-metrics, Cost (no `completed` status pill, no `Final phase`, no `Started`), that the branch is
+Checks that a History run card shows only Branch, Finished, Duration, then PR when the run has a
+pull request (a `#<n>` link to it) and Cost when the run published metrics (no `completed` status pill, no `Final phase`, no `Started`), that the branch is
 shown in full and selected whole by one click, with a GitHub tree link beside it, and that the
 fields sit on one row at 1280px wide and stack at 375px. The hosted database is read only: the journey never writes to it. To get a long
 branch it sets the text of an existing row's branch `code` in the test browser through
@@ -29,11 +29,14 @@ So that I can copy it without opening GitHub or guessing the truncated part
    that follows the `Branch` `dt`: its `textContent` and `getComputedStyle(code).userSelect`; for
    that `dd`: `getComputedStyle(dd).textOverflow`, `whiteSpace`, and whether
    `dd.scrollWidth <= dd.clientWidth`; the `href`, `target`, `rel` and `aria-label` of the `a` in
-   that `dd`; the text of the `dd` after a `Cost` `dt`, or null when there is none; and the
-   `getBoundingClientRect().top` of the `dd`s under `Branch`, `Finished`, `Duration` and (when
-   present) `Cost`.
-6. **Verify**: the `dt` texts are exactly `Branch`, `Finished`, `Duration`, optionally followed by
-   `Cost`; when `Cost` is present its value matches `/^\$\d+\.\d{2}$/` or is `<$0.01`, and is
+   that `dd`; the `href`, `target`, `rel` and text of the `a` in the `dd` after a `PR` `dt`, or
+   null when there is no `PR` `dt`; the text of the `dd` after a `Cost` `dt`, or null when there
+   is none; and the `getBoundingClientRect().top` of the `dd`s under `Branch`, `Finished`,
+   `Duration` and (when present) `PR` and `Cost`.
+6. **Verify**: the `dt` texts are exactly `Branch`, `Finished`, `Duration`, optionally `PR`,
+   optionally `Cost`, in that order; when `PR` is present its link text matches `/^#\d+$/`, its
+   `href` is `https://github.com/<owner>/<repo>/pull/<n>` with `<n>` the number in the text,
+   `target` is `_blank` and `rel` is `noreferrer`; when `Cost` is present its value matches `/^\$\d+\.\d{2}$/` or is `<$0.01`, and is
    never `$0.00` unless the stored cost rounds to zero; no element's text is
    `completed`; there is no `Final phase` and no `Started`; the branch text does not end in `...`;
    `textOverflow` is not `ellipsis`, `whiteSpace` is not `nowrap` and there is no overflow;
@@ -47,6 +50,9 @@ So that I can copy it without opening GitHub or guessing the truncated part
    History page; or note in the result that no run in this project published metrics. Only the
    format is checked here: the rounding is proven by the unit tests and the value against the
    database by the review phase.
+   Likewise, if the first card has no `PR`, page through History with the right arrow until a
+   card with a `PR` field is found and **verify** its link as above, then return to the first
+   History page; or note in the result that no run in this project has a pull request.
 7. Click once on the branch `code` with `browser_click`. **Verify** with `browser_evaluate` that
    `window.getSelection().toString()` equals the branch name exactly. Clear the selection
    (`window.getSelection().removeAllRanges()`), then triple-click the same `code` with
@@ -61,7 +67,7 @@ So that I can copy it without opening GitHub or guessing the truncated part
 10. Take a screenshot of the project page at 1280x800, and check in it that Finished is not
     ellipsized.
 11. Resize the browser to 375x667 and re-measure the first History `li` (the long branch is still
-    set). **Verify** the tops of the present `Branch`, `Finished`, `Duration` and `Cost` `dd`s strictly
+    set). **Verify** the tops of the present `Branch`, `Finished`, `Duration`, `PR` and `Cost` `dd`s strictly
     increase
     (stacked), the branch wraps (a `Range` over the `code`'s text node has client rects at more than
     one rounded `top`) and neither the `dd` nor the `li` overflows horizontally.
@@ -69,7 +75,9 @@ So that I can copy it without opening GitHub or guessing the truncated part
 
 ## Success Criteria
 
-- A History card shows exactly Branch, Finished and Duration, plus Cost (`$x.xx` or `<$0.01`) when
+- A History card shows exactly Branch, Finished and Duration, plus PR (`#<n>` linking to
+  `https://github.com/<owner>/<repo>/pull/<n>` in a new tab) when the run has a pull request and
+  no PR field when it has none, plus Cost (`$x.xx` or `<$0.01`) when
   the run published metrics and no Cost field when it did not, with no `completed` pill, no
   `Final phase` and no `Started`.
 - The branch is shown in full, never ellipsized, with `user-select: all`, and one click or a

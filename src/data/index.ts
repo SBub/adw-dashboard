@@ -73,7 +73,7 @@ export interface ActiveRuns {
 
 /** The columns of adw.runs the screens read, which are exactly the fields of Run. */
 const RUN_COLUMNS =
-  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, pr_number, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
 
 /** The columns of adw.run_metrics the History page reads, which are exactly the fields of RunMetrics. */
 const RUN_METRICS_COLUMNS = "adw_id, cost_usd";

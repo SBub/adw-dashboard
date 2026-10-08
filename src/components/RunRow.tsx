@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { phaseLabel } from "@/lib/run-phase";
-import { branchTreeHref, costLabel, durationLabel } from "@/lib/run-view";
+import { branchTreeHref, costLabel, durationLabel, pullRequestHref } from "@/lib/run-view";
 import type { Run } from "@/types/adw";
 import { IssueClassBadge } from "./IssueClassBadge";
 import { StatusBadge } from "./StatusBadge";
@@ -78,9 +78,11 @@ function Branch({ branch, projectSlug }: { branch: string | null; projectSlug: s
  * row's columns: durationLabel for Duration (null while finished_at is null,
  * so a running run shows no duration), phaseLabel for the Active row's phase
  * (the raw step key stays on the hover title), branchTreeHref for the
- * History card's branch link and costLabel for its Cost (shown only when the
- * run has a metrics row, never as "$0.00" for a missing one). The History card
- * shows the branch in full, Finished, Duration and Cost, with no status pill. Nothing here reads the clock:
+ * History card's branch link, pullRequestHref for its PR link and costLabel
+ * for its Cost (shown only when the run has a metrics row, never as "$0.00"
+ * for a missing one). The History card shows the branch in full, Finished,
+ * Duration, PR (only when the run has a pr_number) and Cost, with no status
+ * pill. Nothing here reads the clock:
  * "updated 2m ago", the stale badge and the elapsed time of a running run are
  * removed pending issue #3. The issue title is a column shown as stored; runs
  * published before the toolkit started writing it have none and show no title.
@@ -149,7 +151,7 @@ export function RunRow({ run, projectSlug, variant, cost }: RunRowProps) {
           </Field>
         </dl>
       ) : (
-        <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
+        <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]">
           <Field label="Branch" wrap className="sm:col-span-2 lg:col-span-1">
             <Branch branch={run.branch_name} projectSlug={projectSlug} />
           </Field>
@@ -161,6 +163,18 @@ export function RunRow({ run, projectSlug, variant, cost }: RunRowProps) {
             )}
           </Field>
           {duration !== null && <Field label="Duration">{duration}</Field>}
+          {run.pr_number !== null && (
+            <Field label="PR">
+              <a
+                href={pullRequestHref(projectSlug, run.pr_number)}
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-4 hover:text-neutral-600 dark:hover:text-neutral-300"
+              >
+                #{run.pr_number}
+              </a>
+            </Field>
+          )}
           {cost !== undefined && <Field label="Cost">{costLabel(cost)}</Field>}
         </dl>
       )}

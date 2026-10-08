@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 
 ## Overview
 
@@ -14,7 +15,9 @@ The shared row and view-model types in `src/types/adw.ts`: database rows that mi
 
 `src/types/adw.ts` has two sections. `Project`, `Run` and `QueueItem` (with
 `QueueState`, the table's state check constraint) mirror the database tables
-column for column. `ProjectSummary` is the one view model the screens
+column for column; `Run` includes `pr_number`, the number of the pull request
+the run opened (published by the toolkit; null for runs published before it
+wrote the column and for runs that opened none). `ProjectSummary` is the one view model the screens
 need that the database does not store (the counts and `last_run_at`); it comes
 from the data layer (the `project_summaries` view computes them). Runs and
 queue items have no view model: the screens take `Run` rows as stored, and a finished run's

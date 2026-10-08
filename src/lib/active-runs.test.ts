@@ -14,6 +14,7 @@ function run(projectId: string, adwId: string, status: Run["status"] = "running"
     issue_title: null,
     issue_class: "/feature",
     branch_name: `feat/${adwId}`,
+    pr_number: null,
     phase: "adw_build_iso",
     status,
     state: {},

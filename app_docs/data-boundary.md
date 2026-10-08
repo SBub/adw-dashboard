@@ -77,7 +77,7 @@ In SQL terms:
 
 ```sql
 select project_id, adw_id, issue_number, issue_title, issue_class, branch_name,
-       phase, status, state, toolkit_version, started_at, updated_at, finished_at
+       pr_number, phase, status, state, toolkit_version, started_at, updated_at, finished_at
   from adw.runs where status in ('running', 'failed')
  order by updated_at desc;                                    -- Active, all projects
 select * from adw.project_summaries where slug = $1;

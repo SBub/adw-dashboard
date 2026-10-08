@@ -14,6 +14,7 @@ const completed: Run = {
   issue_title: "Sticky header, scroll the content",
   issue_class: "chore",
   branch_name: BRANCH,
+  pr_number: 143,
   phase: "adw_document_iso",
   status: "completed",
   state: {},
@@ -23,8 +24,8 @@ const completed: Run = {
   finished_at: "2026-10-01T14:49:37Z",
 };
 
-function render(run: Run, variant: "active" | "history") {
-  return renderToStaticMarkup(createElement(RunRow, { run, projectSlug: SLUG, variant }));
+function render(run: Run, variant: "active" | "history", cost?: number) {
+  return renderToStaticMarkup(createElement(RunRow, { run, projectSlug: SLUG, variant, cost }));
 }
 
 // The opening tag of the dd that follows the dt with this label.
@@ -76,6 +77,27 @@ describe("RunRow, history", () => {
     expect(html).toMatch(/<div class="[^"]*sm:col-span-2[^"]*"><dt[^>]*>Branch<\/dt>/);
   });
 
+  it("links the pull request after Duration and before Cost", () => {
+    const withCost = render(completed, "history", 4.29);
+    const duration = withCost.indexOf(">Duration</dt>");
+    const pr = withCost.indexOf(">PR</dt>");
+    const cost = withCost.indexOf(">Cost</dt>");
+    expect(pr).toBeGreaterThan(duration);
+    expect(cost).toBeGreaterThan(pr);
+    expect(withCost).toContain(`href="https://github.com/${SLUG}/pull/143"`);
+    const pull = withCost.indexOf("/pull/");
+    const link = withCost.slice(withCost.lastIndexOf("<a", pull), withCost.indexOf(">", pull) + 1);
+    expect(link).toContain('target="_blank"');
+    expect(link).toContain('rel="noreferrer"');
+    expect(withCost).toMatch(/>#(<!-- -->)?143<\/a>/);
+  });
+
+  it("shows no PR field without a pr_number", () => {
+    const none = render({ ...completed, pr_number: null }, "history");
+    expect(none).not.toContain(">PR</dt>");
+    expect(none).not.toContain("/pull/");
+  });
+
   it("shows none and no link without a branch", () => {
     const none = render({ ...completed, branch_name: null }, "history");
     expect(none).toContain(">none</span>");
@@ -97,5 +119,10 @@ describe("RunRow, active", () => {
     expect(ddAfter(html, "Branch")).toContain("truncate");
     expect(html).not.toContain("/tree/");
     expect(html).toContain("sm:grid-cols-2 lg:grid-cols-4");
+  });
+
+  it("shows no PR field, even for a run with a pr_number", () => {
+    expect(html).not.toContain(">PR</dt>");
+    expect(html).not.toContain("/pull/");
   });
 });

@@ -72,3 +72,8 @@ export function branchTreeHref(projectSlug: string, branch: string): string {
   const path = branch.split("/").map(encodeURIComponent).join("/");
   return `https://github.com/${projectSlug}/tree/${path}`;
 }
+
+/** The GitHub URL of pull request `prNumber` in "owner/repo". */
+export function pullRequestHref(projectSlug: string, prNumber: number): string {
+  return `https://github.com/${projectSlug}/pull/${prNumber}`;
+}

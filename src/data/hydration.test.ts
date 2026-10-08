@@ -82,6 +82,7 @@ describe("hydrate into an existing entry", () => {
       issue_title: null,
       issue_class: "/feature",
       branch_name: "feat/aaaa",
+      pr_number: null,
       phase: "adw_plan_iso",
       status: "running",
       state: {},
