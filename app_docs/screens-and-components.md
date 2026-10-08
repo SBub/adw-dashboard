@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-141-adw-ab53aaef-sdlc_planner-sticky-header.md
 
 ## Overview
 
