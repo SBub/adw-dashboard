@@ -4,6 +4,7 @@
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
 - specs/issue-134-adw-b6fb710c-sdlc_planner-remove-halted-from-summary.md
+- specs/issue-137-adw-b37d7caa-sdlc_planner-simplify-queue-row-layout.md
 
 ## Overview
 
