@@ -14,7 +14,7 @@ The summary at `/` (`src/app/page.tsx`): finished runs per UTC day across projec
 
 `/` shows what the toolkit finished per UTC day, newest first, today on top
 in its own card with a Refresh button: runs
-completed and failed (halted when there are any), then three bordered chart
+completed and failed, then three bordered chart
 cards, in one row from 1024px and stacked below, each with a title and a
 muted subtitle: "Work by class" ("Runs finished that day", one
 column per class present), "Tokens by model" ("All tokens, including cache
@@ -135,7 +135,7 @@ open across midnight keeps refreshing that day until it is reloaded.
 `revalidateHistory` action and the `/api/revalidate` webhook drop today's
 scope on every completion they handle, and a fresh visitor sees the run
 without pressing Refresh. Not covered by a tag drop: a run that finishes
-`failed` or `halted` (neither fires the action or the webhook), and tokens and
+`failed` (it fires neither the action nor the webhook), and tokens and
 cost (per-model and per-phase usage included) that the toolkit writes after
 the completion. The model and phase rows are read in the same scopes as the day rows, so the same tags
 and lifetimes cover them. The 60-second `revalidate`
