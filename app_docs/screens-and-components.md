@@ -6,6 +6,7 @@
 - specs/issue-141-adw-ab53aaef-sdlc_planner-sticky-header.md
 - specs/issue-142-adw-0093e1de-sdlc_planner-friendly-run-phase-labels.md
 - specs/issue-145-adw-6726a682-sdlc_planner-history-card-full-branch.md
+- specs/issue-152-adw-a6b99270-sdlc_planner-fix-between-phase-complete-label.md
 
 ## Overview
 
@@ -38,7 +39,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   click selects it, with a small link to the branch on GitHub), Finished,
   Duration and Cost (only for a run with metrics), with no status pill, no final phase and no start time. The Active
   row's phase is shown as a label (Planning, Building, ..., Complete), with
-  the raw step key as the hover title. History's `?q`
+  the raw step key as the hover title; a run between phases shows the
+  finished step's done label (e.g. `Build done`), never `Complete`. History's `?q`
   search matches the raw column, not the label (searching "Planning" finds
   nothing).
   Active is a React Query entry patched by Realtime; History is rendered on
@@ -72,28 +74,39 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
 - A run row's phase label comes only from `phaseLabel` in
   `src/lib/run-phase.ts` (one helper, never a second mapping in a
   component). Exact keys match first (`queue:classification` contains a
-  colon), then the `:composer` and `:complete` suffixes on any prefix, then
-  `:failed` on a known step. An unknown value, including `:failed` on an
+  colon), then the `:composer` suffix on any prefix, then `:complete`: on a
+  known step with a done label it returns that label, on any other prefix (a
+  composer) it is `Complete`. The toolkit writes `<step>:complete` after each
+  phase (the run is still `running`) and `<composer>:complete` when the run is
+  done. Then `:failed` on a known step. An unknown value, including `:failed` on an
   unknown step, is shown raw so a new toolkit step is never hidden. The
   costed step keys are shared with `PHASE_ORDER` in `src/lib/phase-usage.ts`
-  (the label table is typed `Record<PhaseKey, string>`). Every change to the
+  (the label table is typed `Record<PhaseKey, ...>` with a required done
+  label). Every change to the
   mapping goes with a test case in `src/lib/run-phase.test.ts`.
 
-  | Raw value                              | Label                    |
-  | -------------------------------------- | ------------------------ |
-  | `ensure_adw_id`, `<composer>:composer` | Starting                 |
-  | `queue:classification`                 | Classifying              |
-  | `adw_plan_iso`                         | Planning                 |
-  | `adw_build_iso`                        | Building                 |
-  | `adw_test_iso`                         | Testing                  |
-  | `adw_review_iso`                       | Reviewing                |
-  | `adw_document_iso`                     | Documenting              |
-  | `adw_ci_iso`                           | Checking CI              |
-  | `adw_patch_iso`                        | Patching                 |
-  | `<step>:failed` with a known step      | the step's label         |
-  | `<composer>:complete`                  | Complete                 |
-  | `null`                                 | none (muted, as before)  |
-  | anything else                          | the raw value, unchanged |
+  | Raw value                                       | Label                    |
+  | ----------------------------------------------- | ------------------------ |
+  | `ensure_adw_id`, `<composer>:composer`          | Starting                 |
+  | `queue:classification`                          | Classifying              |
+  | `adw_plan_iso`                                  | Planning                 |
+  | `adw_build_iso`                                 | Building                 |
+  | `adw_test_iso`                                  | Testing                  |
+  | `adw_review_iso`                                | Reviewing                |
+  | `adw_document_iso`                              | Documenting              |
+  | `adw_ci_iso`                                    | Checking CI              |
+  | `adw_patch_iso`                                 | Patching                 |
+  | `<step>:failed` with a known step               | the step's label         |
+  | `adw_plan_iso:complete`                         | Plan done                |
+  | `adw_build_iso:complete`                        | Build done               |
+  | `adw_test_iso:complete`                         | Tests done               |
+  | `adw_review_iso:complete`                       | Review done              |
+  | `adw_document_iso:complete`                     | Docs done                |
+  | `adw_ci_iso:complete`                           | CI done                  |
+  | `adw_patch_iso:complete`                        | Patch done               |
+  | `<composer>:complete` (prefix not a known step) | Complete                 |
+  | `null`                                          | none (muted, as before)  |
+  | anything else                                   | the raw value, unchanged |
 
 - Section headings come from `SectionHeading` (`src/components/SectionHeading.tsx`),
   a server component with no state: title, an always-visible muted
