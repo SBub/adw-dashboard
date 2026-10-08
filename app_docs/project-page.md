@@ -6,6 +6,7 @@
 - specs/issue-134-adw-b6fb710c-sdlc_planner-remove-halted-from-summary.md
 - specs/issue-137-adw-b37d7caa-sdlc_planner-simplify-queue-row-layout.md
 - specs/issue-146-adw-7a7f315b-sdlc_planner-show-history-run-cost.md
+- specs/issue-148-adw-d2fdf4c1-sdlc_planner-history-page-turn-keep-scroll.md
 
 ## Overview
 
