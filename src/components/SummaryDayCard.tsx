@@ -40,11 +40,6 @@ export function SummaryDayCard({
         >
           {totals.failed} failed
         </span>
-        {totals.halted > 0 && (
-          <span className="text-sm tabular-nums text-neutral-500 dark:text-neutral-400">
-            {totals.halted} halted
-          </span>
-        )}
         {actions}
       </header>
       <DayCharts day={day} />

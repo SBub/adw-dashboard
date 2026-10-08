@@ -73,7 +73,6 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
     runs: sum(rows, (row) => row.runs),
     completed: sum(rows, (row) => row.completed),
     failed: sum(rows, (row) => row.failed),
-    halted: sum(rows, (row) => row.halted),
     features: sum(rows, (row) => row.features),
     bugs: sum(rows, (row) => row.bugs),
     chores: sum(rows, (row) => row.chores),

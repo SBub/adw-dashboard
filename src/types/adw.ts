@@ -86,8 +86,8 @@ export interface ProjectSummary extends Project {
  * One row of the adw.daily_summary view: one project's finished runs on one
  * UTC calendar day (`day` is `YYYY-MM-DD`, the day of runs.finished_at),
  * the columns the summary page reads from the view. `runs` counts every
- * finished status, so `runs - completed - failed` is `halted` (and any future
- * status), and `runs - features - bugs - chores - patches` is the runs with no
+ * finished status, so `runs - completed - failed` is any future status (0
+ * today), and `runs - features - bugs - chores - patches` is the runs with no
  * known issue class. `duration_sum_s` is the sum of the finished runs'
  * wall-clock durations in seconds. The token and cost sums are over the runs
  * that published metrics (adw.run_metrics) and are 0 when none did.
@@ -100,7 +100,6 @@ export interface DailySummary {
   runs: number;
   completed: number;
   failed: number;
-  halted: number;
   features: number;
   bugs: number;
   chores: number;

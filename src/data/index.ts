@@ -77,7 +77,7 @@ const QUEUE_COLUMNS =
 
 /** The columns of adw.daily_summary the summary page reads, which are exactly the fields of DailySummary. */
 const DAILY_SUMMARY_COLUMNS =
-  "project_id, day, runs, completed, failed, halted, features, bugs, chores, patches, duration_sum_s, tokens_in_sum, tokens_cache_read_sum, tokens_out_sum, cost_usd_sum";
+  "project_id, day, runs, completed, failed, features, bugs, chores, patches, duration_sum_s, tokens_in_sum, tokens_cache_read_sum, tokens_out_sum, cost_usd_sum";
 
 /** The columns of adw.daily_model_summary the summary page reads, which are exactly the fields of DailyModelSummary. */
 const DAILY_MODEL_SUMMARY_COLUMNS =

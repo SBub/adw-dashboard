@@ -45,7 +45,7 @@ async function getPastDays(today: string) {
  * Today's card, prefetched into a dehydrated React Query cache inside a
  * "use cache" scope tagged `summaryTodayTag()`, which a completion drops (the
  * action and the webhook, through historyTags). The lifetime is short: a run
- * that finishes failed or halted, and metrics written after a completion,
+ * that finishes failed, and metrics written after a completion,
  * reach the view without any tag drop, and the 60 second `revalidate` bounds
  * how long they wait for a fresh visitor. `expire` stays at 5 minutes, not
  * under, so the scope is still a cached hole. Same request-time rule as

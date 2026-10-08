@@ -21,11 +21,12 @@ const BADGE =
  * from the `position` prop) and is reserved for a future drag handle. The
  * source is parsed from the row's own column by queueSource; everything else
  * is a column. The card is one row: the issue link, the title (shown in full,
- * wrapping), the hint for a manual item, `Queued <time>` and the status pill,
- * all top-aligned on the title's first line. Nothing here reads the clock.
- * A manual item carries a visible hint (a title alone is invisible on touch):
- * removing the issue's label does not take it out of the queue. The queued
- * badge uses the same colour map as run rows.
+ * wrapping), the hint for a manual item and `Queued <time>`, all top-aligned
+ * on the title's first line, and the status pill, in its own right-hand
+ * column from sm up (as on run rows) so it stays on that line. Nothing here
+ * reads the clock. A manual item carries a visible hint (a title alone is
+ * invisible on touch): removing the issue's label does not take it out of the
+ * queue. The queued badge uses the same colour map as run rows.
  */
 export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
   const source = queueSource(item.source);
@@ -62,46 +63,53 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
         </span>
       </div>
       <div className="min-w-0 flex-1 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        <div className="flex min-w-0 flex-wrap items-start gap-x-3 gap-y-2">
-          <a
-            href={`https://github.com/${projectSlug}/issues/${item.issue_number}`}
-            target="_blank"
-            rel="noreferrer"
-            className="font-medium underline underline-offset-4 hover:text-neutral-600 dark:hover:text-neutral-300"
-          >
-            #{item.issue_number}
-          </a>
-          {item.issue_title !== null && (
-            <span className="min-w-0 flex-1 basis-40 wrap-break-word text-sm leading-6">
-              {item.issue_title}
-            </span>
-          )}
-          {source?.kind === "manual" && (
-            <>
-              <span className="flex h-6 items-center">
-                <span
-                  className={BADGE}
-                  title="Added by hand with adw_queue.py add. Removing the issue's label does not take it out of the queue."
-                >
-                  manual
-                </span>
+        {/* From sm up the pill has its own right-hand column, as on run
+            rows, so it stays on the title's first line. Below sm the gutter
+            leaves no room for that column beside the title's 10rem basis,
+            so the group dissolves (contents) and the pill wraps with the
+            rest. */}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-2 sm:flex-nowrap sm:justify-between">
+          <div className="contents sm:flex sm:min-w-0 sm:flex-1 sm:flex-wrap sm:items-start sm:gap-x-3 sm:gap-y-2">
+            <a
+              href={`https://github.com/${projectSlug}/issues/${item.issue_number}`}
+              target="_blank"
+              rel="noreferrer"
+              className="font-medium underline underline-offset-4 hover:text-neutral-600 dark:hover:text-neutral-300"
+            >
+              #{item.issue_number}
+            </a>
+            {item.issue_title !== null && (
+              <span className="min-w-0 flex-1 basis-40 wrap-break-word text-sm leading-6">
+                {item.issue_title}
               </span>
-              <span className="text-xs leading-6 text-neutral-500 dark:text-neutral-400">
-                Removing the label does not remove it.
-              </span>
-            </>
-          )}
-          <span className="ml-auto text-xs leading-6 text-neutral-500 dark:text-neutral-400">
-            Queued{" "}
-            {item.queued_at !== null ? (
-              <Timestamp value={item.queued_at} />
-            ) : (
-              <span className="text-neutral-400 dark:text-neutral-600">none</span>
             )}
-          </span>
-          <span className="flex h-6 shrink-0 items-center">
+            {source?.kind === "manual" && (
+              <>
+                <span className="flex h-6 items-center">
+                  <span
+                    className={BADGE}
+                    title="Added by hand with adw_queue.py add. Removing the issue's label does not take it out of the queue."
+                  >
+                    manual
+                  </span>
+                </span>
+                <span className="text-xs leading-6 text-neutral-500 dark:text-neutral-400">
+                  Removing the label does not remove it.
+                </span>
+              </>
+            )}
+            <span className="ml-auto text-xs leading-6 text-neutral-500 dark:text-neutral-400">
+              Queued{" "}
+              {item.queued_at !== null ? (
+                <Timestamp value={item.queued_at} />
+              ) : (
+                <span className="text-neutral-400 dark:text-neutral-600">none</span>
+              )}
+            </span>
+          </div>
+          <div className="flex h-6 shrink-0 items-center">
             <StatusBadge status="queued" />
-          </span>
+          </div>
         </div>
       </div>
     </li>
