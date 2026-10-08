@@ -10,6 +10,13 @@
   --background: var(--color-white);
   --foreground: var(--color-neutral-900);
   color-scheme: light dark;
+  /*
+   * The sticky root header's single-row height (`py-3`, the brand's 1.5rem
+   * line box and the 1px bottom border), the one source the sidebar's sticky
+   * offset reads. The header wraps to two rows only below `md`, where the
+   * sidebar is not sticky.
+   */
+  --header-height: 3.0625rem;
 }
 
 @media (prefers-color-scheme: dark) {

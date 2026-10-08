@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-141-adw-ab53aaef-sdlc_planner-sticky-header.md
 
 ## Overview
 
@@ -18,7 +19,10 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   queued, running, completed and failed counts and the time its last run started. It
   lives in a shared layout (`src/app/(dashboard)/layout.tsx`), so it keeps its
   state and scroll position when the selection changes. Below the `md`
-  breakpoint it becomes a horizontal strip above the detail.
+  breakpoint it becomes a horizontal strip above the detail. From `md` up it
+  is sticky: it sits `--header-height` + 1.5rem from the top, below the
+  sticky root header, and its max height subtracts the header height and both
+  1.5rem gaps, so its last item stays reachable through its own scroll.
   Every run and queue state has one colour wherever it appears (queued
   amber, running emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
@@ -119,9 +123,20 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   painted only on `html` and `body`. `html` must keep it: the canvas, the
   scrollbar gutter and the overscroll area are painted from the root. No
   page-level wrapper (`body` classes, `main`, a layout shell, a page root)
-  takes a `bg-` class, and an element that must match the page colour (the
-  queue rail's hollow marker) uses `bg-background`, never a copied
-  `bg-white dark:bg-neutral-950`.
+  takes a `bg-` class, with one exception: the sticky root header takes
+  `bg-background` so content does not show through while scrolling under it;
+  `html` keeps painting the canvas. That header, and any element that must
+  match the page colour (the queue rail's hollow marker), uses
+  `bg-background`, never a copied `bg-white dark:bg-neutral-950`.
+- The root header in `src/app/layout.tsx` is `sticky top-0` with
+  `HEADER_LAYER` (`src/lib/layers.ts`, below `TOOLTIP_LAYER` and above every
+  other z-index in `src/`, pinned by `src/lib/layers.test.ts`), on every route
+  and at every width. The document keeps scrolling as a whole: never make
+  `main`, `body` or a layout shell an `overflow` scroll container (scroll
+  restoration, scroll-to-top on navigation, pull-to-refresh and the mobile
+  address bar depend on window scroll). Its single-row height has one source,
+  `--header-height` in `src/app/globals.css`; a change to the header's padding
+  or line height updates it.
 - Status colours come only from `STATUS_COLORS` in `src/lib/status-colors.ts`
   (queued amber, running emerald with the pulse dot, completed sky, failed
   rose, `neutral` for zeros), written as full literal class strings so
