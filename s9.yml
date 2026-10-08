@@ -1,0 +1,226 @@
+- generic [ref=e1]:
+    - banner [ref=e2]:
+        - generic [ref=e3]:
+            - generic [ref=e4]:
+                - link "ADW Dashboard" [ref=e5] [cursor=pointer]:
+                    - /url: /
+                - navigation "Sections" [ref=e6]:
+                    - link "Projects" [ref=e7] [cursor=pointer]:
+                        - /url: /projects
+            - generic [ref=e8]: AI Developer Workflow runs
+    - main [ref=e10]:
+        - generic [ref=e1110]:
+            - complementary [ref=e1111]:
+                - generic [ref=e1112]:
+                    - heading "Projects" [level=2] [ref=e1113]
+                    - status [ref=e1114]: live
+                - navigation "Projects" [ref=e1118]:
+                    - list [ref=e1119]:
+                        - listitem [ref=e1136]:
+                            - link "ADW Toolkit SBub/adw-toolkit 0 queued 1 running 28 completed 0 failed Last run 08.10.2026 16:41 UTC" [active] [ref=e1261] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-toolkit
+                                - generic [ref=e1138]: ADW Toolkit
+                                - generic [ref=e1139]: SBub/adw-toolkit
+                                - generic [ref=e1140]:
+                                    - generic "0 queued" [ref=e1141]:
+                                        - text: "0"
+                                        - generic [ref=e1142]: queued
+                                    - generic "1 running" [ref=e1143]:
+                                        - text: "1"
+                                        - generic [ref=e1145]: running
+                                    - generic "28 completed" [ref=e1146]:
+                                        - text: "28"
+                                        - generic [ref=e1147]: completed
+                                    - generic "0 failed" [ref=e1148]:
+                                        - text: "0"
+                                        - generic [ref=e1149]: failed
+                                - generic [ref=e1150]:
+                                    - text: Last run
+                                    - time [ref=e1151]: 08.10.2026 16:41 UTC
+                        - listitem [ref=e1120]:
+                            - link "ADW Dashboard SBub/adw-dashboard 5 queued 1 running 53 completed 0 failed Last run 08.10.2026 16:38 UTC" [ref=e1121] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-dashboard
+                                - generic [ref=e1122]: ADW Dashboard
+                                - generic [ref=e1123]: SBub/adw-dashboard
+                                - generic [ref=e1124]:
+                                    - generic "5 queued" [ref=e1125]:
+                                        - text: "5"
+                                        - generic [ref=e1126]: queued
+                                    - generic "1 running" [ref=e1127]:
+                                        - text: "1"
+                                        - generic [ref=e1129]: running
+                                    - generic "53 completed" [ref=e1130]:
+                                        - text: "53"
+                                        - generic [ref=e1131]: completed
+                                    - generic "0 failed" [ref=e1132]:
+                                        - text: "0"
+                                        - generic [ref=e1133]: failed
+                                - generic [ref=e1134]:
+                                    - text: Last run
+                                    - time [ref=e1135]: 08.10.2026 16:38 UTC
+                        - listitem [ref=e1152]:
+                            - link "issebya-homes-ai-system SBub/issebya-homes-ai-system 0 queued 0 running 6 completed 0 failed Last run 08.10.2026 14:26 UTC" [ref=e1153] [cursor=pointer]:
+                                - /url: /projects/SBub/issebya-homes-ai-system
+                                - generic [ref=e1154]: issebya-homes-ai-system
+                                - generic [ref=e1155]: SBub/issebya-homes-ai-system
+                                - generic [ref=e1156]:
+                                    - generic "0 queued" [ref=e1157]:
+                                        - text: "0"
+                                        - generic [ref=e1158]: queued
+                                    - generic "0 running" [ref=e1159]:
+                                        - text: "0"
+                                        - generic [ref=e1160]: running
+                                    - generic "6 completed" [ref=e1161]:
+                                        - text: "6"
+                                        - generic [ref=e1162]: completed
+                                    - generic "0 failed" [ref=e1163]:
+                                        - text: "0"
+                                        - generic [ref=e1164]: failed
+                                - generic [ref=e1165]:
+                                    - text: Last run
+                                    - time [ref=e1166]: 08.10.2026 14:26 UTC
+            - generic [ref=e1167]:
+                - generic [ref=e1266]:
+                    - heading "ADW Toolkit" [level=1] [ref=e1267]
+                    - paragraph [ref=e1268]:
+                        - link "SBub/adw-toolkit" [ref=e1269] [cursor=pointer]:
+                            - /url: https://github.com/SBub/adw-toolkit
+                - generic [ref=e1274]:
+                    - generic [ref=e1275]:
+                        - generic [ref=e1278]:
+                            - heading "Active" [level=2] [ref=e1279]
+                            - generic [ref=e1280]:
+                                - button "About Active" [ref=e1281]
+                                - tooltip "A failed run keeps its branch and stays here, not in history, until it is run again." [ref=e1285]
+                        - paragraph [ref=e1287]: Runs in progress, and runs that failed and are not resolved yet. Each run plans, builds, tests, reviews and documents a change, then opens a pull request. The row updates live as phases complete.
+                    - list [ref=e1288]:
+                        - listitem [ref=e1289]:
+                            - generic [ref=e1290]:
+                                - generic [ref=e1291]:
+                                    - link "#95" [ref=e1292] [cursor=pointer]:
+                                        - /url: https://github.com/SBub/adw-toolkit/issues/95
+                                    - generic [ref=e1293]: "migrations: a backfill must not rewrite updated_at"
+                                    - generic [ref=e1294]: /bug
+                                    - code [ref=e1296]: efe1902e
+                                    - generic [ref=e1297]:
+                                        - text: Updated
+                                        - time [ref=e1298]: 08.10.2026 16:41 UTC
+                                - generic [ref=e1299]: running
+                            - generic [ref=e1304]:
+                                - generic [ref=e1305]:
+                                    - term [ref=e1306]: Phase
+                                    - definition [ref=e1307]: Complete
+                                - generic [ref=e1308]:
+                                    - term [ref=e1309]: Branch
+                                    - definition [ref=e1310]:
+                                        - code [ref=e1311]: fix/issue-95-adw-efe1902e-backfill-preserve-updated-at
+                                - generic [ref=e1312]:
+                                    - term [ref=e1313]: Started
+                                    - definition [ref=e1314]:
+                                        - time [ref=e1315]: 08.10.2026 16:18 UTC
+                - generic [ref=e1316]:
+                    - generic [ref=e1317]:
+                        - generic [ref=e1320]:
+                            - heading "Queue" [level=2] [ref=e1321]
+                            - generic [ref=e1322]:
+                                - button "About Queue" [ref=e1323]
+                                - tooltip "Items added by hand stay until removed by hand. The numbers follow the queue ledger's order, so moving an item changes them." [ref=e1327]
+                        - paragraph [ref=e1329]:
+                            - text: First in, first out. The top item starts when the running one finishes. An issue joins when its repository labels it
+                            - code [ref=e1330]: adw:queued
+                            - text: ; removing the label withdraws it.
+                    - paragraph [ref=e1331]: Nothing queued.
+                - generic [ref=e1332]:
+                    - generic [ref=e1333]:
+                        - generic [ref=e1334]:
+                            - generic [ref=e1335]:
+                                - generic [ref=e1336]:
+                                    - heading "History" [level=2] [ref=e1337]
+                                    - generic [ref=e1338]:
+                                        - button "About History" [ref=e1339]
+                                        - tooltip "Completed runs never change, so this list is cached and only refreshed when a new run completes." [ref=e1343]
+                                - searchbox "Search history" [ref=e1346]
+                            - navigation "History pages" [ref=e1348]:
+                                - generic [ref=e1349]: 1 of 10
+                                - link "Older runs" [ref=e1350] [cursor=pointer]:
+                                    - /url: /projects/SBub/adw-toolkit?after=eyJzbHVnIjoiU0J1Yi9hZHctdG9vbGtpdCIsImRpcmVjdGlvbiI6ImFmdGVyIiwidXBkYXRlZF9hdCI6IjIwMjYtMTAtMDhUMTE6MzA6MzguMDY4NzgrMDA6MDAiLCJhZHdfaWQiOiI5NzRkNWJhZiJ9
+                                    - text: →
+                        - paragraph [ref=e1351]: "Completed runs, newest first. A run completes when its pull request was merged by the merge gate: tests green, review without blockers, CI green."
+                    - list [ref=e1353]:
+                        - listitem [ref=e1354]:
+                            - generic [ref=e1356]:
+                                - link "#92" [ref=e1357] [cursor=pointer]:
+                                    - /url: https://github.com/SBub/adw-toolkit/issues/92
+                                - generic [ref=e1358]: "runs: publish the pull request number on adw.runs"
+                                - generic [ref=e1359]: /feature
+                                - code [ref=e1361]: af64f123
+                            - generic [ref=e1362]:
+                                - generic [ref=e1363]:
+                                    - term [ref=e1364]: Branch
+                                    - definition [ref=e1365]:
+                                        - code [ref=e1366]: feat/issue-92-adw-af64f123-publish-pr-number-on-runs
+                                        - link "Open branch feat/issue-92-adw-af64f123-publish-pr-number-on-runs on GitHub" [ref=e1367] [cursor=pointer]:
+                                            - /url: https://github.com/SBub/adw-toolkit/tree/feat/issue-92-adw-af64f123-publish-pr-number-on-runs
+                                            - text: ↗
+                                - generic [ref=e1368]:
+                                    - term [ref=e1369]: Finished
+                                    - definition [ref=e1370]:
+                                        - time [ref=e1371]: 08.10.2026 15:59 UTC
+                                - generic [ref=e1372]:
+                                    - term [ref=e1373]: Duration
+                                    - definition [ref=e1374]: 33m 01s
+                                - generic [ref=e1375]:
+                                    - term [ref=e1376]: Cost
+                                    - definition [ref=e1377]: $2.95
+                        - listitem [ref=e1378]:
+                            - generic [ref=e1380]:
+                                - link "#86" [ref=e1381] [cursor=pointer]:
+                                    - /url: https://github.com/SBub/adw-toolkit/issues/86
+                                - generic [ref=e1382]: "chore: remove the unused 'halted' run status for now"
+                                - generic [ref=e1383]: /chore
+                                - code [ref=e1385]: 0187efee
+                            - generic [ref=e1386]:
+                                - generic [ref=e1387]:
+                                    - term [ref=e1388]: Branch
+                                    - definition [ref=e1389]:
+                                        - code [ref=e1390]: chore/issue-86-adw-0187efee-remove-unused-halted-run-status
+                                        - link "Open branch chore/issue-86-adw-0187efee-remove-unused-halted-run-status on GitHub" [ref=e1391] [cursor=pointer]:
+                                            - /url: https://github.com/SBub/adw-toolkit/tree/chore/issue-86-adw-0187efee-remove-unused-halted-run-status
+                                            - text: ↗
+                                - generic [ref=e1392]:
+                                    - term [ref=e1393]: Finished
+                                    - definition [ref=e1394]:
+                                        - time [ref=e1395]: 08.10.2026 12:28 UTC
+                                - generic [ref=e1396]:
+                                    - term [ref=e1397]: Duration
+                                    - definition [ref=e1398]: 50m 38s
+                                - generic [ref=e1399]:
+                                    - term [ref=e1400]: Cost
+                                    - definition [ref=e1401]: $5.15
+                        - listitem [ref=e1402]:
+                            - generic [ref=e1404]:
+                                - link "#53" [ref=e1405] [cursor=pointer]:
+                                    - /url: https://github.com/SBub/adw-toolkit/issues/53
+                                - generic [ref=e1406]: "webhook: receive GitHub label events in a Supabase Edge Function instead of the local trigger"
+                                - generic [ref=e1407]: /feature
+                                - code [ref=e1409]: 974d5baf
+                            - generic [ref=e1410]:
+                                - generic [ref=e1411]:
+                                    - term [ref=e1412]: Branch
+                                    - definition [ref=e1413]:
+                                        - code [ref=e1414]: feat/issue-53-adw-974d5baf-edge-function-label-webhook
+                                        - link "Open branch feat/issue-53-adw-974d5baf-edge-function-label-webhook on GitHub" [ref=e1415] [cursor=pointer]:
+                                            - /url: https://github.com/SBub/adw-toolkit/tree/feat/issue-53-adw-974d5baf-edge-function-label-webhook
+                                            - text: ↗
+                                - generic [ref=e1416]:
+                                    - term [ref=e1417]: Finished
+                                    - definition [ref=e1418]:
+                                        - time [ref=e1419]: 08.10.2026 11:30 UTC
+                                - generic [ref=e1420]:
+                                    - term [ref=e1421]: Duration
+                                    - definition [ref=e1422]: 42m 37s
+                                - generic [ref=e1423]:
+                                    - term [ref=e1424]: Cost
+                                    - definition [ref=e1425]: $6.34
+    - button "Open Next.js Dev Tools" [ref=e1262] [cursor=pointer]
+    - alert [ref=e1260]: What an AI developer workflow gets done

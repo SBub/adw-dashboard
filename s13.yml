@@ -1,0 +1,152 @@
+- generic [ref=e1]:
+    - banner [ref=e2]:
+        - generic [ref=e3]:
+            - generic [ref=e4]:
+                - link "ADW Dashboard" [ref=e5] [cursor=pointer]:
+                    - /url: /
+                - navigation "Sections" [ref=e6]:
+                    - link "Projects" [active] [ref=e7] [cursor=pointer]:
+                        - /url: /projects
+            - generic [ref=e8]: AI Developer Workflow runs
+    - main [ref=e10]:
+        - generic [ref=e1110]:
+            - complementary [ref=e1111]:
+                - generic [ref=e1112]:
+                    - heading "Projects" [level=2] [ref=e1113]
+                    - status [ref=e1114]: live
+                - navigation "Projects" [ref=e1118]:
+                    - list [ref=e1119]:
+                        - listitem [ref=e1136]:
+                            - link "ADW Toolkit SBub/adw-toolkit 0 queued 1 running 28 completed 0 failed Last run 08.10.2026 16:41 UTC" [ref=e1261] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-toolkit
+                                - generic [ref=e1138]: ADW Toolkit
+                                - generic [ref=e1139]: SBub/adw-toolkit
+                                - generic [ref=e1140]:
+                                    - generic "0 queued" [ref=e1141]:
+                                        - text: "0"
+                                        - generic [ref=e1142]: queued
+                                    - generic "1 running" [ref=e1143]:
+                                        - text: "1"
+                                        - generic [ref=e1145]: running
+                                    - generic "28 completed" [ref=e1146]:
+                                        - text: "28"
+                                        - generic [ref=e1147]: completed
+                                    - generic "0 failed" [ref=e1148]:
+                                        - text: "0"
+                                        - generic [ref=e1149]: failed
+                                - generic [ref=e1150]:
+                                    - text: Last run
+                                    - time [ref=e1151]: 08.10.2026 16:41 UTC
+                        - listitem [ref=e1120]:
+                            - link "ADW Dashboard SBub/adw-dashboard 5 queued 1 running 53 completed 0 failed Last run 08.10.2026 16:38 UTC" [ref=e1121] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-dashboard
+                                - generic [ref=e1122]: ADW Dashboard
+                                - generic [ref=e1123]: SBub/adw-dashboard
+                                - generic [ref=e1124]:
+                                    - generic "5 queued" [ref=e1125]:
+                                        - text: "5"
+                                        - generic [ref=e1126]: queued
+                                    - generic "1 running" [ref=e1127]:
+                                        - text: "1"
+                                        - generic [ref=e1129]: running
+                                    - generic "53 completed" [ref=e1130]:
+                                        - text: "53"
+                                        - generic [ref=e1131]: completed
+                                    - generic "0 failed" [ref=e1132]:
+                                        - text: "0"
+                                        - generic [ref=e1133]: failed
+                                - generic [ref=e1134]:
+                                    - text: Last run
+                                    - time [ref=e1135]: 08.10.2026 16:38 UTC
+                        - listitem [ref=e1152]:
+                            - link "issebya-homes-ai-system SBub/issebya-homes-ai-system 0 queued 0 running 6 completed 0 failed Last run 08.10.2026 14:26 UTC" [ref=e1153] [cursor=pointer]:
+                                - /url: /projects/SBub/issebya-homes-ai-system
+                                - generic [ref=e1154]: issebya-homes-ai-system
+                                - generic [ref=e1155]: SBub/issebya-homes-ai-system
+                                - generic [ref=e1156]:
+                                    - generic "0 queued" [ref=e1157]:
+                                        - text: "0"
+                                        - generic [ref=e1158]: queued
+                                    - generic "0 running" [ref=e1159]:
+                                        - text: "0"
+                                        - generic [ref=e1160]: running
+                                    - generic "6 completed" [ref=e1161]:
+                                        - text: "6"
+                                        - generic [ref=e1162]: completed
+                                    - generic "0 failed" [ref=e1163]:
+                                        - text: "0"
+                                        - generic [ref=e1164]: failed
+                                - generic [ref=e1165]:
+                                    - text: Last run
+                                    - time [ref=e1166]: 08.10.2026 14:26 UTC
+            - generic [ref=e1168]:
+                - generic [ref=e1169]:
+                    - generic [ref=e1172]:
+                        - heading "Active" [level=2] [ref=e1173]
+                        - generic [ref=e1174]:
+                            - button "About Active" [ref=e1175]
+                            - tooltip "A failed run keeps its branch and stays here, not in history, until it is run again." [ref=e1179]
+                    - paragraph [ref=e1181]: Runs in progress, and runs that failed and are not resolved yet, across every project. Each row updates live as phases complete.
+                - generic [ref=e1182]:
+                    - generic [ref=e1215]:
+                        - heading "ADW Toolkit SBub/adw-toolkit" [level=3] [ref=e1216]:
+                            - link "ADW Toolkit" [ref=e1217] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-toolkit
+                            - generic [ref=e1218]: SBub/adw-toolkit
+                        - list [ref=e1219]:
+                            - listitem [ref=e1220]:
+                                - generic [ref=e1221]:
+                                    - generic [ref=e1222]:
+                                        - link "#95" [ref=e1223] [cursor=pointer]:
+                                            - /url: https://github.com/SBub/adw-toolkit/issues/95
+                                        - generic [ref=e1224]: "migrations: a backfill must not rewrite updated_at"
+                                        - generic [ref=e1225]: /bug
+                                        - code [ref=e1227]: efe1902e
+                                        - generic [ref=e1228]:
+                                            - text: Updated
+                                            - time [ref=e1229]: 08.10.2026 16:41 UTC
+                                    - generic [ref=e1230]: running
+                                - generic [ref=e1235]:
+                                    - generic [ref=e1236]:
+                                        - term [ref=e1237]: Phase
+                                        - definition [ref=e1238]: Complete
+                                    - generic [ref=e1239]:
+                                        - term [ref=e1240]: Branch
+                                        - definition [ref=e1241]:
+                                            - code [ref=e1242]: fix/issue-95-adw-efe1902e-backfill-preserve-updated-at
+                                    - generic [ref=e1243]:
+                                        - term [ref=e1244]: Started
+                                        - definition [ref=e1245]:
+                                            - time [ref=e1246]: 08.10.2026 16:18 UTC
+                    - generic [ref=e1183]:
+                        - heading "ADW Dashboard SBub/adw-dashboard" [level=3] [ref=e1184]:
+                            - link "ADW Dashboard" [ref=e1185] [cursor=pointer]:
+                                - /url: /projects/SBub/adw-dashboard
+                            - generic [ref=e1186]: SBub/adw-dashboard
+                        - list [ref=e1187]:
+                            - listitem [ref=e1188]:
+                                - generic [ref=e1189]:
+                                    - generic [ref=e1190]:
+                                        - link "#146" [ref=e1191] [cursor=pointer]:
+                                            - /url: https://github.com/SBub/adw-dashboard/issues/146
+                                        - generic [ref=e1192]: "History card: show the cost of each run"
+                                        - generic [ref=e1193]: /feature
+                                        - code [ref=e1195]: 7a7f315b
+                                        - generic [ref=e1196]:
+                                            - text: Updated
+                                            - time [ref=e1197]: 08.10.2026 16:38 UTC
+                                    - generic [ref=e1198]: running
+                                - generic [ref=e1203]:
+                                    - generic [ref=e1204]:
+                                        - term [ref=e1205]: Phase
+                                        - definition [ref=e1206]: Complete
+                                    - generic [ref=e1207]:
+                                        - term [ref=e1208]: Branch
+                                        - definition [ref=e1209]:
+                                            - code [ref=e1210]: feat/issue-146-adw-7a7f315b-show-history-run-cost
+                                    - generic [ref=e1211]:
+                                        - term [ref=e1212]: Started
+                                        - definition [ref=e1213]:
+                                            - time [ref=e1214]: 08.10.2026 16:23 UTC
+    - button "Open Next.js Dev Tools" [ref=e1262] [cursor=pointer]
+    - alert [ref=e1260]: ADW Toolkit
