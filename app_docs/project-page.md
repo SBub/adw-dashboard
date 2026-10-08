@@ -181,11 +181,14 @@ phase` and no `Started`.
 
    History is paged three runs at a time. The URL of a later page carries
    `?after=<bookmark>` or `?before=<bookmark>`, an opaque base64url JSON
-   `{ slug, direction, updated_at, adw_id }` (`updated_at` kept verbatim,
+   `{ slug, direction, finished_at, adw_id }` (`finished_at` kept verbatim,
    microseconds included). An `after` bookmark is the last row the previous
    page showed, and the page is the rows strictly older than that tuple in the
-   order `updated_at desc, adw_id desc` (`adw_id` is unique within a project,
-   so the order is total); a `before` bookmark is the first row the following
+   order `finished_at desc, adw_id desc` (`adw_id` is unique within a project,
+   so the order is total). `updated_at` is not the key: a trigger stamps it on
+   every write, so a backfill or a late `pr_number` would reorder History,
+   while `finished_at` is written once by the terminal save. A bookmark of the
+   older `updated_at` shape reads as page one. A `before` bookmark is the first row the following
    page showed, and the page is the rows strictly newer than it, read oldest
    first and reversed for display. A run completing while a visitor is on page
    two adds a row to page one and never shifts page two. The bookmark is
