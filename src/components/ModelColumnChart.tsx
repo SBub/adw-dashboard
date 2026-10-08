@@ -1,5 +1,6 @@
 import { MODEL_BG } from "@/lib/chart-colors";
-import { costLabel, tokensLabel } from "@/lib/daily-summary";
+import { tokensLabel } from "@/lib/daily-summary";
+import { costLabel } from "@/lib/run-view";
 import { modelFamily, modelShortName } from "@/lib/model-usage";
 import type { SummaryModel } from "@/types/adw";
 import { ColumnChart } from "./ColumnChart";

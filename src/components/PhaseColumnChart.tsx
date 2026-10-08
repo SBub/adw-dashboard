@@ -1,5 +1,6 @@
 import { PHASE_BG } from "@/lib/chart-colors";
-import { costLabel, tokensLabel } from "@/lib/daily-summary";
+import { tokensLabel } from "@/lib/daily-summary";
+import { costLabel } from "@/lib/run-view";
 import { phaseName } from "@/lib/phase-usage";
 import { secondsLabel } from "@/lib/run-view";
 import type { SummaryPhase } from "@/types/adw";

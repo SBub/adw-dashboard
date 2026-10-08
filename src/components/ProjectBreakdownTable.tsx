@@ -1,4 +1,5 @@
-import { costLabel, tokensLabel } from "@/lib/daily-summary";
+import { tokensLabel } from "@/lib/daily-summary";
+import { costLabel } from "@/lib/run-view";
 import { secondsLabel } from "@/lib/run-view";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import type { SummaryDay, SummaryProjectDay } from "@/types/adw";
