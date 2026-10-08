@@ -111,19 +111,12 @@ The project page renders its header and Active like this:
    item in ledger order, a move reorders the ledger without restamping
    `queued_at`, and a retry restamps it without moving the item. Beside the
    marker, the card holds the issue number as a GitHub
-   link, the title (omitted when `null`), the source hint and `Queued <time>`
-   (`none` when `queued_at` is `null`), then the status pill (in its own
-   right-hand column from `sm` up, as on run rows, so it stays on the title's
-   first line; below `sm` it may wrap with `Queued <time>`): the
-   title shown in full and wrapping, every element top-aligned on its first
-   line. The rail line runs from marker centre to marker centre whatever the
-   card's height.
-   The source is parsed from the stored `source` column by `queueSource` in
-   `src/lib/queue-source.ts`: `manual` renders a `manual` badge plus a visible
-   hint that removing the label does not remove the item, since a manually
-   queued item is not taken out by unlabelling the issue; anything else
-   (`label:<name>` included, or `null`) renders no badge, because the section
-   description already explains the label.
+   link, the title (omitted when `null`) and the status pill, in one row that
+   does not wrap: the title is shown in full, wrapping and taking the
+   remaining width, and every element, the pill included, is top-aligned on
+   the title's first line, the pill right-aligned at every width. `source`
+   and `queued_at` are read but not rendered. The rail line runs from marker
+   centre to marker centre whatever the card's height.
    Every row ends with the amber `queued` `StatusBadge`, the same component
    and colour map as a run row's status.
 
@@ -237,10 +230,11 @@ History is rendered below that, by the same page:
   index. `byQueuePosition` in the same file is the one ledger comparator,
   shared by `queuePositions` and `applyQueueChange`; both are pure and tested
   in `src/lib/queue-order.test.ts`, and every change to them goes with a test
-  case. A row holds the issue link, the title, the manual hint for a manual
-  item, `Queued <time>` and the status pill; the title is shown in full and
-  wraps (never `truncate`, `line-clamp` or a `title` tooltip for it), and
-  every element is top-aligned on the title's first line; it shows no label chip, no wait
+  case. A row holds the issue link, the title and the status pill, and nothing
+  else (no source badge, no queued time); the title is shown in full and
+  wraps (never `truncate`, `line-clamp` or a `title` tooltip for it), every
+  element is top-aligned on the title's first line, and the pill stays on
+  that line at every width; it shows no label chip, no wait
   and no start hint. Rows stay keyed by `issue_number`, and the
   left gutter stays reserved for the marker and the future drag handle. The
   rail line and the `next` marker take their colours from

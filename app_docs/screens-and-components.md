@@ -102,9 +102,7 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `src/hooks/use-debounced-callback.ts` and navigates with
   `router.replace` inside the shared transition. `src/lib/run-view.ts` is plain and
   importable from anywhere. `QueueRow` has no `"use client"` (it is rendered
-  by `QueueView`, like `RunRow`); the one parse of `queue_items.source` is
-  `queueSource` in `src/lib/queue-source.ts`, pure and tested in
-  `src/lib/queue-source.test.ts`.
+  by `QueueView`, like `RunRow`).
 - The visible text of every timestamp comes from `formatTimestamp` in
   `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
   the input, unit-tested in `src/lib/format-date.test.ts`), called only by

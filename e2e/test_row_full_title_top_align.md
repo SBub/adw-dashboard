@@ -57,8 +57,8 @@ So that I know what each run or queued item is doing without opening GitHub
     **Verify** for every modified row that the title wraps (more line boxes than at 1920x1080, or
     at least 3), still has no ellipsis and no horizontal overflow; for run rows that the pill's top
     is still within 2px of the first line's top (the pill keeps its own right-hand column); for the
-    Queue row that the marker is still on the first line (the `Queued` time and the pill may drop
-    below the title at this width).
+    Queue row that the marker and the pill are both still within 2px of the first line's top (the
+    row does not wrap at this width).
 12. Take a screenshot of the project page at 375x667.
 
 ## Success Criteria
@@ -69,5 +69,6 @@ So that I know what each run or queued item is doing without opening GitHub
   first line top.
 - The queue rail line stays continuous between rows.
 - The title wraps at 375px wide, still in full.
+- At 375x667 the queue row's pill stays on the title's first line.
 - The run detail grid still truncates.
 - 2 screenshots are taken.
