@@ -62,8 +62,9 @@ key. Nothing here writes to it. Do not start the dev server during install.
 ## Tests
 
 In the order the test phase runs them, all from the root, unfiltered: lint `yarn lint` (autofix
-`yarn lint:fix`); typecheck `yarn typecheck` (`next typegen` then `tsc --noEmit`; it rewrites the
-gitignored `next-env.d.ts`, never stage it); dead code `yarn knip` (scans `src/**`, see `knip.json`);
+`yarn lint:fix`; `eslint.config.mjs` ignores `trees/**` and `agents/**`); typecheck
+`yarn typecheck` (`next typegen` then `tsc --noEmit`; `tsconfig.json` excludes `trees` and
+`agents`; it rewrites the gitignored `next-env.d.ts`, never stage it); dead code `yarn knip` (scans `src/**`, see `knip.json`);
 format `yarn format:check` (write `yarn format`); unit `yarn test` (vitest, `src/**/*.test.ts`
 only, see `vitest.config.ts`); build `yarn build`.
 
