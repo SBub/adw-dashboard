@@ -6,6 +6,7 @@
 - specs/issue-141-adw-ab53aaef-sdlc_planner-sticky-header.md
 - specs/issue-142-adw-0093e1de-sdlc_planner-friendly-run-phase-labels.md
 - specs/issue-145-adw-6726a682-sdlc_planner-history-card-full-branch.md
+- specs/issue-152-adw-a6b99270-sdlc_planner-fix-between-phase-complete-label.md
 
 ## Overview
 
