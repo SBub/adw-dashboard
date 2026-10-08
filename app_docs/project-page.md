@@ -40,8 +40,9 @@ heading.
 Each run row shows the issue title (`adw.runs.issue_title`, published by the
 toolkit) in full after the issue number, wrapping onto as many lines as it
 needs (a long unbroken token such as a URL or a path breaks too), with every
-other element of the row (the class badge, the `adw_id`, `Updated <time>` and
-the status pill) top-aligned on the title's first line; runs published before
+other element of the row (the class badge, the `adw_id`, and on Active rows
+`Updated <time>` and the status pill) top-aligned on the title's first line
+(History rows have no status pill and end the top row with the `adw_id`); runs published before
 the toolkit wrote it have no title and show the number alone. The title keeps a
 10rem flex basis, so on a narrow screen the issue class badge and the `adw_id`
 wrap to the next line instead of squeezing the title to a single character.
@@ -161,8 +162,11 @@ History is rendered below that, by the same page:
    see `app_docs/history-revalidation.md`, "What is prerendered and what is not". `src/components/HistoryLinks.tsx`
    and `src/components/RunHistoryList.tsx` are server components with no
    state: the all/completed/failed toggle is gone because history is
-   completed-only now. `RunRow` in the `history` variant still shows Finished
-   and Duration.
+   completed-only now. `RunRow` in the `history` variant shows Branch (in
+   full, spanning two columns), Finished and Duration, on one row from `sm`
+   and stacked at 375px, in a 4-column grid that leaves room for two more
+   one-column fields on the next row; it has no `completed` pill, no `Final
+phase` and no `Started`.
 
    History is paged three runs at a time. The URL of a later page carries
    `?after=<bookmark>` or `?before=<bookmark>`, an opaque base64url JSON

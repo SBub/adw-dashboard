@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { durationLabel, secondsLabel } from "./run-view";
+import { branchTreeHref, durationLabel, secondsLabel } from "./run-view";
 
 // The module under test never reads the clock, so nothing here depends on
 // when the suite runs; every case is two fixed timestamps.
@@ -41,5 +41,25 @@ describe("secondsLabel", () => {
 
   it("switches to hours from one hour up", () => {
     expect(secondsLabel(3725)).toBe("1h 02m");
+  });
+});
+
+describe("branchTreeHref", () => {
+  it("links a plain branch to its tree", () => {
+    expect(branchTreeHref("SBub/adw-dashboard", "develop")).toBe(
+      "https://github.com/SBub/adw-dashboard/tree/develop",
+    );
+  });
+
+  it("keeps the branch's slashes as path separators", () => {
+    expect(branchTreeHref("SBub/adw-dashboard", "chore/issue-141-adw-ab53aaef-x")).toBe(
+      "https://github.com/SBub/adw-dashboard/tree/chore/issue-141-adw-ab53aaef-x",
+    );
+  });
+
+  it("escapes a # in a segment", () => {
+    expect(branchTreeHref("SBub/adw-dashboard", "fix/issue#12")).toBe(
+      "https://github.com/SBub/adw-dashboard/tree/fix/issue%2312",
+    );
   });
 });

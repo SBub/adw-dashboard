@@ -1,8 +1,8 @@
 # E2E Test: Run Row Phase Label
 
-Checks that run rows (Active and History) show the phase as a user-facing label (Planning,
-Building, ..., Complete) in plain text instead of the raw `adw_` step key in monospace, and that the
-raw key stays available as the hover title. The hosted database is read only: the journey never
+Checks that Active run rows show the phase as a user-facing label (Planning, Building, ...,
+Complete) in plain text instead of the raw `adw_` step key in monospace, that the raw key stays
+available as the hover title, and that History rows show no phase at all. The hosted database is read only: the journey never
 writes to it.
 
 ## User Story
@@ -25,12 +25,8 @@ So that a run row reads like a status, not a log line
    none, go back to step 4 with the next project in the sidebar. If no listed project has a run
    row, note in the result that the row checks were not applicable, skip to step 8, take the two
    screenshots and pass.
-6. With `browser_evaluate`, for every History row return, for the `dd` that follows the `dt` whose
-   text is `Final phase`: its `textContent`, whether it has a `code` descendant, and the `title`
-   attribute of its inner `span`. **Verify** for every row: the text does not start with `adw_`,
-   there is no `code` descendant, and the `title` is a non-empty raw step key (unless the text is
-   `none`). **Verify** at least one row shows a label from the mapping in
-   `app_docs/screens-and-components.md` (for example `Complete` or `Documenting`).
+6. With `browser_evaluate`, for every History row return the texts of its `dt` elements.
+   **Verify** for every row there is no `dt` whose text is `Final phase` or `Phase`.
 7. Repeat the check of step 3 on the project page's Active list (if any rows), also verifying each
    inner `span`'s `title` is a non-empty raw step key.
 8. Take a screenshot of the project page at 1920x1080.
@@ -38,8 +34,7 @@ So that a run row reads like a status, not a log line
 
 ## Success Criteria
 
-- No `Phase` or `Final phase` value of a known step starts with `adw_` or renders in a `code`
-  element.
+- No Active `Phase` value of a known step starts with `adw_` or renders in a `code` element.
 - The raw step key is the hover title of the phase value.
-- At least one History row shows a label from the mapping when History has rows.
+- No History row shows a `Final phase` or `Phase` field.
 - 2 screenshots are taken.

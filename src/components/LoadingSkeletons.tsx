@@ -71,13 +71,14 @@ export function ProjectNavSkeleton() {
   );
 }
 
-// RunRow's Field: the uppercase label and the value line under it.
-function FieldSkeleton() {
+// RunRow's Field: the uppercase label and the value line under it. `wide`
+// stands in for History's full branch, which spans two columns.
+function FieldSkeleton({ wide = false }: { wide?: boolean }) {
   return (
-    <div data-skeleton="field" className="min-w-0">
+    <div data-skeleton="field" className={wide ? "min-w-0 sm:col-span-2" : "min-w-0"}>
       <Skeleton className="my-0.5 h-3 w-12" />
       <div className="mt-0.5">
-        <Skeleton className="my-0.5 h-4 w-28" />
+        <Skeleton className={`my-0.5 h-4 ${wide ? "w-56" : "w-28"}`} />
       </div>
     </div>
   );
@@ -85,8 +86,9 @@ function FieldSkeleton() {
 
 type RunVariant = "active" | "history";
 
-// RunRow: the first line in 24px boxes with the pill on the right, then three
-// fields for an active run and five for a completed one.
+// RunRow: the first line in 24px boxes, then three fields. An active row has
+// the pill on the right; a history row has no pill and its branch field spans
+// two columns of a four-column grid.
 function RunRowSkeleton({ variant }: { variant: RunVariant }) {
   return (
     <li className={`${CARD} p-4`}>
@@ -98,21 +100,25 @@ function RunRowSkeleton({ variant }: { variant: RunVariant }) {
           <Skeleton className="my-1.5 h-3 w-16" />
           {variant === "active" && <Skeleton className="my-1.5 ml-auto h-3 w-40" />}
         </div>
-        <div className="flex h-6 shrink-0 items-center">
-          <Skeleton round className="h-5 w-16" />
-        </div>
-      </div>
-      <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
-        <FieldSkeleton />
-        <FieldSkeleton />
-        <FieldSkeleton />
-        {variant === "history" && (
-          <>
-            <FieldSkeleton />
-            <FieldSkeleton />
-          </>
+        {variant === "active" && (
+          <div className="flex h-6 shrink-0 items-center">
+            <Skeleton round className="h-5 w-16" />
+          </div>
         )}
       </div>
+      {variant === "active" ? (
+        <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-2 lg:grid-cols-4">
+          <FieldSkeleton />
+          <FieldSkeleton />
+          <FieldSkeleton />
+        </div>
+      ) : (
+        <div className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4">
+          <FieldSkeleton wide />
+          <FieldSkeleton />
+          <FieldSkeleton />
+        </div>
+      )}
     </li>
   );
 }

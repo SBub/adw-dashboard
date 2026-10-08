@@ -2,7 +2,7 @@
 
 One line per feature doc in `app_docs/`, saying when to read it; read the lines whose situation matches your task.
 
-- `app_docs/screens-and-components.md`: read when changing a component's props, a row's layout, a run row's phase label, a section heading, a colour, a timestamp's format, the page background, the sticky header, its z-index layer or the sidebar's sticky offset; when adding or removing `"use client"`.
+- `app_docs/screens-and-components.md`: read when changing a component's props, a row's layout, a run row's phase label, the History card's fields or its branch link, a section heading, a colour, a timestamp's format, the page background, the sticky header, its z-index layer or the sidebar's sticky offset; when adding or removing `"use client"`.
 - `app_docs/routing-and-navigation.md`: read when changing the route tree, the header's links or their current-section marking; when touching a project page's not-found decision, `generateStaticParams` or the `/summary` redirect.
 - `app_docs/types.md`: read when changing `src/types/adw.ts`; when a database column is added, renamed or removed.
 - `app_docs/data-boundary.md`: read when changing `src/data/index.ts`, a query key, the query client or a server prefetch; when adding a database read or an environment variable.
