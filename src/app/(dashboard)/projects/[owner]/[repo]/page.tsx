@@ -393,7 +393,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           instead of the segment's error.tsx replacing the pane. A server
           component is a fine child of this client boundary; the hole
           semantics are unchanged. HistoryTransition holds the one transition
-          the search box navigates in; HistoryResults dims the list while it is
+          the search box and the page arrows navigate in; HistoryResults dims the list while it is
           pending. A search-param-only navigation keeps the segment and a
           transition never re-hides revealed content, so the list dims instead
           of falling back to its skeleton. */}
