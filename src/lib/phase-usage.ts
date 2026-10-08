@@ -1,7 +1,8 @@
 // The phase side of the summary page's day cards, pure: the pipeline phases
 // that cost money, their fixed order and display names, and one day's
 // adw.daily_phase_summary rows summed per phase. No clock, no cache, no IO;
-// tested in src/lib/phase-usage.test.ts.
+// tested in src/lib/phase-usage.test.ts. PHASE_ORDER is also the costed key
+// list src/lib/run-phase.ts labels for run rows, so the keys are spelled once.
 import type { DailyPhaseSummary, SummaryPhase } from "@/types/adw";
 
 /**

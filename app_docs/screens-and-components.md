@@ -32,7 +32,11 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   resumed, so it is still live), with phase, branch and the absolute time of
   the last update, then a Queue section for the issues waiting in the
   project's queue ledger, in the order they will run, and a History section
-  for `completed` runs (final phase, timings, duration).
+  for `completed` runs (final phase, timings, duration). The Active row's
+  phase and History's final phase are shown as a label (Planning, Building,
+  ..., Complete), with the raw step key as the hover title. History's `?q`
+  search matches the raw column, not the label (searching "Planning" finds
+  nothing).
   Active is a React Query entry patched by Realtime; History is rendered on
   the server from a cache scope and re-rendered when a run completes (see
   `app_docs/project-page.md`). `/projects` shows an empty "Select a
@@ -47,11 +51,37 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   and `CompletedRuns` are the async components that await data, and they live
   in the page file, not under `src/components/`). The one formatting a component may do is call a
   pure helper from `src/lib/` on the row's own fields (`RunRow` calls
-  `durationLabel(run.started_at, run.finished_at)`); no view model is built
-  anywhere for runs. Run and queue row titles are shown in full and wrap; the
+  `durationLabel(run.started_at, run.finished_at)` and `phaseLabel(run.phase)`);
+  no view model is built anywhere for runs. Run and queue row titles are shown in full and wrap; the
   row is `items-start` and every element sits in a 24px first-line box
   (`leading-6` or an `h-6 items-center` wrapper), so the status pill is on the
   title's first line. The detail grid's `Field` keeps its `truncate`.
+- A run row's phase label comes only from `phaseLabel` in
+  `src/lib/run-phase.ts` (one helper, never a second mapping in a
+  component). Exact keys match first (`queue:classification` contains a
+  colon), then the `:composer` and `:complete` suffixes on any prefix, then
+  `:failed` on a known step. An unknown value, including `:failed` on an
+  unknown step, is shown raw so a new toolkit step is never hidden. The
+  costed step keys are shared with `PHASE_ORDER` in `src/lib/phase-usage.ts`
+  (the label table is typed `Record<PhaseKey, string>`). Every change to the
+  mapping goes with a test case in `src/lib/run-phase.test.ts`.
+
+  | Raw value                              | Label                    |
+  | -------------------------------------- | ------------------------ |
+  | `ensure_adw_id`, `<composer>:composer` | Starting                 |
+  | `queue:classification`                 | Classifying              |
+  | `adw_plan_iso`                         | Planning                 |
+  | `adw_build_iso`                        | Building                 |
+  | `adw_test_iso`                         | Testing                  |
+  | `adw_review_iso`                       | Reviewing                |
+  | `adw_document_iso`                     | Documenting              |
+  | `adw_ci_iso`                           | Checking CI              |
+  | `adw_patch_iso`                        | Patching                 |
+  | `<step>:failed` with a known step      | the step's label         |
+  | `<composer>:complete`                  | Complete                 |
+  | `null`                                 | none (muted, as before)  |
+  | anything else                          | the raw value, unchanged |
+
 - Section headings come from `SectionHeading` (`src/components/SectionHeading.tsx`),
   a server component with no state: title, an always-visible muted
   description, and an optional detail behind an info button. The detail is
@@ -104,8 +134,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   with `useSearchParams` (its initial text comes from the `HistorySearchBox`
   island); it debounces with `useDebouncedCallback` in
   `src/hooks/use-debounced-callback.ts` and navigates with
-  `router.replace` inside the shared transition. `src/lib/run-view.ts` is plain and
-  importable from anywhere. `QueueRow` has no `"use client"` (it is rendered
+  `router.replace` inside the shared transition. `src/lib/run-view.ts` and
+  `src/lib/run-phase.ts` are plain and importable from anywhere. `QueueRow` has no `"use client"` (it is rendered
   by `QueueView`, like `RunRow`).
 - The visible text of every timestamp comes from `formatTimestamp` in
   `src/lib/format-date.ts` (`DD.MM.YYYY HH:MM UTC`, UTC getters on a parse of
