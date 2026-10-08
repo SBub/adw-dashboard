@@ -111,7 +111,9 @@ The project page renders its header and Active like this:
    `queued_at`, and a retry restamps it without moving the item. Beside the
    marker, the card holds the issue number as a GitHub
    link, the title (omitted when `null`), the source hint and `Queued <time>`
-   (`none` when `queued_at` is `null`), then the status pill, in one row: the
+   (`none` when `queued_at` is `null`), then the status pill (in its own
+   right-hand column from `sm` up, as on run rows, so it stays on the title's
+   first line; below `sm` it may wrap with `Queued <time>`): the
    title shown in full and wrapping, every element top-aligned on its first
    line. The rail line runs from marker centre to marker centre whatever the
    card's height.
