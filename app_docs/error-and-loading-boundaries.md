@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-164-adw-cf1087b2-sdlc_planner-hire-me-page-contact-form.md
 
 ## Overview
 
@@ -39,7 +40,8 @@ first, which asks the server to render the route again (the section's cache
 scope is read again and, on a miss, the database), and then resets the
 boundary, so the re-mounted child is the fresh server result streaming in
 behind the fallback. The project page wraps `HistorySearchBox`,
-`HistoryPagination` and `CompletedRuns` each in one; the hole semantics come from their `searchParams`
+`HistoryPagination` and `CompletedRuns` each in one, and `/hire` wraps
+`HireStatus` (the status and the form, fallback "Loading form..."); the hole semantics come from their `searchParams`
 read and are unchanged by the boundary, since a server component is a
 legitimate child of a client boundary and the Suspense inside is still the
 streaming boundary the shell carries the fallback for.
@@ -54,8 +56,8 @@ server-rendered section that can fail independently goes in
   inside `QueryBoundary` (`src/components/QueryBoundary.tsx`); any
   server-rendered section that can fail independently of its siblings (the
   page's `HistoryPagination` and `CompletedRuns`, and the three Active
-  islands `SidebarActiveRuns`, `AllActiveRuns` and `ProjectActiveRuns`, one
-  boundary each) is
+  islands `SidebarActiveRuns`, `AllActiveRuns` and `ProjectActiveRuns`, and
+  `HireStatus` on `/hire`, one boundary each) is
   rendered inside `SectionBoundary`
   (`src/components/SectionBoundary.tsx`). Without an error boundary a failed
   read escapes to the segment's `error.tsx` and unmounts the whole pane,
@@ -68,10 +70,12 @@ server-rendered section that can fail independently goes in
   is a fresh server render, not a replay of the failed one. Both share the
   panel in `src/components/ErrorPanel.tsx`. `QueryBoundary` sits inside
   `Providers`, where the query it guards has its client. The one exception
-  is `HeaderLink`'s `usePathname` read, which sits in a plain `Suspense` in
-  `SectionNav.tsx`: it reads no data and cannot fail, it only suspends during
-  prerender on a project page outside `generateStaticParams`. Its fallback is
-  the same link inactive, never a spinner or an empty node. No other
+  is `HeaderLink`'s `usePathname` reads in `SectionNav.tsx` (the brand,
+  Projects and Hire me links), each in a plain `Suspense`: they read no data
+  and cannot fail, they only suspend during prerender on a project page
+  outside `generateStaticParams`. Each fallback is the same link inactive
+  (for Hire me, the button without `aria-current`), never a spinner or an
+  empty node. No other
   `Suspense` may be bare.
 - Every loading fallback on the projects side (the sidebar, `/projects`,
   the project page and its `loading.tsx`) is a skeleton from

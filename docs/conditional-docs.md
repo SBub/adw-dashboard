@@ -13,3 +13,4 @@ One line per feature doc in `app_docs/`, saying when to read it; read the lines 
 - `app_docs/error-and-loading-boundaries.md`: read when adding a `Suspense`, a `QueryBoundary`, a `SectionBoundary` or a loading fallback; when a failed read takes down more than its own section.
 - `app_docs/realtime.md`: read when changing the `adw` channel, a Realtime reducer, the catch-up read or the connection pill; when a live update does not reach the screen.
 - `app_docs/summary.md`: read when changing `/`, its charts, its today card or its cache scopes; when a day's totals look wrong.
+- `app_docs/hire.md`: read when changing `/hire`, its form, the `sendHireRequest` action, `src/content/hire.ts`, the Turnstile or Resend configuration or the Hire me button.
