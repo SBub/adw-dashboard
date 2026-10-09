@@ -20,6 +20,7 @@ How each feature works, and the rules it follows, is in one doc per feature unde
 - [Error and loading boundaries](app_docs/error-and-loading-boundaries.md)
 - [Realtime](app_docs/realtime.md)
 - [Summary page](app_docs/summary.md)
+- [Hire me page](app_docs/hire.md)
 
 ## Running it
 

@@ -9,6 +9,7 @@
 - specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-152-adw-a6b99270-sdlc_planner-fix-between-phase-complete-label.md
 - specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
+- specs/issue-164-adw-cf1087b2-sdlc_planner-hire-me-page-contact-form.md
 
 ## Overview
 
@@ -153,7 +154,9 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   History transition, and `HistoryTransition`, which holds the one
   `useTransition` the box, the arrows and `HistoryResults` share, `SummaryProviders` in `src/app/summary-providers.tsx`,
   the summary page's bare query client, and `TodaySummary`, which reads today's
-  card from the query cache and refetches it). `HistoryLinks`,
+  card from the query cache and refetches it, `SubmitButton`, which reads its
+  form's pending state, and `TurnstileScript`, which renders the Turnstile
+  widget on mount). `HistoryLinks`,
   `RunHistoryList`, `SectionNav`,
   `DailySummaryList`, `SummaryDayCard`, `DayCharts`, `ColumnChart`,
   `ClassColumnChart`, `ModelColumnChart`, `PhaseColumnChart`,
@@ -220,3 +223,7 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   (`running` online, `failed` offline, `neutral` unknown), not an exemption,
   and has no `role="status"`: the pill is the one status element. Issue class badges are not states and use hues
   outside the palette.
+- The header's Hire me button and the `/hire` Send button take their colour
+  only from `HIRE_ACCENT` in `src/lib/accent.ts` (fuchsia 700, hover 800, the
+  `/bug` class hue, not a status hue), so the two always match; never write
+  a button's fuchsia fill inline.

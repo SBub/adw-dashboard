@@ -4,6 +4,7 @@
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
 - specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
+- specs/issue-164-adw-cf1087b2-sdlc_planner-hire-me-page-contact-form.md
 
 ## Overview
 
@@ -276,7 +277,8 @@ Next does not read `.env.development` for a production build or `next start`
 (those read `.env.production` and `.env`), which is why the real values go in
 `.env.local` as well: it is loaded in every mode and gitignored. Keep the two
 files identical. `.gitignore` ignores `.env` and `.env.*` and un-ignores
-`.env.example`.
+`.env.example`. The four `/hire` form variables (Turnstile and Resend) are
+described in `app_docs/hire.md`.
 
 ### The client
 
@@ -390,8 +392,12 @@ on the server no channel is ever subscribed, so no socket is opened there.
 - `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are
   public by design (browser bundle, RLS-limited). The secret / service role
   key must never be added to this repo, to any `.env*` file in it, or to any
-  variable with a `NEXT_PUBLIC_` prefix. `ADW_REVALIDATE_SECRET` is the one
-  server-only variable: it stays without the prefix and is read only in the
-  route handler. `.env.example` is tracked with
+  variable with a `NEXT_PUBLIC_` prefix. Server-only variables never carry
+  the `NEXT_PUBLIC_` prefix: `ADW_REVALIDATE_SECRET` is read only in the
+  route handler (`src/app/api/revalidate/route.ts`); `RESEND_API_KEY`,
+  `RESEND_FROM_EMAIL` and `TURNSTILE_SECRET_KEY` are read only in
+  `src/app/actions/send-hire-request.ts`. `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+  is public by design (the Turnstile widget needs it in the browser) and is
+  read only in `src/app/hire/page.tsx`. `.env.example` is tracked with
   placeholders; `.env.development` (dev) and `.env.local` (all modes,
   including build and start) hold the real values and are gitignored.

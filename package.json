@@ -22,7 +22,8 @@
     "next": "^16.2.1",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
-    "react-error-boundary": "^6.1.6"
+    "react-error-boundary": "^6.1.6",
+    "resend": "^6.32.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

@@ -3,17 +3,20 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-164-adw-cf1087b2-sdlc_planner-hire-me-page-contact-form.md
 
 ## Overview
 
-The route tree (`/`, `/projects`, `/projects/[owner]/[repo]`, the `/summary` redirect), the header's links and their current-section marking, and how a project page decides it is not found. Pages live under `src/app/`, the header helpers in `src/components/SectionNav.tsx` and `src/lib/header-section.ts`.
+The route tree (`/`, `/projects`, `/projects/[owner]/[repo]`, `/hire`, the `/summary` redirect), the header's links and their current-section marking, and how a project page decides it is not found. Pages live under `src/app/`, the header helpers in `src/components/SectionNav.tsx` and `src/lib/header-section.ts`.
 
 ## How it works
 
 The summary at `/` shows finished runs per UTC day across projects: issue
 classes, total duration, tokens (fresh input, cache read, output) and cost (see
 `app_docs/summary.md`). The header's brand links to `/`, its "Projects" link to
-`/projects`. The link of the current section carries `aria-current="page"`, and
+`/projects`. At the header's right, on every route, the Hire me button
+(`HireLink`) is a solid fuchsia button linking to `/hire`; it carries
+`aria-current="page"` only on `/hire`. The link of the current section carries `aria-current="page"`, and
 "Projects" is emphasised on `/projects` and on every project page. On a project
 page added after the deploy (not among the pre-rendered slugs) the shell carries
 the unmarked link and the highlight arrives with the streamed pathname. The old address `/summary` is a permanent redirect to a bare `/`
@@ -66,6 +69,8 @@ route handler `src/app/summary/route.ts`. It is not a `next.config.ts`
 redirect because Next always merges the request's query string into a config
 redirect's destination; the handler answers a bare, relative `/` and reads
 nothing from the request, so old filtered links land on the plain page.
+`/hire` (`src/app/hire/page.tsx`) likewise sits outside `(dashboard)`, with
+no `Providers`, no Realtime and no pill (see `app_docs/hire.md`).
 
 ## Rules
 
@@ -94,8 +99,10 @@ nothing from the request, so old filtered links land on the plain page.
   `src/lib/header-section.test.ts`; every change to it goes with a test
   case), read by `HeaderLink`. "Projects" is active on `/projects` and every
   path below `/projects/` (never `/projectsx`) and takes the brand's text
-  colour; the brand is active on `/` only and keeps its styling. The active
-  link carries `aria-current="page"`, the other none.
+  colour; the brand is active on `/` only and keeps its styling; "Hire me" is
+  active on exactly `/hire` (never `/hirex` or `/hire-me`) and keeps its
+  accent. So `headerSection` answers `"summary"`, `"projects"`, `"hire"` or
+  null. The active link carries `aria-current="page"`, the others none.
 - `/summary` is a permanent (308) redirect to a bare `/`, answered by the
   route handler `src/app/summary/route.ts`, which reads nothing from the
   request, so the query string is dropped. It is the only file under

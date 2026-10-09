@@ -45,7 +45,10 @@ From the worktree root, in order. The main checkout is two directories up from `
    two public Supabase values, `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
    `.env.local` is the one the build reads: `next build` runs with `NODE_ENV=production` and never
    reads `.env.development`, and `getSupabase()` throws when either variable is missing. Never copy
-   `.env.example`; never invent a value for a missing file, report it.
+   `.env.example`; never invent a value for a missing file, report it. Either file may also carry
+   the four `/hire` form variables (`NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`,
+   `RESEND_API_KEY`, `RESEND_FROM_EMAIL`, see `.env.example`). They are optional for `yarn build`:
+   the page builds with an empty site key and the action answers `?error=send` when unconfigured.
 2. `yarn install --immutable` (`postinstall` runs `lefthook install`). An install that would change
    `yarn.lock` is a finding, not something to paper over with a mutable install.
 3. Verify with `yarn build` (see Build). A build, not a typecheck: only a build loads `.env.local`
@@ -80,7 +83,8 @@ E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-dri
 `e2e/test_row_full_title_top_align.md`, `e2e/test_single_background_color.md`,
 `e2e/test_projects_skeleton_fallbacks.md`, `e2e/test_sticky_header.md`,
 `e2e/test_run_row_phase_label.md`, `e2e/test_history_card_fields.md`,
-`e2e/test_history_page_turn.md` and `e2e/test_worker_status_widget.md`) that the test
+`e2e/test_history_page_turn.md`, `e2e/test_worker_status_widget.md` and
+`e2e/test_hire_page.md`) that the test
 phase runs through the Playwright MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
@@ -104,6 +108,8 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 - Never kill a process this run did not start; never change a port through `package.json`,
   `.ports.env` or any committed file.
 - Never stage `next-env.d.ts`, `.ports.env`, `.env*` (except `.env.example`), `agents/` or `trees/`.
+- Never submit the `/hire` form with valid input against a server running with real Resend and
+  Turnstile keys: it emails `hire@issebya.com`. Never commit the real values of those keys.
 - No em-dashes in any file. Use commas, periods, colons or parentheses.
 - Every "do not" in `AGENTS.md` and in the Rules of the feature docs under `app_docs/` is an
   invariant: no clock read outside the cached boundary, one data
@@ -134,7 +140,10 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 - Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, the today card with a
   Refresh button above the past day cards with their work-by-class, tokens-by-model and cost-by-phase chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar, with the worker status widget at its bottom, plus every active run
   grouped by project under an `Active` heading, or "No runs in progress." when none) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
-  section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
+  section, History section), or the first project the sidebar lists if that slug is 404, and
+  `/hire` (heading, intro, LinkedIn link, the form with the two offers, the Turnstile widget, the
+  fuchsia Send button; no sidebar, no pill). The fuchsia Hire me button is in the header on every
+  route. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
 - The sidebar's connection indicator (dashboard routes only; `/` has none) moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report
@@ -142,6 +151,8 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 - The sidebar's worker widget reads "Worker status..." until its first read and "Worker offline"
   whenever the queue worker is not running on the operator's machine. Neither is a defect unless
   the spec is about the widget.
+- The `sendHireRequest` action has no rendered surface beyond the `/hire?sent=1` and
+  `/hire?error=<code>` states, which open directly by URL; never submit a valid form to reach them.
 - A route handler (`src/app/api/revalidate`), a server action, a reducer or a helper has no rendered
   surface: no visual review, evidence is the diff, the tests and the spec's commands.
 - Browser automation is the Playwright MCP server in `.mcp.json`, configured by

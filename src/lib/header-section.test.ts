@@ -24,6 +24,18 @@ describe("headerSection", () => {
     expect(headerSection("")).toBeNull();
   });
 
+  it("is hire for /hire only", () => {
+    expect(headerSection("/hire")).toBe("hire");
+    expect(headerSection("/hire/")).toBe("hire");
+    expect(headerSection("/hirex")).toBeNull();
+    expect(headerSection("/hire-me")).toBeNull();
+  });
+
+  it("never puts the root or the overview in the hire section", () => {
+    expect(headerSection("/")).not.toBe("hire");
+    expect(headerSection("/projects")).not.toBe("hire");
+  });
+
   it("never puts the root and the overview in the same section", () => {
     expect(headerSection("/")).not.toBe("projects");
     expect(headerSection("/projects")).not.toBe("summary");
