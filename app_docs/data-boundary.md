@@ -53,8 +53,8 @@ The runs are read in two halves, because they have two lifetimes:
 - `getCompletedRuns(slug, bookmark, q)` reads the project row from
   `adw.project_summaries` by slug, then one
   page of the rows of `adw.runs` for that id where `status` is `completed`
-  (and, when the search text `q` is not `null`, that match it),
-  shown `updated_at desc, adw_id desc`, and returns
+  and `finished_at` is not null (and, when the search text `q` is not
+  `null`, that match it), shown `finished_at desc, adw_id desc`, and returns
   `{ items, page, pageCount, hasNewer, newerCursor, olderCursor }` (page 1 of
   1 with no rows for an unknown slug, which the page has already excluded).
   It is keyset-paginated in either direction, three runs per page
@@ -83,17 +83,18 @@ select project_id, adw_id, issue_number, issue_title, issue_class, branch_name,
 select * from adw.project_summaries where slug = $1;
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
-   and (updated_at < $3 or (updated_at = $3 and adw_id < $4)) -- ?after
-   -- ?before: (updated_at > $3 or (updated_at = $3 and adw_id > $4)), order asc
+   and finished_at is not null
+   and (finished_at < $3 or (finished_at = $3 and adw_id < $4)) -- ?after
+   -- ?before: (finished_at > $3 or (finished_at = $3 and adw_id > $4)), order asc
    and (issue_title ilike $5 or branch_name ilike $5 or adw_id ilike $5
         or issue_number = $6)                                -- a search; $6 if an integer
- order by updated_at desc, adw_id desc
+ order by finished_at desc, adw_id desc
  limit 3;
 select count(*) from adw.runs where project_id = $2 and status = 'completed'
-   and <the same search>;                                    -- total
+   and finished_at is not null and <the same search>;        -- total
 select count(*) from adw.runs where project_id = $2 and status = 'completed'
-   and <the same search>
-   and (updated_at > $7 or (updated_at = $7 and adw_id > $8)); -- newer than the first row
+   and finished_at is not null and <the same search>
+   and (finished_at > $7 or (finished_at = $7 and adw_id > $8)); -- newer than the first row
 ```
 
 The rows are the raw `Run` type; no label is derived on the server (see
@@ -298,11 +299,11 @@ on the server no channel is ever subscribed, so no socket is opened there.
   table with `status in (running, failed)` for every visible project,
   `updated_at desc`, and returns `{ active, fetched_at }`,
   `getCompletedRuns(slug, bookmark, q)` the view by slug and then `runs` by
-  `project_id` with `status = completed`
+  `project_id` with `status = completed` and a `finished_at`
   (narrowed by `historySearchFilter(q)` when `q` is not `null`), one
   keyset page at a time in either direction (rows strictly older than an
   `after` bookmark, or strictly newer than a `before` bookmark read ascending
-  and reversed by `historyItems`; shown `updated_at desc, adw_id desc`;
+  and reversed by `historyItems`; shown `finished_at desc, adw_id desc`;
   `HISTORY_PAGE_SIZE` rows plus two counts on the same filter, the total and
   the rows newer than the first shown row, assembled by `toHistoryPage` into
   `{ items, page, pageCount, hasNewer, newerCursor, olderCursor }`; never an

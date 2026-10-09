@@ -36,6 +36,7 @@ import {
   type HistoryBookmark,
   type HistoryPage,
   historyItems,
+  historyKeyOf,
   historyKeysetFilter,
   historyNewerFilter,
   historyOrderAscending,
@@ -216,9 +217,10 @@ export async function getActiveRuns(): Promise<ActiveRuns> {
 }
 
 /**
- * A project's completed runs, narrowed by the search text when there is one:
- * the one filter the History rows read and both of its counts share, so the
- * page and its "N of M" can never disagree on what is counted.
+ * A project's completed runs with a `finished_at` (the History key), narrowed
+ * by the search text when there is one: the one filter the History rows read
+ * and both of its counts share, so the page and its "N of M" can never
+ * disagree on what is counted.
  */
 function completedRuns<Columns extends string>(
   projectId: string,
@@ -230,7 +232,8 @@ function completedRuns<Columns extends string>(
     .from("runs")
     .select(columns, options)
     .eq("project_id", projectId)
-    .eq("status", "completed");
+    .eq("status", "completed")
+    .not("finished_at", "is", null);
   return q ? query.or(historySearchFilter(q)) : query;
 }
 
@@ -268,7 +271,7 @@ async function getRunCosts(
 
 /**
  * One page of a project's completed runs, at most `HISTORY_PAGE_SIZE` in the
- * display order `updated_at desc, adw_id desc`, with its position (page N of
+ * display order `finished_at desc, adw_id desc`, with its position (page N of
  * M) and the cursors of its two arrows; page 1 of 1 with no rows for an
  * unknown slug (the page has already decided not-found from the project list
  * by the time this is called).
@@ -304,10 +307,10 @@ async function getRunCosts(
  * (tagged history:<slug>, shared by every page), so the counts and the costs
  * drop with the tag together with the rows. It never enters the React Query cache and reads
  * no clock: there is no fetched_at here, and nothing in it needs the current
- * time. A completed run never changes, so the cached pages are only refilled
- * when the browser asks the server to drop the tag after a completion
- * (revalidateHistory), when the database webhook does, or when the cache
- * lifetime ends.
+ * time. A completed run's finished_at never changes, so the cached pages are
+ * only refilled when the browser asks the server to drop the tag after a
+ * completion (revalidateHistory), when the database webhook does, or when the
+ * cache lifetime ends.
  */
 export async function getCompletedRuns(
   slug: string,
@@ -324,7 +327,7 @@ export async function getCompletedRuns(
   const ascending = historyOrderAscending(bookmark);
   const [rows, totalCount] = await Promise.all([
     rowsQuery
-      .order("updated_at", { ascending })
+      .order("finished_at", { ascending })
       .order("adw_id", { ascending })
       .limit(HISTORY_PAGE_SIZE),
     completedRuns(project.id, q, "adw_id", { count: "exact", head: true }),
@@ -337,7 +340,7 @@ export async function getCompletedRuns(
   // getActiveRuns: the one place the table's shape is asserted.
   const items = historyItems((rows.data ?? []) as Run[], bookmark);
 
-  const anchor = items[0] ?? bookmark;
+  const anchor = (items[0] && historyKeyOf(items[0])) ?? bookmark;
   const [newer, costs] = await Promise.all([
     anchor
       ? completedRuns(project.id, q, "adw_id", { count: "exact", head: true })

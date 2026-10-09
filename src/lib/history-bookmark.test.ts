@@ -10,6 +10,7 @@ import {
   encodeHistoryBookmark,
   historyHref,
   historyItems,
+  historyKeyOf,
   historyKeysetFilter,
   historyNewerFilter,
   historyOrderAscending,
@@ -19,7 +20,7 @@ import {
 
 const SLUG = "SBub/adw-toolkit";
 
-function run(adw_id: string, updated_at: string): Run {
+function run(adw_id: string, finished_at: string | null, updated_at = finished_at ?? ""): Run {
   return {
     project_id: "00000000-0000-0000-0000-000000000001",
     adw_id,
@@ -34,7 +35,7 @@ function run(adw_id: string, updated_at: string): Run {
     toolkit_version: "1.0.0",
     started_at: "2026-10-01T09:00:00Z",
     updated_at,
-    finished_at: updated_at,
+    finished_at,
   };
 }
 
@@ -50,7 +51,7 @@ function json(value: unknown): string {
 const bookmark: HistoryBookmark = {
   slug: SLUG,
   direction: "after",
-  updated_at: "2026-10-01T12:34:56.123456+00:00",
+  finished_at: "2026-10-01T12:34:56.123456+00:00",
   adw_id: "d2e29be0",
 };
 
@@ -111,16 +112,28 @@ describe("encodeHistoryBookmark / decodeHistoryBookmark", () => {
     ["not JSON", b64url("not json")],
     ["an array", b64url("[]")],
     ["null", b64url("null")],
-    ["a missing field", json({ slug: SLUG, direction: "after", updated_at: bookmark.updated_at })],
+    [
+      "a missing field",
+      json({ slug: SLUG, direction: "after", finished_at: bookmark.finished_at }),
+    ],
     [
       "a legacy payload without a direction",
-      json({ slug: SLUG, updated_at: bookmark.updated_at, adw_id: bookmark.adw_id }),
+      json({ slug: SLUG, finished_at: bookmark.finished_at, adw_id: bookmark.adw_id }),
+    ],
+    [
+      "an old-shape updated_at payload",
+      json({
+        slug: SLUG,
+        direction: "after",
+        updated_at: bookmark.finished_at,
+        adw_id: bookmark.adw_id,
+      }),
     ],
     ["an unknown direction", json({ ...bookmark, direction: "sideways" })],
     ["a non-string field", json({ ...bookmark, adw_id: 42 })],
-    ["a word for a timestamp", json({ ...bookmark, updated_at: "yesterday" })],
-    ["an impossible timestamp", json({ ...bookmark, updated_at: "2026-13-45T99:00:00Z" })],
-    ["a timestamp without a zone", json({ ...bookmark, updated_at: "2026-10-01T12:00:00" })],
+    ["a word for a timestamp", json({ ...bookmark, finished_at: "yesterday" })],
+    ["an impossible timestamp", json({ ...bookmark, finished_at: "2026-13-45T99:00:00Z" })],
+    ["a timestamp without a zone", json({ ...bookmark, finished_at: "2026-10-01T12:00:00" })],
     ["an adw_id with a comma", json({ ...bookmark, adw_id: "a,b" })],
     ["an adw_id with a quote", json({ ...bookmark, adw_id: 'a"b' })],
     ["an adw_id with a parenthesis", json({ ...bookmark, adw_id: "a)b" })],
@@ -176,15 +189,29 @@ describe("readHistoryBookmark", () => {
 describe("historyKeysetFilter", () => {
   it("selects rows strictly older than an after bookmark, tie-broken on adw_id", () => {
     expect(historyKeysetFilter(bookmark)).toBe(
-      'updated_at.lt."2026-10-01T12:34:56.123456+00:00",and(updated_at.eq."2026-10-01T12:34:56.123456+00:00",adw_id.lt."d2e29be0")',
+      'finished_at.lt."2026-10-01T12:34:56.123456+00:00",and(finished_at.eq."2026-10-01T12:34:56.123456+00:00",adw_id.lt."d2e29be0")',
     );
   });
 
   it("historyKeysetFilter selects rows strictly newer for a before bookmark", () => {
     expect(historyKeysetFilter(before)).toBe(
-      'updated_at.gt."2026-10-01T12:34:56.123456+00:00",and(updated_at.eq."2026-10-01T12:34:56.123456+00:00",adw_id.gt."d2e29be0")',
+      'finished_at.gt."2026-10-01T12:34:56.123456+00:00",and(finished_at.eq."2026-10-01T12:34:56.123456+00:00",adw_id.gt."d2e29be0")',
     );
     expect(historyKeysetFilter(before)).toBe(historyNewerFilter(before));
+  });
+});
+
+describe("historyKeyOf", () => {
+  it("returns the finished_at and adw_id of a completed row", () => {
+    const row = run("d2e29be0", "2026-10-01T12:00:00+00:00", "2026-10-08T16:01:24+00:00");
+    expect(historyKeyOf(row)).toEqual({
+      finished_at: "2026-10-01T12:00:00+00:00",
+      adw_id: "d2e29be0",
+    });
+  });
+
+  it("returns null for a row without finished_at", () => {
+    expect(historyKeyOf(run("d2e29be0", null, "2026-10-08T16:01:24+00:00"))).toBeNull();
   });
 });
 
@@ -227,7 +254,7 @@ describe("toHistoryPage", () => {
     expect(decoded(page.olderCursor)).toEqual({
       slug: SLUG,
       direction: "after",
-      updated_at: rows[2]?.updated_at,
+      finished_at: rows[2]?.finished_at,
       adw_id: rows[2]?.adw_id,
     });
   });
@@ -245,9 +272,47 @@ describe("toHistoryPage", () => {
     expect(decoded(page.newerCursor)).toEqual({
       slug: SLUG,
       direction: "before",
-      updated_at: rows[6]?.updated_at,
+      finished_at: rows[6]?.finished_at,
       adw_id: rows[6]?.adw_id,
     });
+  });
+
+  it("builds a cursor from finished_at, not a later updated_at", () => {
+    const bumped = run("aaaa0001", "2026-10-01T10:00:00+00:00", "2026-10-08T16:01:24+00:00");
+    const page = toHistoryPage([bumped], { slug: SLUG, newer: 0, total: 4 });
+    expect(decoded(page.olderCursor)).toEqual({
+      slug: SLUG,
+      direction: "after",
+      finished_at: "2026-10-01T10:00:00+00:00",
+      adw_id: "aaaa0001",
+    });
+  });
+
+  it("breaks a tie on finished_at by adw_id", () => {
+    const at = "2026-10-01T10:00:00+00:00";
+    const tied = [
+      run("aaaa0009", at),
+      run("aaaa0008", at),
+      run("aaaa0007", at),
+      run("aaaa0006", at),
+    ];
+    const page = toHistoryPage(tied.slice(1, 4), { slug: SLUG, newer: 4, total: 9 });
+    const newer = decoded(page.newerCursor);
+    const older = decoded(page.olderCursor);
+    expect(newer?.adw_id).toBe("aaaa0008");
+    expect(older?.adw_id).toBe("aaaa0006");
+    expect(newer && historyKeysetFilter(newer)).toBe(
+      `finished_at.gt."${at}",and(finished_at.eq."${at}",adw_id.gt."aaaa0008")`,
+    );
+    expect(older && historyKeysetFilter(older)).toBe(
+      `finished_at.lt."${at}",and(finished_at.eq."${at}",adw_id.lt."aaaa0006")`,
+    );
+  });
+
+  it("has no right arrow when the last row has no finished_at", () => {
+    const rows3 = [...rows.slice(0, 2), run("aaaa0099", null, "2026-10-08T16:01:24+00:00")];
+    const page = toHistoryPage(rows3, { slug: SLUG, newer: 0, total: 8 });
+    expect(page.olderCursor).toBeNull();
   });
 
   it("has no right arrow when the last page is full", () => {

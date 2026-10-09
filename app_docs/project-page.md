@@ -8,6 +8,7 @@
 - specs/issue-146-adw-7a7f315b-sdlc_planner-show-history-run-cost.md
 - specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-148-adw-d2fdf4c1-sdlc_planner-history-page-turn-keep-scroll.md
+- specs/issue-153-adw-44b38a65-sdlc_planner-history-order-by-finished-at.md
 
 ## Overview
 
@@ -181,11 +182,14 @@ phase` and no `Started`.
 
    History is paged three runs at a time. The URL of a later page carries
    `?after=<bookmark>` or `?before=<bookmark>`, an opaque base64url JSON
-   `{ slug, direction, updated_at, adw_id }` (`updated_at` kept verbatim,
+   `{ slug, direction, finished_at, adw_id }` (`finished_at` kept verbatim,
    microseconds included). An `after` bookmark is the last row the previous
    page showed, and the page is the rows strictly older than that tuple in the
-   order `updated_at desc, adw_id desc` (`adw_id` is unique within a project,
-   so the order is total); a `before` bookmark is the first row the following
+   order `finished_at desc, adw_id desc` (`adw_id` is unique within a project,
+   so the order is total). `updated_at` is not the key: a trigger stamps it on
+   every write, so a backfill or a late `pr_number` would reorder History,
+   while `finished_at` is written once by the terminal save. A bookmark of the
+   older `updated_at` shape reads as page one. A `before` bookmark is the first row the following
    page showed, and the page is the rows strictly newer than it, read oldest
    first and reversed for display. A run completing while a visitor is on page
    two adds a row to page one and never shifts page two. The bookmark is
