@@ -79,8 +79,8 @@ E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-dri
 `e2e/test_day_card_charts.md`, `e2e/test_active_runs_shared_entry.md`,
 `e2e/test_row_full_title_top_align.md`, `e2e/test_single_background_color.md`,
 `e2e/test_projects_skeleton_fallbacks.md`, `e2e/test_sticky_header.md`,
-`e2e/test_run_row_phase_label.md`, `e2e/test_history_card_fields.md` and
-`e2e/test_history_page_turn.md`) that the test
+`e2e/test_run_row_phase_label.md`, `e2e/test_history_card_fields.md`,
+`e2e/test_history_page_turn.md` and `e2e/test_worker_status_widget.md`) that the test
 phase runs through the Playwright MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
@@ -132,13 +132,16 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 ## Review
 
 - Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, the today card with a
-  Refresh button above the past day cards with their work-by-class, tokens-by-model and cost-by-phase chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus every active run
+  Refresh button above the past day cards with their work-by-class, tokens-by-model and cost-by-phase chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar, with the worker status widget at its bottom, plus every active run
   grouped by project under an `Active` heading, or "No runs in progress." when none) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
   section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
 - The sidebar's connection indicator (dashboard routes only; `/` has none) moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report
   `connecting` as a defect unless the spec is about the indicator.
+- The sidebar's worker widget reads "Worker status..." until its first read and "Worker offline"
+  whenever the queue worker is not running on the operator's machine. Neither is a defect unless
+  the spec is about the widget.
 - A route handler (`src/app/api/revalidate`), a server action, a reducer or a helper has no rendered
   surface: no visual review, evidence is the diff, the tests and the spec's commands.
 - Browser automation is the Playwright MCP server in `.mcp.json`, configured by

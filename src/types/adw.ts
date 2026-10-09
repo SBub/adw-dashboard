@@ -1,5 +1,6 @@
-// Domain types. The three interfaces in the first section mirror the database
-// tables column for column; keep them in lockstep with the schema. The second
+// Domain types. The interfaces in the first section (Project, Run, QueueItem
+// and Worker) mirror the database tables column for column; keep them in
+// lockstep with the schema. The second
 // section holds what the data layer reads from a view or assembles for a
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
 // DailySummary (the daily_summary columns the page reads), DailyModelSummary
@@ -69,6 +70,16 @@ export interface QueueItem {
   adw_id: string | null;
   reason: string | null;
   updated_at: string;
+}
+
+/** One adw.workers row: a queue worker's heartbeat, upserted every 30 s, deleted on a clean exit. */
+export interface Worker {
+  id: string;
+  host: string;
+  pid: number;
+  started_at: string;
+  heartbeat_at: string;
+  version: string | null;
 }
 
 // ---------------------------------------------------------------------------

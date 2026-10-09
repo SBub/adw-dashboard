@@ -50,7 +50,7 @@ day it yields is passed down as an argument (see `app_docs/summary.md`).
 
 ## Rules
 
-- No clock reads outside the cached boundary. There are exactly two
+- No clock reads outside the cached boundary. There are exactly three
   argument-less `new Date()` / `Date.now()` sites in the codebase
   (`new Date(ms)` on a parsed input, as in `formatTimestamp`, is not a clock
   read): `getActiveRuns`'s `fetched_at` stamp, which
@@ -62,7 +62,13 @@ day it yields is passed down as an argument (see `app_docs/summary.md`).
   component body, which `react-hooks/purity` forbids), directly after its
   `await connection()`, so only at request time, never in a prerender pass and
   never in client render. Its day is passed down as an argument; nothing below
-  it reads the clock again. Do not add a third. A future time-dependent label is a
+  it reads the clock again. The third is `Date.now()` in the worker store's
+  poll callback (`poll` in `src/components/WorkerStatus.tsx`): browser only,
+  after `getWorkers()` resolves, never in render or a hook body, fed into the
+  pure `nextWorkerSnapshot` (`src/lib/worker-state.ts`). Its
+  `getServerSnapshot` is the constant `unknown` state and reads no clock, so
+  the shell and hydration render "Worker status...". Do not add a fourth. A
+  future time-dependent label follows the same shape, a
   new client leaf with a `useSyncExternalStore` store whose server snapshot
   does not read the clock (issue #3), never a clock read in `QueueRow`,
   `QueueView` or `RunRow`. `getQueue` reads no clock either and

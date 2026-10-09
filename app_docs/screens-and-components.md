@@ -25,8 +25,10 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail. From `md` up it
   is sticky: it sits `--header-height` + 1.5rem from the top, below the
-  sticky root header, and its max height subtracts the header height and both
-  1.5rem gaps, so its last item stays reachable through its own scroll.
+  sticky root header, and it is a full-height column (its height subtracts the
+  header height and both 1.5rem gaps): the project list scrolls inside it and
+  the worker status widget sits at its bottom, always visible. Below `md` the
+  widget follows the strip.
   Every run and queue state has one colour wherever it appears (queued
   amber, running emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
@@ -135,7 +137,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `ActiveRunsOverview`, which reads every project's active runs and the
   project list from the query cache on `/projects`,
   `QueueView`, which reads the queued items from the query cache,
-  `ConnectionIndicator`, which subscribes to its store, `HeaderLink`, which
+  `ConnectionIndicator`, which subscribes to its store, `WorkerStatus`, which
+  subscribes to its polling store, `HeaderLink`, which
   reads the pathname to mark the header's current section, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryPageLink`, which navigates the History pages inside the shared
@@ -205,5 +208,7 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `emerald`, `amber`, `sky`, `rose` or `red` class inline;
   `src/lib/status-colors.test.ts` scans `src/` and fails on one. The
   connection pill in `ConnectionIndicator` is the one exemption (it describes
-  the socket, not a run). Issue class badges are not states and use hues
+  the socket, not a run). The worker widget takes its colours from the map
+  (`running` online, `failed` offline, `neutral` unknown), not an exemption,
+  and has no `role="status"`: the pill is the one status element. Issue class badges are not states and use hues
   outside the palette.

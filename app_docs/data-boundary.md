@@ -291,7 +291,11 @@ on the server no channel is ever subscribed, so no socket is opened there.
   server only from the summary page's `getTodayState` scope and is the
   `queryFn` of `TodaySummary`; it reads no clock (`today` always comes from
   the caller). Both read `daily_model_summary` and `daily_phase_summary` for
-  the same days in the same `Promise.all` as their `daily_summary` read. `getProjects`, `getActiveRuns` and
+  the same days in the same `Promise.all` as their `daily_summary` read. The
+  eighth, `getWorkers()`, reads `adw.workers` (`WORKER_COLUMNS`, no order;
+  `workerState` picks the freshest row) and is called only from the worker
+  store in `WorkerStatus`, in the browser: never on the server, never a
+  `queryFn`, no cache scope, no query key, not on Realtime. `getProjects`, `getActiveRuns` and
   `getQueue` are also the `queryFn`s, passed directly, with no fetcher wrapper in between (a function that only calls the
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
@@ -326,7 +330,7 @@ on the server no channel is ever subscribed, so no socket is opened there.
   `Run[]` for `runs`, `QueueItem[]` for `queue_items`, `DailySummary[]` for
   `daily_summary`, `DailyModelSummary[]` for `daily_model_summary`,
   `DailyPhaseSummary[]` for `daily_phase_summary`, `RunMetrics[]` for
-  `run_metrics`) in
+  `run_metrics`, `Worker[]` for `workers`) in
   `src/data/index.ts`.
   Those casts are the only place the shapes are asserted; do not add another
   in a page or component. When touching the `runs` select, keep the column
@@ -334,8 +338,8 @@ on the server no channel is ever subscribed, so no socket is opened there.
   of `QueueItem`, `DAILY_SUMMARY_COLUMNS` equal to the fields of
   `DailySummary`, `DAILY_MODEL_SUMMARY_COLUMNS` equal to the fields of
   `DailyModelSummary`, `DAILY_PHASE_SUMMARY_COLUMNS` equal to the fields
-  of `DailyPhaseSummary`, and `RUN_METRICS_COLUMNS` equal to the fields of
-  `RunMetrics`, all in `src/types/adw.ts`.
+  of `DailyPhaseSummary`, `RUN_METRICS_COLUMNS` equal to the fields of
+  `RunMetrics`, and `WORKER_COLUMNS` equal to the fields of `Worker`, all in `src/types/adw.ts`.
 - `getProjects()` runs at build time (layout prefetch and
   `generateStaticParams`), and `getCompletedRuns()` and `getQueue()` run
   at build time for every slug (history and queue scopes), so

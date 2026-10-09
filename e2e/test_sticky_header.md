@@ -34,8 +34,10 @@ So that I can reach the navigation without scrolling back to the top
    it at the tooltip's centre.
 6. Scroll to the bottom. **Verify** the header's `top` is `0` with the brand and the navigation
    visible, the sidebar `aside` has `getBoundingClientRect().top` equal to the header's height plus
-   24px (within 1px) and its `bottom` is at most `innerHeight` (fully inside the viewport). Scroll the sidebar to its own bottom and **Verify** its last project link's box is
-   inside the sidebar's box and the viewport. Take a screenshot.
+   24px (within 1px) and its `bottom` is at most `innerHeight` (fully inside the viewport). Scroll the project list's scroll container inside the sidebar to its own bottom and
+   **Verify** its last project link's box is inside the sidebar's box and the viewport.
+   **Verify** the "Worker" status widget is inside the aside's box and the viewport without
+   scrolling. Take a screenshot.
 7. Go back to `/`. **Verify** the scroll position is restored to the bottom (or near it), as before
    this change. Then go forward.
 8. Resize to 375x667 and repeat steps 2 and 3 on `/`, then the header checks of step 6 (header
@@ -48,6 +50,7 @@ So that I can reach the navigation without scrolling back to the top
   375px.
 - The header is opaque and paints the same colour as `body`.
 - A section tooltip draws over the header.
-- On desktop the sidebar sticks below the header and its last item is reachable.
+- On desktop the sidebar sticks below the header, its last item is reachable and the worker
+  widget stays in view.
 - Back restores the window scroll position.
 - 4 screenshots are taken.
