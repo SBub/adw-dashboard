@@ -20,8 +20,6 @@ interface ColumnChartProps {
   title: string;
   /** One muted line under the title. */
   subtitle: string;
-  /** The caption's square, a full literal class string from src/lib/chart-colors.ts. */
-  swatchClass: string;
   /** Unique on the page; the detail ids derive from it. */
   idPrefix: string;
   columns: ChartColumn[];
@@ -40,13 +38,19 @@ function idPart(value: string): string {
 }
 
 /**
- * A chart card: a bordered figure with a coloured square, a title and a
- * muted subtitle, then CSS columns on a 180px plot (`h-45`) over faint dotted
- * guide lines, each scaled to the chart's own maximum (columnHeights), with
- * rounded tops and a capped width. The value sits inside the bar in white
- * when barValueInside says the bar holds it, otherwise just above the bar;
- * the name sits under the plot beside a dot of the bar's colour. A column
- * with `detail` is focusable and holds a CSS-only popover (group hover and
+ * A chart card: a bordered figure with a title and a muted subtitle, then
+ * CSS columns on a 180px plot (`h-45`) over faint dotted guide lines, each
+ * scaled to the chart's own maximum (columnHeights), with rounded tops and
+ * a capped width. The value sits inside the bar in white when
+ * barValueInside says the bar holds it, otherwise just above the bar; the
+ * name sits under the plot beside a dot of the bar's colour. Every column
+ * takes an equal grid slot of at most 80px (`minmax(0, 5rem)`), never sized
+ * from its name; the bar is capped at 56px and centred in its slot, so
+ * adjacent bars are equally spaced. A name wider than its slot wraps under
+ * its dot and then inside the word, never widening the slot; five or more
+ * columns take a 4px gap, so the row fits a one-third card at 1024px and a
+ * stacked card at 375px. A column with
+ * `detail` is focusable and holds a CSS-only popover (group hover and
  * focus-within, like SectionHeading's), always in the DOM and referenced by
  * `aria-describedby`. Stateless and without "use client": it computes no
  * business value and is rendered by the client TodaySummary too.
@@ -54,21 +58,18 @@ function idPart(value: string): string {
 export function ColumnChart({
   title,
   subtitle,
-  swatchClass,
   idPrefix,
   columns,
   summary,
   empty,
 }: ColumnChartProps) {
   const heights = columnHeights(columns.map((column) => column.value));
+  const gap = columns.length >= 5 ? "gap-1" : "gap-2 sm:gap-4";
 
   return (
     <figure className="min-w-0 rounded-md border border-neutral-200 p-3 dark:border-neutral-800">
       <figcaption className="mb-3">
-        <span className="flex items-center gap-2">
-          <span aria-hidden="true" className={`size-2.5 shrink-0 rounded-sm ${swatchClass}`} />
-          <span className="text-sm font-medium">{title}</span>
-        </span>
+        <span className="block text-sm font-medium">{title}</span>
         <span className="block text-xs text-neutral-500 dark:text-neutral-400">{subtitle}</span>
       </figcaption>
       <p className="sr-only">{summary}</p>
@@ -87,7 +88,10 @@ export function ColumnChart({
               />
             ))}
           </div>
-          <ul className="relative flex items-start justify-center gap-2 sm:gap-4">
+          <ul
+            className={`relative grid items-start justify-center ${gap}`}
+            style={{ gridTemplateColumns: `repeat(${columns.length}, minmax(0, 5rem))` }}
+          >
             {columns.map((column, i) => {
               const detailId = column.detail
                 ? `${idPart(idPrefix)}-${idPart(column.key)}-detail`
@@ -100,7 +104,7 @@ export function ColumnChart({
                   aria-label={column.ariaLabel}
                   aria-describedby={detailId}
                   tabIndex={column.detail ? 0 : undefined}
-                  className="group relative flex max-w-20 min-w-12 flex-1 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
+                  className="group relative flex min-w-0 flex-col items-center rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-500"
                 >
                   <span className="flex h-45 w-full flex-col items-center justify-end">
                     {!inside && (
@@ -122,12 +126,12 @@ export function ColumnChart({
                       )}
                     </span>
                   </span>
-                  <span className="mt-2 flex items-center gap-1 whitespace-nowrap text-xs">
+                  <span className="mt-2 flex w-full min-w-0 flex-wrap items-center justify-center gap-1 text-center text-xs">
                     <span
                       aria-hidden="true"
                       className={`size-2 shrink-0 rounded-full ${column.colorClass}`}
                     />
-                    {column.name}
+                    <span className="min-w-0 wrap-anywhere">{column.name}</span>
                   </span>
                   {column.detail && (
                     <span

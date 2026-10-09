@@ -1,13 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { DailyModelSummary, DailySummary } from "@/types/adw";
-import { secondsLabel } from "./run-view";
+import type { DailyModelSummary, DailyPhaseSummary, DailySummary } from "@/types/adw";
+import { costLabel, secondsLabel } from "./run-view";
 import {
   barValueInside,
   classCounts,
   classLabel,
   classSegments,
   columnHeights,
-  costLabel,
   pastDaysWindow,
   shareLabel,
   summaryWindowStart,
@@ -26,7 +25,6 @@ function row(overrides: Partial<DailySummary>): DailySummary {
     runs: 0,
     completed: 0,
     failed: 0,
-    halted: 0,
     features: 0,
     bugs: 0,
     chores: 0,
@@ -51,6 +49,22 @@ function modelRow(overrides: Partial<DailyModelSummary>): DailyModelSummary {
     cache_creation: 0,
     output: 0,
     cost_usd: 0,
+    ...overrides,
+  };
+}
+
+function phaseRow(overrides: Partial<DailyPhaseSummary>): DailyPhaseSummary {
+  return {
+    project_id: "p1",
+    day: "2026-10-05",
+    phase: "adw_build_iso",
+    runs: 0,
+    input: 0,
+    cache_read: 0,
+    cache_creation: 0,
+    output: 0,
+    cost_usd: 0,
+    duration_s: 0,
     ...overrides,
   };
 }
@@ -146,12 +160,12 @@ describe("pastDaysWindow", () => {
 
 describe("toSummaryDay", () => {
   it("is null for no rows", () => {
-    expect(toSummaryDay([], [], PROJECTS, "2026-10-06")).toBeNull();
+    expect(toSummaryDay([], [], [], PROJECTS, "2026-10-06")).toBeNull();
   });
 
   it("is null when the only rows are of another day", () => {
     expect(
-      toSummaryDay([row({ day: "2026-10-05", runs: 1 })], [], PROJECTS, "2026-10-06"),
+      toSummaryDay([row({ day: "2026-10-05", runs: 1 })], [], [], PROJECTS, "2026-10-06"),
     ).toBeNull();
   });
 
@@ -159,6 +173,7 @@ describe("toSummaryDay", () => {
     expect(
       toSummaryDay(
         [row({ day: "2026-10-06", project_id: "hidden", runs: 1 })],
+        [],
         [],
         PROJECTS,
         "2026-10-06",
@@ -171,13 +186,14 @@ describe("toSummaryDay", () => {
       row({ day: "2026-10-06", project_id: "p1", runs: 1, completed: 1 }),
       row({ day: "2026-10-06", project_id: "p2", runs: 3, failed: 1 }),
     ];
-    const expected = at(toSummaryReport(rows, [], PROJECTS, ALL).rows, 0);
-    expect(toSummaryDay(rows, [], PROJECTS, "2026-10-06")).toEqual(expected);
+    const expected = at(toSummaryReport(rows, [], [], PROJECTS, ALL).rows, 0);
+    expect(toSummaryDay(rows, [], [], PROJECTS, "2026-10-06")).toEqual(expected);
   });
 
   it("ignores rows of other days", () => {
     const day = toSummaryDay(
       [row({ day: "2026-10-06", runs: 2 }), row({ day: "2026-10-05", runs: 9 })],
+      [],
       [],
       PROJECTS,
       "2026-10-06",
@@ -190,10 +206,22 @@ describe("toSummaryDay", () => {
     const day = toSummaryDay(
       [row({ day: "2026-10-06", runs: 1 })],
       [modelRow({ day: "2026-10-06", output: 2 }), modelRow({ day: "2026-10-05", output: 9 })],
+      [],
       PROJECTS,
       "2026-10-06",
     );
     expect(day?.models.map((m) => m.total)).toEqual([2]);
+  });
+
+  it("ignores phase rows of other days", () => {
+    const day = toSummaryDay(
+      [row({ day: "2026-10-06", runs: 1 })],
+      [],
+      [phaseRow({ day: "2026-10-06", cost_usd: 2 }), phaseRow({ day: "2026-10-05", cost_usd: 9 })],
+      PROJECTS,
+      "2026-10-06",
+    );
+    expect(day?.phases.map((p) => p.cost_usd)).toEqual([2]);
   });
 
   it("does not mutate its inputs", () => {
@@ -202,7 +230,7 @@ describe("toSummaryDay", () => {
       Object.freeze(row({ day: "2026-10-06", project_id: "p1", runs: 2 })),
     ]);
     const projects = Object.freeze(PROJECTS.map((p) => Object.freeze({ ...p })));
-    expect(() => toSummaryDay(rows, [], projects, "2026-10-06")).not.toThrow();
+    expect(() => toSummaryDay(rows, [], [], projects, "2026-10-06")).not.toThrow();
     expect(rows.map((r) => r.project_id)).toEqual(["p2", "p1"]);
   });
 });
@@ -227,7 +255,7 @@ describe("toSummaryReport", () => {
           project_id: "p2",
           runs: 2,
           completed: 1,
-          halted: 1,
+          failed: 1,
           bugs: 1,
           chores: 1,
           duration_sum_s: 4200,
@@ -238,6 +266,7 @@ describe("toSummaryReport", () => {
         }),
       ],
       [],
+      [],
       PROJECTS,
       ALL,
     );
@@ -247,8 +276,7 @@ describe("toSummaryReport", () => {
       day: "2026-10-05",
       runs: 5,
       completed: 3,
-      failed: 1,
-      halted: 1,
+      failed: 2,
       features: 3,
       bugs: 1,
       chores: 1,
@@ -318,6 +346,7 @@ describe("toSummaryReport", () => {
         }),
       ],
       [],
+      [],
       three,
       ALL,
     );
@@ -352,20 +381,19 @@ describe("toSummaryReport", () => {
       tokens_out_sum: 9,
       cost_usd_sum: 0.42,
     });
-    const report = toSummaryReport([only], [], PROJECTS, ALL);
+    const report = toSummaryReport([only], [], [], PROJECTS, ALL);
     const { project_id: _, ...expected } = only;
     expect(at(report.rows, 0).totals).toEqual(expected);
   });
 
   it("carries only the day, counts and sums", () => {
-    const report = toSummaryReport([row({ runs: 1 })], [], PROJECTS, ALL);
+    const report = toSummaryReport([row({ runs: 1 })], [], [], PROJECTS, ALL);
     expect(Object.keys(at(report.rows, 0).totals).sort()).toEqual(
       [
         "day",
         "runs",
         "completed",
         "failed",
-        "halted",
         "features",
         "bugs",
         "chores",
@@ -389,6 +417,7 @@ describe("toSummaryReport", () => {
         row({ day: "2026-10-04", project_id: "p1", runs: 4 }),
       ],
       [],
+      [],
       PROJECTS,
       ALL,
     );
@@ -402,6 +431,7 @@ describe("toSummaryReport", () => {
     const report = toSummaryReport(
       [row({ project_id: "p1", runs: 1 }), row({ project_id: "hidden", runs: 9 })],
       [],
+      [],
       PROJECTS,
       ALL,
     );
@@ -413,6 +443,7 @@ describe("toSummaryReport", () => {
     const report = toSummaryReport(
       [row({ project_id: "p1", cost_usd_sum: 0.1 }), row({ project_id: "p2", cost_usd_sum: 0.2 })],
       [],
+      [],
       PROJECTS,
       ALL,
     );
@@ -420,7 +451,7 @@ describe("toSummaryReport", () => {
   });
 
   it("passes the window through", () => {
-    const report = toSummaryReport([], [], PROJECTS, { days: 7, from: null, to: null });
+    const report = toSummaryReport([], [], [], PROJECTS, { days: 7, from: null, to: null });
     expect(report).toEqual({ from: null, to: null, days: 7, rows: [] });
   });
 
@@ -431,14 +462,14 @@ describe("toSummaryReport", () => {
       Object.freeze(row({ day: "2026-10-05", project_id: "p2", runs: 3 })),
     ]);
     const projects = Object.freeze(PROJECTS.map((p) => Object.freeze({ ...p })));
-    expect(() => toSummaryReport(rows, [], projects, ALL)).not.toThrow();
+    expect(() => toSummaryReport(rows, [], [], projects, ALL)).not.toThrow();
     expect(rows.map((r) => r.day)).toEqual(["2026-10-04", "2026-10-05", "2026-10-05"]);
   });
 });
 
 describe("toSummaryReport models", () => {
   it("are empty when no model rows exist", () => {
-    const report = toSummaryReport([row({ runs: 1 })], [], PROJECTS, ALL);
+    const report = toSummaryReport([row({ runs: 1 })], [], [], PROJECTS, ALL);
     expect(at(report.rows, 0).models).toEqual([]);
   });
 
@@ -449,6 +480,7 @@ describe("toSummaryReport models", () => {
         modelRow({ day: "2026-10-05", project_id: "p1", input: 1, cache_read: 100 }),
         modelRow({ day: "2026-10-05", project_id: "p2", cache_creation: 10, output: 5 }),
       ],
+      [],
       PROJECTS,
       ALL,
     );
@@ -471,6 +503,7 @@ describe("toSummaryReport models", () => {
     const report = toSummaryReport(
       [row({ runs: 1 })],
       [modelRow({ project_id: "p1", output: 3 }), modelRow({ project_id: "hidden", output: 900 })],
+      [],
       PROJECTS,
       ALL,
     );
@@ -481,6 +514,73 @@ describe("toSummaryReport models", () => {
     const report = toSummaryReport(
       [row({ day: "2026-10-05", runs: 1 })],
       [modelRow({ day: "2026-10-04", output: 3 })],
+      [],
+      PROJECTS,
+      ALL,
+    );
+    expect(report.rows.map((d) => d.day)).toEqual(["2026-10-05"]);
+  });
+});
+
+describe("toSummaryReport phases", () => {
+  it("are empty when no phase rows exist", () => {
+    const report = toSummaryReport([row({ runs: 1 })], [], [], PROJECTS, ALL);
+    expect(at(report.rows, 0).phases).toEqual([]);
+  });
+
+  it("sum a phase over two projects and attach it to its day only", () => {
+    const report = toSummaryReport(
+      [row({ day: "2026-10-05", runs: 2 }), row({ day: "2026-10-04", runs: 1 })],
+      [],
+      [
+        phaseRow({ day: "2026-10-05", project_id: "p1", runs: 1, input: 1, cost_usd: 0.5 }),
+        phaseRow({
+          day: "2026-10-05",
+          project_id: "p2",
+          runs: 1,
+          cache_read: 100,
+          output: 5,
+          cost_usd: 0.25,
+          duration_s: 30,
+        }),
+      ],
+      PROJECTS,
+      ALL,
+    );
+    expect(at(report.rows, 0).phases).toEqual([
+      {
+        phase: "adw_build_iso",
+        runs: 2,
+        input: 1,
+        cache_read: 100,
+        cache_creation: 0,
+        output: 5,
+        cost_usd: 0.75,
+        duration_s: 30,
+      },
+    ]);
+    expect(at(report.rows, 1).phases).toEqual([]);
+  });
+
+  it("drop a hidden project's phase rows", () => {
+    const report = toSummaryReport(
+      [row({ runs: 1 })],
+      [],
+      [
+        phaseRow({ project_id: "p1", cost_usd: 1 }),
+        phaseRow({ project_id: "hidden", cost_usd: 900 }),
+      ],
+      PROJECTS,
+      ALL,
+    );
+    expect(at(report.rows, 0).phases.map((p) => p.cost_usd)).toEqual([1]);
+  });
+
+  it("do not create a day of their own", () => {
+    const report = toSummaryReport(
+      [row({ day: "2026-10-05", runs: 1 })],
+      [],
+      [phaseRow({ day: "2026-10-04", cost_usd: 3 })],
       PROJECTS,
       ALL,
     );
@@ -647,24 +747,5 @@ describe("tokensLabel", () => {
 
   it("moves to the next unit when rounding reaches a thousand", () => {
     expect(tokensLabel(999_960)).toBe("1.0M");
-  });
-});
-
-describe("costLabel", () => {
-  it("is n/a for null", () => {
-    expect(costLabel(null)).toBe("n/a");
-  });
-
-  it("is $0.00 for zero", () => {
-    expect(costLabel(0)).toBe("$0.00");
-  });
-
-  it("shows two decimals", () => {
-    expect(costLabel(12.345)).toBe("$12.35");
-    expect(costLabel(0.01)).toBe("$0.01");
-  });
-
-  it("marks a cost under one cent", () => {
-    expect(costLabel(0.0042)).toBe("<$0.01");
   });
 });

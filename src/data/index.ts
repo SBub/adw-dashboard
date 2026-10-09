@@ -15,7 +15,9 @@
 //   time and rendered on the server inside a "use cache" scope; every page of
 //   a project shares the one per-project tag, never enters the query cache,
 //   and a completion in the browser asks the server to drop that tag and
-//   re-render. getCompletedRuns.
+//   re-render. Each non-empty page also reads adw.run_metrics once for the
+//   shown runs' costs (never once per run), inside the same cache scope.
+//   getCompletedRuns.
 //
 // The summary page (`/`) reads the adw.daily_summary view (finished runs per
 // project per UTC day) in two halves split on today's UTC date, which the page
@@ -24,28 +26,40 @@
 // getSummaryToday (today only, prefetched by a short-lived scope and refetched
 // in the browser as the today card's queryFn). Each half also reads the
 // adw.daily_model_summary view (usage per project, model and UTC day of
-// runs.started_at) for the same days, in the same Promise.all, for the day
-// cards' tokens by model chart.
+// runs.started_at) and the adw.daily_phase_summary view (usage per project,
+// pipeline phase and UTC day of runs.finished_at) for the same days, in the
+// same Promise.all, for the day cards' tokens by model and cost by phase
+// charts.
+//
+// The sidebar's worker widget reads the adw.workers heartbeat table
+// (getWorkers): browser only, polled by the worker store in WorkerStatus,
+// never in the query cache, never in a cache scope and not on Realtime (the
+// table is not in the publication).
 import { pastDaysWindow, toSummaryDay, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
   type HistoryBookmark,
   type HistoryPage,
   historyItems,
+  historyKeyOf,
   historyKeysetFilter,
   historyNewerFilter,
   historyOrderAscending,
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
+import { runCosts } from "@/lib/run-view";
 import type {
   DailyModelSummary,
+  DailyPhaseSummary,
   DailySummary,
   ProjectSummary,
   QueueItem,
   Run,
+  RunMetrics,
   SummaryDay,
   SummaryReport,
+  Worker,
 } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
@@ -66,19 +80,37 @@ export interface ActiveRuns {
 
 /** The columns of adw.runs the screens read, which are exactly the fields of Run. */
 const RUN_COLUMNS =
-  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, pr_number, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+
+/** The columns of adw.run_metrics the History page reads, which are exactly the fields of RunMetrics. */
+const RUN_METRICS_COLUMNS = "adw_id, cost_usd";
 
 /** The columns of adw.queue_items the screens read, which are exactly the fields of QueueItem. */
 const QUEUE_COLUMNS =
-  "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, note, updated_at";
+  "project_id, issue_number, state, source, position, issue_title, queued_at, adw_id, reason, updated_at";
 
 /** The columns of adw.daily_summary the summary page reads, which are exactly the fields of DailySummary. */
 const DAILY_SUMMARY_COLUMNS =
-  "project_id, day, runs, completed, failed, halted, features, bugs, chores, patches, duration_sum_s, tokens_in_sum, tokens_cache_read_sum, tokens_out_sum, cost_usd_sum";
+  "project_id, day, runs, completed, failed, features, bugs, chores, patches, duration_sum_s, tokens_in_sum, tokens_cache_read_sum, tokens_out_sum, cost_usd_sum";
 
 /** The columns of adw.daily_model_summary the summary page reads, which are exactly the fields of DailyModelSummary. */
 const DAILY_MODEL_SUMMARY_COLUMNS =
   "project_id, day, model, runs, input, cache_read, cache_creation, output, cost_usd";
+
+/** The columns of adw.daily_phase_summary the summary page reads, which are exactly the fields of DailyPhaseSummary. */
+const DAILY_PHASE_SUMMARY_COLUMNS =
+  "project_id, day, phase, runs, input, cache_read, cache_creation, output, cost_usd, duration_s";
+
+/** The columns of adw.workers the worker widget reads, which are exactly the fields of Worker. */
+const WORKER_COLUMNS = "id, host, pid, started_at, heartbeat_at, version";
+
+/**
+ * One History page plus each shown run's cost in US dollars, keyed by adw_id.
+ * A run with no adw.run_metrics row has no key.
+ */
+export interface CompletedRunsPage extends HistoryPage {
+  costs: Record<string, number>;
+}
 
 /**
  * All projects, most recently active first (projects with no runs yet last).
@@ -194,9 +226,10 @@ export async function getActiveRuns(): Promise<ActiveRuns> {
 }
 
 /**
- * A project's completed runs, narrowed by the search text when there is one:
- * the one filter the History rows read and both of its counts share, so the
- * page and its "N of M" can never disagree on what is counted.
+ * A project's completed runs with a `finished_at` (the History key), narrowed
+ * by the search text when there is one: the one filter the History rows read
+ * and both of its counts share, so the page and its "N of M" can never
+ * disagree on what is counted.
  */
 function completedRuns<Columns extends string>(
   projectId: string,
@@ -208,7 +241,8 @@ function completedRuns<Columns extends string>(
     .from("runs")
     .select(columns, options)
     .eq("project_id", projectId)
-    .eq("status", "completed");
+    .eq("status", "completed")
+    .not("finished_at", "is", null);
   return q ? query.or(historySearchFilter(q)) : query;
 }
 
@@ -221,8 +255,32 @@ function countOf({ count, error }: { count: number | null; error: { message: str
 }
 
 /**
+ * The cost of each of these runs that published metrics, keyed by adw_id: one
+ * read of adw.run_metrics for the whole page, never one per run.
+ */
+async function getRunCosts(
+  projectId: string,
+  runs: readonly Run[],
+): Promise<Record<string, number>> {
+  const { data, error } = await getSupabase()
+    .from("run_metrics")
+    .select(RUN_METRICS_COLUMNS)
+    .eq("project_id", projectId)
+    .in(
+      "adw_id",
+      runs.map((run) => run.adw_id),
+    );
+  if (error) {
+    throw new Error(`run_metrics: ${error.message}`);
+  }
+  // The selected columns are exactly the fields of RunMetrics, so this cast is
+  // the one place the table's shape is asserted.
+  return runCosts((data ?? []) as RunMetrics[]);
+}
+
+/**
  * One page of a project's completed runs, at most `HISTORY_PAGE_SIZE` in the
- * display order `updated_at desc, adw_id desc`, with its position (page N of
+ * display order `finished_at desc, adw_id desc`, with its position (page N of
  * M) and the cursors of its two arrows; page 1 of 1 with no rows for an
  * unknown slug (the page has already decided not-found from the project list
  * by the time this is called).
@@ -242,6 +300,11 @@ function countOf({ count, error }: { count: number | null; error: { message: str
  * toHistoryPage turns the two into the page number, the page count and both
  * arrows, so no N + 1 row is fetched.
  *
+ * A non-empty page makes one more read, of adw.run_metrics for the shown
+ * runs (getRunCosts), in the same Promise.all as the newer count: their cost
+ * keyed by adw_id, a run with no metrics row having no key. One extra read per
+ * page, never per run; none for an empty page or an unknown slug.
+ *
  * `q` is the search text, already normalised by the caller outside the cache
  * scope (readHistoryQuery in src/lib/history-search.ts), or null for no
  * search. It narrows the rows and both counts through historySearchFilter,
@@ -250,28 +313,30 @@ function countOf({ count, error }: { count: number | null; error: { message: str
  * the two.
  *
  * Server only, and only from inside the page's "use cache" scope for history
- * (tagged history:<slug>, shared by every page), so the counts drop with the
- * tag together with the rows. It never enters the React Query cache and reads
+ * (tagged history:<slug>, shared by every page), so the counts and the costs
+ * drop with the tag together with the rows. It never enters the React Query cache and reads
  * no clock: there is no fetched_at here, and nothing in it needs the current
- * time. A completed run never changes, so the cached pages are only refilled
- * when the browser asks the server to drop the tag after a completion
- * (revalidateHistory), when the database webhook does, or when the cache
- * lifetime ends.
+ * time. A completed run's finished_at never changes, so the cached pages are
+ * only refilled when the browser asks the server to drop the tag after a
+ * completion (revalidateHistory), when the database webhook does, or when the
+ * cache lifetime ends.
  */
 export async function getCompletedRuns(
   slug: string,
   bookmark: HistoryBookmark | null,
   q: string | null,
-): Promise<HistoryPage> {
+): Promise<CompletedRunsPage> {
   const project = await getProjectBySlug(slug);
-  if (project === null) return toHistoryPage([], { slug, newer: 0, total: 0 });
+  if (project === null) {
+    return { ...toHistoryPage([], { slug, newer: 0, total: 0 }), costs: {} };
+  }
 
   let rowsQuery = completedRuns(project.id, q, RUN_COLUMNS);
   if (bookmark) rowsQuery = rowsQuery.or(historyKeysetFilter(bookmark));
   const ascending = historyOrderAscending(bookmark);
   const [rows, totalCount] = await Promise.all([
     rowsQuery
-      .order("updated_at", { ascending })
+      .order("finished_at", { ascending })
       .order("adw_id", { ascending })
       .limit(HISTORY_PAGE_SIZE),
     completedRuns(project.id, q, "adw_id", { count: "exact", head: true }),
@@ -284,15 +349,16 @@ export async function getCompletedRuns(
   // getActiveRuns: the one place the table's shape is asserted.
   const items = historyItems((rows.data ?? []) as Run[], bookmark);
 
-  const anchor = items[0] ?? bookmark;
-  const newer = anchor
-    ? countOf(
-        await completedRuns(project.id, q, "adw_id", { count: "exact", head: true }).or(
-          historyNewerFilter(anchor),
-        ),
-      )
-    : 0;
-  return toHistoryPage(items, { slug, newer, total });
+  const anchor = (items[0] && historyKeyOf(items[0])) ?? bookmark;
+  const [newer, costs] = await Promise.all([
+    anchor
+      ? completedRuns(project.id, q, "adw_id", { count: "exact", head: true })
+          .or(historyNewerFilter(anchor))
+          .then(countOf)
+      : 0,
+    items.length > 0 ? getRunCosts(project.id, items) : {},
+  ]);
+  return { ...toHistoryPage(items, { slug, newer, total }), costs };
 }
 
 /**
@@ -350,11 +416,11 @@ async function getSummaryProjects(): Promise<{ id: string; slug: string; display
  * project. Today is never in it; the today card shows it (getSummaryToday).
  *
  * `today` comes from the caller, the page's one request-time clock read; this
- * function reads no clock. Three reads in parallel: the projects (to name the
+ * function reads no clock. Four reads in parallel: the projects (to name the
  * rows and drop the hidden ones), the daily_summary rows in the window
  * (pastDaysWindow in src/lib/daily-summary.ts, mirrored here as
- * `day >= from and day < today`) and the daily_model_summary rows in the same
- * window. Assembly is toSummaryReport's.
+ * `day >= from and day < today`), and the daily_model_summary and
+ * daily_phase_summary rows in the same window. Assembly is toSummaryReport's.
  *
  * Server only, and only from the summary page's past days "use cache" scope
  * (getPastDays). Never a queryFn, never in the React Query cache. `days` is
@@ -362,7 +428,7 @@ async function getSummaryProjects(): Promise<{ id: string; slug: string; display
  */
 export async function getSummaryPast(today: string, days: number): Promise<SummaryReport> {
   const { from, to } = pastDaysWindow(today, days);
-  const [projects, rows, modelRows] = await Promise.all([
+  const [projects, rows, modelRows, phaseRows] = await Promise.all([
     getSummaryProjects(),
     getSupabase()
       .from("daily_summary")
@@ -375,6 +441,11 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
       .select(DAILY_MODEL_SUMMARY_COLUMNS)
       .gte("day", from)
       .lt("day", today),
+    getSupabase()
+      .from("daily_phase_summary")
+      .select(DAILY_PHASE_SUMMARY_COLUMNS)
+      .gte("day", from)
+      .lt("day", today),
   ]);
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
@@ -382,12 +453,16 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
   if (modelRows.error) {
     throw new Error(`daily_model_summary: ${modelRows.error.message}`);
   }
-  // The selected columns are exactly the fields of DailySummary and
-  // DailyModelSummary, so these casts are the one place the views' shapes are
-  // asserted for this read.
+  if (phaseRows.error) {
+    throw new Error(`daily_phase_summary: ${phaseRows.error.message}`);
+  }
+  // The selected columns are exactly the fields of DailySummary,
+  // DailyModelSummary and DailyPhaseSummary, so these casts are the one place
+  // the views' shapes are asserted for this read.
   return toSummaryReport(
     (rows.data ?? []) as DailySummary[],
     (modelRows.data ?? []) as DailyModelSummary[],
+    (phaseRows.data ?? []) as DailyPhaseSummary[],
     projects,
     { days, from, to },
   );
@@ -396,8 +471,9 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
 /**
  * The summary page's (`/`) today card: the finished runs of the UTC day
  * `today` (`YYYY-MM-DD`) across every visible project, or null when none has
- * finished a run yet. Three reads in parallel (projects, that day's
- * daily_summary rows and its daily_model_summary rows), assembled by
+ * finished a run yet. Four reads in parallel (projects, that day's
+ * daily_summary rows, its daily_model_summary rows and its
+ * daily_phase_summary rows), assembled by
  * toSummaryDay, so the server prefetch and the browser refetch
  * return the same shape.
  *
@@ -408,10 +484,11 @@ export async function getSummaryPast(today: string, days: number): Promise<Summa
  * `today` always comes from the caller.
  */
 export async function getSummaryToday(today: string): Promise<SummaryDay | null> {
-  const [projects, rows, modelRows] = await Promise.all([
+  const [projects, rows, modelRows, phaseRows] = await Promise.all([
     getSummaryProjects(),
     getSupabase().from("daily_summary").select(DAILY_SUMMARY_COLUMNS).eq("day", today),
     getSupabase().from("daily_model_summary").select(DAILY_MODEL_SUMMARY_COLUMNS).eq("day", today),
+    getSupabase().from("daily_phase_summary").select(DAILY_PHASE_SUMMARY_COLUMNS).eq("day", today),
   ]);
   if (rows.error) {
     throw new Error(`daily_summary: ${rows.error.message}`);
@@ -419,12 +496,37 @@ export async function getSummaryToday(today: string): Promise<SummaryDay | null>
   if (modelRows.error) {
     throw new Error(`daily_model_summary: ${modelRows.error.message}`);
   }
-  // The selected columns are exactly the fields of DailySummary and
-  // DailyModelSummary, the same casts as in getSummaryPast.
+  if (phaseRows.error) {
+    throw new Error(`daily_phase_summary: ${phaseRows.error.message}`);
+  }
+  // The selected columns are exactly the fields of DailySummary,
+  // DailyModelSummary and DailyPhaseSummary, the same casts as in
+  // getSummaryPast.
   return toSummaryDay(
     (rows.data ?? []) as DailySummary[],
     (modelRows.data ?? []) as DailyModelSummary[],
+    (phaseRows.data ?? []) as DailyPhaseSummary[],
     projects,
     today,
   );
+}
+
+/**
+ * Every queue worker's heartbeat row, in no order: workerState
+ * (src/lib/worker-state.ts) picks the freshest, so a stale leftover row never
+ * counts as a second worker.
+ *
+ * Called only from the worker store in WorkerStatus, in the browser, never on
+ * the server. It is not a queryFn, has no query key and no cache scope, and is
+ * not on Realtime (adw.workers is not in the publication), so the store polls
+ * it. It reads no clock; the store reads the clock after this resolves.
+ */
+export async function getWorkers(): Promise<Worker[]> {
+  const { data, error } = await getSupabase().from("workers").select(WORKER_COLUMNS);
+  if (error) {
+    throw new Error(`workers: ${error.message}`);
+  }
+  // The selected columns are exactly the fields of Worker, so this cast is the
+  // one place the table's shape is asserted.
+  return (data ?? []) as Worker[];
 }

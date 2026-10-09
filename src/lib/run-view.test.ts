@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { durationLabel, secondsLabel } from "./run-view";
+import {
+  branchTreeHref,
+  costLabel,
+  durationLabel,
+  pullRequestHref,
+  runCosts,
+  secondsLabel,
+} from "./run-view";
 
 // The module under test never reads the clock, so nothing here depends on
 // when the suite runs; every case is two fixed timestamps.
@@ -41,5 +48,73 @@ describe("secondsLabel", () => {
 
   it("switches to hours from one hour up", () => {
     expect(secondsLabel(3725)).toBe("1h 02m");
+  });
+});
+
+describe("branchTreeHref", () => {
+  it("links a plain branch to its tree", () => {
+    expect(branchTreeHref("SBub/adw-dashboard", "develop")).toBe(
+      "https://github.com/SBub/adw-dashboard/tree/develop",
+    );
+  });
+
+  it("keeps the branch's slashes as path separators", () => {
+    expect(branchTreeHref("SBub/adw-dashboard", "chore/issue-141-adw-ab53aaef-x")).toBe(
+      "https://github.com/SBub/adw-dashboard/tree/chore/issue-141-adw-ab53aaef-x",
+    );
+  });
+
+  it("escapes a # in a segment", () => {
+    expect(branchTreeHref("SBub/adw-dashboard", "fix/issue#12")).toBe(
+      "https://github.com/SBub/adw-dashboard/tree/fix/issue%2312",
+    );
+  });
+});
+
+describe("costLabel", () => {
+  it("is $0.00 for zero", () => {
+    expect(costLabel(0)).toBe("$0.00");
+  });
+
+  it("marks a cost under one cent, and shows exactly one cent", () => {
+    expect(costLabel(0.0042)).toBe("<$0.01");
+    expect(costLabel(0.01)).toBe("$0.01");
+  });
+
+  it("rounds to cents", () => {
+    expect(costLabel(4.2935)).toBe("$4.29");
+    expect(costLabel(12.345)).toBe("$12.35");
+    expect(costLabel(0.999)).toBe("$1.00");
+  });
+
+  it("prints thousands with no separator", () => {
+    expect(costLabel(1234.5)).toBe("$1234.50");
+  });
+});
+
+describe("runCosts", () => {
+  it("is empty for no rows", () => {
+    expect(runCosts([])).toEqual({});
+  });
+
+  it("keys each run's exact cost by adw_id", () => {
+    expect(
+      runCosts([
+        { adw_id: "a6d2347d", cost_usd: 4.2935 },
+        { adw_id: "7a7f315b", cost_usd: 0.0042 },
+      ]),
+    ).toEqual({ a6d2347d: 4.2935, "7a7f315b": 0.0042 });
+  });
+
+  it("has no key for a run without a metrics row", () => {
+    expect(runCosts([{ adw_id: "a6d2347d", cost_usd: 4.2935 }])["deadbeef"]).toBeUndefined();
+  });
+});
+
+describe("pullRequestHref", () => {
+  it("links the pull request on GitHub", () => {
+    expect(pullRequestHref("SBub/adw-dashboard", 143)).toBe(
+      "https://github.com/SBub/adw-dashboard/pull/143",
+    );
   });
 });

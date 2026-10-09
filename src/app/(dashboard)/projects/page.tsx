@@ -1,5 +1,6 @@
 import { HydrationBoundary } from "@tanstack/react-query";
 import { ActiveRunsOverview } from "@/components/ActiveRunsOverview";
+import { ActiveRunsOverviewSkeleton } from "@/components/LoadingSkeletons";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { SectionBoundary } from "@/components/SectionBoundary";
 import { SectionHeading } from "@/components/SectionHeading";
@@ -16,10 +17,7 @@ async function AllActiveRuns() {
 
   return (
     <HydrationBoundary state={state}>
-      <QueryBoundary
-        fallback={<p className="text-sm text-neutral-500 dark:text-neutral-400">Loading runs...</p>}
-        detail="Active runs did not load."
-      >
+      <QueryBoundary fallback={<ActiveRunsOverviewSkeleton />} detail="Active runs did not load.">
         <ActiveRunsOverview />
       </QueryBoundary>
     </HydrationBoundary>
@@ -35,13 +33,10 @@ export default function ProjectsPage() {
     <section className="mb-10">
       <SectionHeading
         title="Active"
-        description="Runs in progress, and runs that failed and can be resumed, across every project. Each row updates live as phases complete."
-        detail="A failed run keeps its branch and can be resumed from the phase that failed, which is why it stays here rather than in history."
+        description="Runs in progress, and runs that failed and are not resolved yet, across every project. Each row updates live as phases complete."
+        detail="A failed run keeps its branch and stays here, not in history, until it is run again."
       />
-      <SectionBoundary
-        fallback={<p className="text-sm text-neutral-500 dark:text-neutral-400">Loading runs...</p>}
-        detail="Active runs did not load."
-      >
+      <SectionBoundary fallback={<ActiveRunsOverviewSkeleton />} detail="Active runs did not load.">
         <AllActiveRuns />
       </SectionBoundary>
     </section>

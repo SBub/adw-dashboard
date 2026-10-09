@@ -7,10 +7,12 @@
 // Pure: it imports nothing from "@/data" or "next/*", reads no clock, and runs
 // in the vitest node pool.
 //
-// The display order is `updated_at desc, adw_id desc`. adw_id is unique within
-// a project, so the order is total and neither keyset ever repeats or skips a
-// row, even when a run completes at the head while a visitor is on a later
-// page.
+// The display order is `finished_at desc, adw_id desc`. finished_at is
+// written once, by the terminal save; updated_at is not the key because a
+// trigger stamps it on every write (a backfill, a late pr_number), which would
+// reorder History. adw_id is unique within a project, so the order is total
+// and neither keyset ever repeats or skips a row, even when a run completes at
+// the head while a visitor is on a later page.
 import { isProjectSlug } from "@/lib/slug";
 import type { Run } from "@/types/adw";
 
@@ -27,12 +29,21 @@ export type HistoryDirection = "after" | "before";
 export interface HistoryBookmark {
   slug: string;
   direction: HistoryDirection;
-  updated_at: string;
+  finished_at: string;
   adw_id: string;
 }
 
 /** The keyset of one row: the two columns of the order. */
-type HistoryKey = Pick<Run, "updated_at" | "adw_id">;
+type HistoryKey = { finished_at: string; adw_id: string };
+
+/**
+ * The keyset of a row, or null for a row without `finished_at`. A completed
+ * run always has one, and the History read filters out any row without it, so
+ * null only guards the type (`Run.finished_at` is null while a run is live).
+ */
+export function historyKeyOf({ finished_at, adw_id }: Run): HistoryKey | null {
+  return finished_at === null ? null : { finished_at, adw_id };
+}
 
 /** An encoded bookmark and the query parameter it travels in. */
 export interface HistoryCursor {
@@ -117,14 +128,14 @@ function isAdwId(value: unknown): value is string {
   return typeof value === "string" && ADW_ID.test(value);
 }
 
-/** An opaque cursor: `base64url(JSON.stringify({ slug, direction, updated_at, adw_id }))`. */
+/** An opaque cursor: `base64url(JSON.stringify({ slug, direction, finished_at, adw_id }))`. */
 export function encodeHistoryBookmark({
   slug,
   direction,
-  updated_at,
+  finished_at,
   adw_id,
 }: HistoryBookmark): string {
-  return toBase64Url(JSON.stringify({ slug, direction, updated_at, adw_id }));
+  return toBase64Url(JSON.stringify({ slug, direction, finished_at, adw_id }));
 }
 
 function isDirection(value: unknown): value is HistoryDirection {
@@ -133,7 +144,8 @@ function isDirection(value: unknown): value is HistoryDirection {
 
 /**
  * The bookmark a cursor carries. Throws `UnknownCursorError` on garbage
- * (including a payload with no or an unknown direction),
+ * (including a payload with no or an unknown direction, and the older
+ * `updated_at` payload, which has no `finished_at`),
  * `CursorScopeMismatchError` when it was handed out for another project and
  * `CursorDirectionMismatchError` when it pages the other way than `direction`.
  * Extra keys in the JSON are ignored; the result is a fresh object.
@@ -153,13 +165,13 @@ export function decodeHistoryBookmark(
   if (typeof json !== "object" || json === null || Array.isArray(json)) {
     throw new UnknownCursorError();
   }
-  const { slug: scope, direction: way, updated_at, adw_id } = json as Record<string, unknown>;
-  if (!isProjectSlug(scope) || !isDirection(way) || !isTimestamp(updated_at) || !isAdwId(adw_id)) {
+  const { slug: scope, direction: way, finished_at, adw_id } = json as Record<string, unknown>;
+  if (!isProjectSlug(scope) || !isDirection(way) || !isTimestamp(finished_at) || !isAdwId(adw_id)) {
     throw new UnknownCursorError();
   }
   if (scope !== slug) throw new CursorScopeMismatchError();
   if (way !== direction) throw new CursorDirectionMismatchError();
-  return { slug: scope, direction: way, updated_at, adw_id };
+  return { slug: scope, direction: way, finished_at, adw_id };
 }
 
 function readCursor(
@@ -207,12 +219,12 @@ export function readHistoryBookmark(
 
 /**
  * The PostgREST `or` filter for the rows strictly older than a key in the
- * order `updated_at desc, adw_id desc`. Values are double-quoted (the
+ * order `finished_at desc, adw_id desc`. Values are double-quoted (the
  * timestamp holds `:` and `.`); validation guarantees neither value contains a
  * character the grammar reserves.
  */
-function historyOlderFilter({ updated_at, adw_id }: HistoryKey): string {
-  return `updated_at.lt."${updated_at}",and(updated_at.eq."${updated_at}",adw_id.lt."${adw_id}")`;
+function historyOlderFilter({ finished_at, adw_id }: HistoryKey): string {
+  return `finished_at.lt."${finished_at}",and(finished_at.eq."${finished_at}",adw_id.lt."${adw_id}")`;
 }
 
 /**
@@ -220,8 +232,8 @@ function historyOlderFilter({ updated_at, adw_id }: HistoryKey): string {
  * same order: the mirror of the older filter. Also what the data layer counts
  * to number a page.
  */
-export function historyNewerFilter({ updated_at, adw_id }: HistoryKey): string {
-  return `updated_at.gt."${updated_at}",and(updated_at.eq."${updated_at}",adw_id.gt."${adw_id}")`;
+export function historyNewerFilter({ finished_at, adw_id }: HistoryKey): string {
+  return `finished_at.gt."${finished_at}",and(finished_at.eq."${finished_at}",adw_id.gt."${adw_id}")`;
 }
 
 /** The keyset filter of a bookmarked page: older for `after`, newer for `before`. */
@@ -250,9 +262,11 @@ export function historyItems(rows: readonly Run[], bookmark: HistoryBookmark | n
   return historyOrderAscending(bookmark) ? items.reverse() : items;
 }
 
-function cursorOf(slug: string, direction: HistoryDirection, row: Run): HistoryCursor {
-  const { updated_at, adw_id } = row;
-  return { direction, cursor: encodeHistoryBookmark({ slug, direction, updated_at, adw_id }) };
+/** The cursor of a row in a direction, or null for a row without a key. */
+function cursorOf(slug: string, direction: HistoryDirection, row: Run): HistoryCursor | null {
+  const key = historyKeyOf(row);
+  if (key === null) return null;
+  return { direction, cursor: encodeHistoryBookmark({ slug, direction, ...key }) };
 }
 
 /**

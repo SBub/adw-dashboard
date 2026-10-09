@@ -1,10 +1,11 @@
-// The one place an issue class or a model gets a chart colour. The class hues
-// are IssueClassBadge's, so a class has one colour across the app; the model
-// hues sit outside both the class and the status palettes. Full literal class
-// strings, so Tailwind sees them. Neither classes nor models are states: none
-// of these is a status hue.
+// The one place an issue class, a model or a pipeline phase gets a chart
+// colour. The class hues are IssueClassBadge's, so a class has one colour
+// across the app; the model and phase hues sit outside the class and the
+// status palettes. Full literal class strings, so Tailwind sees them. Neither
+// classes, models nor phases are states: none of these is a status hue.
 import type { ClassKey } from "./daily-summary";
 import type { ModelFamily } from "./model-usage";
+import type { PhaseKey } from "./phase-usage";
 
 /** Class fills for the SVG class bar (ClassDistributionBar). */
 export const CLASS_FILL: Record<ClassKey, string> = {
@@ -30,4 +31,13 @@ export const MODEL_BG: Record<ModelFamily, string> = {
   sonnet: "bg-teal-500",
   haiku: "bg-orange-400",
   other: "bg-neutral-300 dark:bg-neutral-600",
+};
+
+/** Pipeline phase backgrounds, for CSS columns (PhaseColumnChart). */
+export const PHASE_BG: Record<PhaseKey, string> = {
+  adw_plan_iso: "bg-cyan-500",
+  adw_build_iso: "bg-blue-500",
+  adw_test_iso: "bg-purple-500",
+  adw_review_iso: "bg-pink-500",
+  adw_document_iso: "bg-yellow-500",
 };

@@ -1,5 +1,42 @@
 @import "tailwindcss";
 
+/*
+ * The page colour, defined once. `html` carries it as well as `body`: the
+ * canvas, the scrollbar gutter and the overscroll area are painted from the
+ * root, not from the body box. `color-scheme` makes the browser-painted parts
+ * (scrollbar, canvas, form controls) follow the same switch as `dark:`.
+ */
+:root {
+  --background: var(--color-white);
+  --foreground: var(--color-neutral-900);
+  color-scheme: light dark;
+  /*
+   * The sticky root header's single-row height (`py-3`, the brand's 1.5rem
+   * line box and the 1px bottom border), the one source the sidebar's sticky
+   * offset reads. The header wraps to two rows only below `md`, where the
+   * sidebar is not sticky.
+   */
+  --header-height: 3.0625rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: var(--color-neutral-950);
+    --foreground: var(--color-neutral-100);
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+}
+
+html,
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+}
+
 html {
   scrollbar-gutter: stable;
 }

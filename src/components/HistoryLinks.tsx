@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { HistoryPageLink } from "./HistoryPageLink";
 
 interface HistoryLinksProps {
   /** The URL of the newer page (the left arrow), or null on page one. */
@@ -19,7 +19,9 @@ const ARROW =
  * heading row, or nothing when there is a single page and no arrow. A server
  * component with no state: the page's HistoryPagination builds both hrefs
  * with historyHref and passes them in with the page numbers it read from the
- * cached page; null hides an arrow. A hidden arrow keeps its slot (an
+ * cached page; null hides an arrow. The arrows are HistoryPageLinks, which
+ * navigate inside the shared History transition without scrolling. A hidden
+ * arrow keeps its slot (an
  * invisible placeholder of the same width), so the indicator does not move.
  */
 export function HistoryLinks({ newerHref, olderHref, page, pageCount }: HistoryLinksProps) {
@@ -28,9 +30,9 @@ export function HistoryLinks({ newerHref, olderHref, page, pageCount }: HistoryL
   return (
     <nav aria-label="History pages" className="flex items-center gap-3">
       {newerHref !== null ? (
-        <Link href={newerHref} aria-label="Newer runs" className={ARROW}>
+        <HistoryPageLink href={newerHref} label="Newer runs" className={ARROW}>
           ←
-        </Link>
+        </HistoryPageLink>
       ) : (
         <span aria-hidden="true" className={`${ARROW} invisible`}>
           ←
@@ -40,9 +42,9 @@ export function HistoryLinks({ newerHref, olderHref, page, pageCount }: HistoryL
         {page} of {pageCount}
       </span>
       {olderHref !== null ? (
-        <Link href={olderHref} aria-label="Older runs" className={ARROW}>
+        <HistoryPageLink href={olderHref} label="Older runs" className={ARROW}>
           →
-        </Link>
+        </HistoryPageLink>
       ) : (
         <span aria-hidden="true" className={`${ARROW} invisible`}>
           →

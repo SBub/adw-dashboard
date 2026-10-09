@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TOOLTIP_LAYER } from "./layers";
+import { HEADER_LAYER, TOOLTIP_LAYER } from "./layers";
 
 // The layer's own module and this test name the class; every other file is scanned.
 const EXEMPT = new Set(["/src/lib/layers.ts", "/src/lib/layers.test.ts"]);
@@ -21,6 +21,7 @@ function zIndexes(source: string): { cls: string; value: number }[] {
 }
 
 const tooltipValue = Number(TOOLTIP_LAYER.slice("z-".length));
+const headerValue = Number(HEADER_LAYER.slice("z-".length));
 
 describe("TOOLTIP_LAYER", () => {
   it("is a numeric z-index class", () => {
@@ -46,6 +47,30 @@ describe("z-index guard", () => {
       if (EXEMPT.has(path)) continue;
       for (const { cls, value } of zIndexes(source)) {
         if (value >= tooltipValue) found.push(`${path}: ${cls}`);
+      }
+    }
+    expect(found).toEqual([]);
+  });
+});
+
+describe("HEADER_LAYER", () => {
+  it("is a numeric z-index class below the tooltip's layer", () => {
+    expect(HEADER_LAYER).toMatch(/^z-\d+$/);
+    expect(headerValue).toBeLessThan(tooltipValue);
+  });
+
+  it("is the root header's layer", () => {
+    const source = SOURCES.find(([path]) => path === "/src/app/layout.tsx")?.[1];
+    expect(source).toContain("HEADER_LAYER");
+    expect(zIndexes(source ?? "")).toEqual([]);
+  });
+
+  it("is above every other z-index in src", () => {
+    const found: string[] = [];
+    for (const [path, source] of SOURCES) {
+      if (EXEMPT.has(path)) continue;
+      for (const { cls, value } of zIndexes(source)) {
+        if (value >= headerValue) found.push(`${path}: ${cls}`);
       }
     }
     expect(found).toEqual([]);

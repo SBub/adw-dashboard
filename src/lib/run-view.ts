@@ -5,6 +5,8 @@
 // the current time ("updated 2m ago", the stale badge, the elapsed time of a
 // running run) are deliberately absent for now; issue #3 tracks them.
 
+import type { RunMetrics } from "@/types/adw";
+
 const SECOND = 1000;
 
 function pad2(value: number): string {
@@ -41,4 +43,37 @@ export function durationLabel(startedAt: string, finishedAt: string | null): str
  */
 export function secondsLabel(seconds: number): string {
   return formatDuration(seconds * SECOND);
+}
+
+/**
+ * A cost in US dollars with two decimals, "<$0.01" under a cent. No thousands
+ * separator (no Intl, no toLocaleString), so it reads the same in every
+ * locale. Shared by the summary's charts and table and the History card.
+ */
+export function costLabel(usd: number): string {
+  if (usd > 0 && usd < 0.01) return "<$0.01";
+  return `$${(Math.round(usd * 100) / 100).toFixed(2)}`;
+}
+
+/**
+ * The History page's cost per run, keyed by adw_id. A run with no metrics row
+ * has no key, so its card shows no Cost field (never "$0.00").
+ */
+export function runCosts(rows: readonly RunMetrics[]): Record<string, number> {
+  return Object.fromEntries(rows.map((row) => [row.adw_id, row.cost_usd]));
+}
+
+/**
+ * The GitHub tree URL of a run's branch in "owner/repo". Each path segment is
+ * percent-encoded on its own, so the branch's slashes stay path separators
+ * while a "#" or "?" in a segment is escaped instead of cutting the URL.
+ */
+export function branchTreeHref(projectSlug: string, branch: string): string {
+  const path = branch.split("/").map(encodeURIComponent).join("/");
+  return `https://github.com/${projectSlug}/tree/${path}`;
+}
+
+/** The GitHub URL of pull request `prNumber` in "owner/repo". */
+export function pullRequestHref(projectSlug: string, prNumber: number): string {
+  return `https://github.com/${projectSlug}/pull/${prNumber}`;
 }

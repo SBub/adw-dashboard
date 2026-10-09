@@ -2,9 +2,11 @@ import { HydrationBoundary } from "@tanstack/react-query";
 import { cacheTag } from "next/cache";
 import type { ReactNode } from "react";
 import { ConnectionIndicator } from "@/components/ConnectionIndicator";
+import { ProjectNavSkeleton } from "@/components/LoadingSkeletons";
 import { ProjectNav } from "@/components/ProjectNav";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { SectionBoundary } from "@/components/SectionBoundary";
+import { WorkerStatus } from "@/components/WorkerStatus";
 import { getProjects } from "@/data";
 import { getActiveRunsState } from "@/data/active-runs-state";
 import { prefetch } from "@/data/query-client";
@@ -55,10 +57,7 @@ async function SidebarActiveRuns() {
 
   return (
     <HydrationBoundary state={state}>
-      <QueryBoundary
-        fallback={<p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>}
-        detail="The project list did not load."
-      >
+      <QueryBoundary fallback={<ProjectNavSkeleton />} detail="The project list did not load.">
         <ProjectNav />
       </QueryBoundary>
     </HydrationBoundary>
@@ -79,12 +78,12 @@ export default async function DashboardLayout({ children }: { children: ReactNod
   return (
     <Providers>
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 md:flex-row md:items-start md:gap-8">
-        <aside className="shrink-0 md:sticky md:top-6 md:max-h-[calc(100vh-5.5rem)] md:w-72 md:overflow-y-auto">
+        <aside className="flex shrink-0 flex-col gap-2 md:sticky md:top-[calc(var(--header-height)+1.5rem)] md:h-[calc(100vh-var(--header-height)-3rem)] md:w-72">
           {/* The connection pill lives here, not in the root header, because
               the channel it describes is opened by Providers in this layout.
               The summary at / has no channel and no pill. It reads no query, so it
               sits outside the sidebar's boundaries and their fallbacks. */}
-          <div className="mb-2 flex items-center justify-between gap-2 px-1">
+          <div className="flex shrink-0 items-center justify-between gap-2 px-1">
             <h2 className="text-xs font-medium uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
               Projects
             </h2>
@@ -95,19 +94,31 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               has already filled in the client Providers holds by the time
               the page's islands stream in. The list itself is a request-time
               island (SidebarActiveRuns) under a SectionBoundary: its Suspense
-              is the hole the shell carries as the loading line, and a failed
+              is the hole the shell carries as the sidebar skeleton
+              (ProjectNavSkeleton, the same element as the inner
+              QueryBoundary's, never both at once), and a failed
               Active read lands in its panel, not in the segment's error.tsx,
-              so the shell stays up. */}
-          <HydrationBoundary state={state}>
-            <SectionBoundary
-              fallback={
-                <p className="px-1 text-sm text-neutral-500 dark:text-neutral-400">Loading...</p>
-              }
-              detail="The project list did not load."
-            >
-              <SidebarActiveRuns />
-            </SectionBoundary>
-          </HydrationBoundary>
+              so the shell stays up. From md up the aside is a full-height
+              column and the list scrolls inside this wrapper, so the worker
+              widget below stays in view. */}
+          <div className="md:min-h-0 md:flex-1 md:overflow-y-auto">
+            <HydrationBoundary state={state}>
+              <SectionBoundary
+                fallback={<ProjectNavSkeleton />}
+                detail="The project list did not load."
+              >
+                <SidebarActiveRuns />
+              </SectionBoundary>
+            </HydrationBoundary>
+          </div>
+          {/* The worker widget is here because the (dashboard) layout is the
+              operator's view; / has no sidebar and no widget. It reads no
+              query (it polls its own store in the browser), so it sits
+              outside every boundary and never inside a fallback. On mobile
+              it follows the project strip. */}
+          <div className="mt-2 shrink-0 border-t border-neutral-200 px-1 pt-3 dark:border-neutral-800">
+            <WorkerStatus />
+          </div>
         </aside>
         <section className="min-w-0 flex-1">{children}</section>
       </div>

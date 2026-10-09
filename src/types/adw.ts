@@ -1,13 +1,18 @@
-// Domain types. The three interfaces in the first section mirror the database
-// tables column for column; keep them in lockstep with the schema. The second
+// Domain types. The interfaces in the first section (Project, Run, QueueItem
+// and Worker) mirror the database tables column for column; keep them in
+// lockstep with the schema. The second
 // section holds what the data layer reads from a view or assembles for a
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
 // DailySummary (the daily_summary columns the page reads), DailyModelSummary
-// (the daily_model_summary columns) and the summary page's report (assembled
-// by toSummaryReport in src/lib/daily-summary.ts).
+// (the daily_model_summary columns), DailyPhaseSummary (the
+// daily_phase_summary columns), RunMetrics (the run_metrics columns the
+// History page reads) and the summary page's report (assembled by
+// toSummaryReport in src/lib/daily-summary.ts).
 // Runs and queue items have
 // no view model; the screens render Run and QueueItem rows as stored (the
 // clock-dependent labels are removed pending issue #3).
+
+import type { PhaseKey } from "@/lib/phase-usage";
 
 // ---------------------------------------------------------------------------
 // Database rows
@@ -32,6 +37,7 @@ export interface Run {
   issue_title: string | null;
   issue_class: string | null;
   branch_name: string | null;
+  pr_number: number | null;
   phase: string | null;
   status: RunStatus;
   state: Record<string, unknown>;
@@ -62,8 +68,18 @@ export interface QueueItem {
   issue_title: string | null;
   queued_at: string | null;
   adw_id: string | null;
-  note: string | null;
+  reason: string | null;
   updated_at: string;
+}
+
+/** One adw.workers row: a queue worker's heartbeat, upserted every 30 s, deleted on a clean exit. */
+export interface Worker {
+  id: string;
+  host: string;
+  pid: number;
+  started_at: string;
+  heartbeat_at: string;
+  version: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,8 +99,8 @@ export interface ProjectSummary extends Project {
  * One row of the adw.daily_summary view: one project's finished runs on one
  * UTC calendar day (`day` is `YYYY-MM-DD`, the day of runs.finished_at),
  * the columns the summary page reads from the view. `runs` counts every
- * finished status, so `runs - completed - failed` is `halted` (and any future
- * status), and `runs - features - bugs - chores - patches` is the runs with no
+ * finished status, so `runs - completed - failed` is any future status (0
+ * today), and `runs - features - bugs - chores - patches` is the runs with no
  * known issue class. `duration_sum_s` is the sum of the finished runs'
  * wall-clock durations in seconds. The token and cost sums are over the runs
  * that published metrics (adw.run_metrics) and are 0 when none did.
@@ -97,7 +113,6 @@ export interface DailySummary {
   runs: number;
   completed: number;
   failed: number;
-  halted: number;
   features: number;
   bugs: number;
   chores: number;
@@ -107,6 +122,17 @@ export interface DailySummary {
   tokens_cache_read_sum: number;
   tokens_out_sum: number;
   cost_usd_sum: number;
+}
+
+/**
+ * The columns of one adw.run_metrics row the History page reads: one run's
+ * total cost in US dollars. The table holds one row per run (keyed by
+ * project_id and adw_id) with tokens and a per-phase breakdown too; a run
+ * that published no metrics has no row.
+ */
+export interface RunMetrics {
+  adw_id: string;
+  cost_usd: number;
 }
 
 /**
@@ -128,6 +154,29 @@ export interface DailyModelSummary {
   cache_creation: number;
   output: number;
   cost_usd: number;
+}
+
+/**
+ * One row of the adw.daily_phase_summary view: one project's usage of one
+ * pipeline phase (`phase` is the toolkit's step key, such as `adw_plan_iso`)
+ * on one UTC calendar day. Like DailySummary, and unlike DailyModelSummary,
+ * `day` is the day of runs.finished_at, so the phases line up with the day's
+ * run counts; unfinished runs are absent. The four token columns are the
+ * toolkit's split, `duration_s` the summed phase time in seconds, `runs` the
+ * runs that had the phase. Runs that published no per-phase metrics are
+ * absent.
+ */
+export interface DailyPhaseSummary {
+  project_id: string;
+  day: string;
+  phase: string;
+  runs: number;
+  input: number;
+  cache_read: number;
+  cache_creation: number;
+  output: number;
+  cost_usd: number;
+  duration_s: number;
 }
 
 /** A project as the summary page names it: its slug and display name. */
@@ -159,16 +208,34 @@ export interface SummaryModel {
 }
 
 /**
+ * One pipeline phase's usage on one day, summed over the visible projects
+ * (sumPhaseUsage in src/lib/phase-usage.ts).
+ */
+export interface SummaryPhase {
+  phase: PhaseKey;
+  runs: number;
+  input: number;
+  cache_read: number;
+  cache_creation: number;
+  output: number;
+  cost_usd: number;
+  duration_s: number;
+}
+
+/**
  * One UTC day of the summary. `totals` adds every count and every sum across
  * the day's projects. `models` is the day's usage per model summed over the
  * visible projects, largest total first; empty when no run of that day
- * published per-model metrics.
+ * published per-model metrics. `phases` is the day's usage per pipeline phase
+ * summed over the visible projects, in pipeline order; empty when no run of
+ * that day published per-phase metrics.
  */
 export interface SummaryDay {
   day: string;
   totals: Omit<DailySummary, "project_id">;
   projects: SummaryProjectDay[];
   models: SummaryModel[];
+  phases: SummaryPhase[];
 }
 
 /**

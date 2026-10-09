@@ -7,19 +7,25 @@ import { ActiveRunsView } from "@/components/ActiveRunsView";
 import { HistoryLinks } from "@/components/HistoryLinks";
 import { HistorySearch, HistorySearchFallback } from "@/components/HistorySearch";
 import { HistoryResults, HistoryTransition } from "@/components/HistoryTransition";
+import {
+  ActiveRunsViewSkeleton,
+  HistoryLinksSkeleton,
+  QueueViewSkeleton,
+  RunListSkeleton,
+} from "@/components/LoadingSkeletons";
 import { PageHeader } from "@/components/PageHeader";
 import { QueryBoundary } from "@/components/QueryBoundary";
 import { QueueView } from "@/components/QueueView";
 import { RunHistoryList } from "@/components/RunHistoryList";
 import { SectionBoundary } from "@/components/SectionBoundary";
 import { SectionHeading } from "@/components/SectionHeading";
-import { getCompletedRuns, getProjects, getQueue } from "@/data";
+import { type CompletedRunsPage, getCompletedRuns, getProjects, getQueue } from "@/data";
 import { getActiveRunsState } from "@/data/active-runs-state";
 import { prefetch } from "@/data/query-client";
 import { queryKeys } from "@/data/query-keys";
 import {
+  HISTORY_PAGE_SIZE,
   type HistoryBookmark,
-  type HistoryPage,
   historyHref,
   readHistoryBookmark,
 } from "@/lib/history-bookmark";
@@ -138,7 +144,7 @@ async function getHistory(
   slug: string,
   bookmark: HistoryBookmark | null,
   q: string | null,
-): Promise<HistoryPage> {
+): Promise<CompletedRunsPage> {
   "use cache";
   cacheTag(historyTag(slug));
   cacheLife({ stale: 300, revalidate: 86400, expire: 2592000 });
@@ -225,10 +231,11 @@ async function HistoryPagination({ slug, searchParams }: HistoryIslandProps) {
 }
 
 async function CompletedRuns({ slug, searchParams }: HistoryIslandProps) {
-  const { q, items } = await readHistory(slug, searchParams);
+  const { q, items, costs } = await readHistory(slug, searchParams);
   return (
     <RunHistoryList
       runs={items}
+      costs={costs}
       projectSlug={slug}
       emptyMessage={q ? `No completed runs match "${q}".` : "No completed runs yet."}
     />
@@ -247,23 +254,25 @@ async function ProjectActiveRuns({
   slug,
   heading,
   queue,
+  fallback,
 }: {
   projectId: string;
   slug: string;
   heading: ReactNode;
   queue: ReactNode;
+  fallback: ReactNode;
 }) {
   const { state } = await getActiveRunsState();
 
   return (
     <HydrationBoundary state={state}>
       {/* The fallback shows only if the server ever hands over a still-pending
-          query. A failed browser fetch lands in the boundary's error panel,
-          not in the segment's error.tsx, so the shell stays up. */}
-      <QueryBoundary
-        fallback={<p className="text-sm text-neutral-500 dark:text-neutral-400">Loading runs...</p>}
-        detail="This project's runs did not load."
-      >
+          query; it is the page's Active skeleton, the same element as the
+          outer SectionBoundary's (this boundary renders only after that one
+          resolved, so the two never stack). A failed browser fetch lands in
+          the boundary's error panel, not in the segment's error.tsx, so the
+          shell stays up. */}
+      <QueryBoundary fallback={fallback} detail="This project's runs did not load.">
         <ActiveRunsView projectId={projectId} slug={slug} heading={heading} queue={queue} />
       </QueryBoundary>
     </HydrationBoundary>
@@ -306,14 +315,14 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           ; removing the label withdraws it.
         </>
       }
-      detail="Items added by hand show a manual marker; those stay until removed by hand. The numbers follow the queue ledger's order, so moving an item changes them."
+      detail="Items added by hand stay until removed by hand. The numbers follow the queue ledger's order, so moving an item changes them."
     />
   );
   const activeHeading = (
     <SectionHeading
       title="Active"
-      description="Runs in progress, and runs that failed and can be resumed. Each run plans, builds, tests, reviews and documents a change, then opens a pull request. The row updates live as phases complete."
-      detail="A failed run keeps its branch and can be resumed from the phase that failed, which is why it stays here rather than in history."
+      description="Runs in progress, and runs that failed and are not resolved yet. Each run plans, builds, tests, reviews and documents a change, then opens a pull request. The row updates live as phases complete."
+      detail="A failed run keeps its branch and stays here, not in history, until it is run again."
     />
   );
 
@@ -323,14 +332,26 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const queueSection = (
     <HydrationBoundary state={queue.state}>
       <QueryBoundary
-        fallback={
-          <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading queue...</p>
-        }
+        fallback={<QueueViewSkeleton heading={queueHeading} />}
         detail="This project's queue did not load."
       >
         <QueueView slug={slug} heading={queueHeading} />
       </QueryBoundary>
     </HydrationBoundary>
+  );
+
+  // The Active island's fallback: the real Active and Queue headings, with
+  // skeleton rows under each, so both headings sit in the static shell at
+  // their final position and only the rows are placeholders. The headings are
+  // rendered here and again inside the island; only one copy is on screen at
+  // a time, but while the island streams its copy waits in a hidden segment
+  // until the swap, so the tooltip ids (section-active-detail,
+  // section-queue-detail) are briefly in the DOM twice, never both visible.
+  const activeFallback = (
+    <ActiveRunsViewSkeleton
+      heading={activeHeading}
+      queue={<QueueViewSkeleton heading={queueHeading} />}
+    />
   );
 
   return (
@@ -346,15 +367,13 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           again; React Query only overwrites the entry when the incoming
           dataUpdatedAt is newer (src/data/hydration.test.ts), so a live
           entry is never set back. */}
-      <SectionBoundary
-        fallback={<p className="text-sm text-neutral-500 dark:text-neutral-400">Loading runs...</p>}
-        detail="This project's runs did not load."
-      >
+      <SectionBoundary fallback={activeFallback} detail="This project's runs did not load.">
         <ProjectActiveRuns
           projectId={project.id}
           slug={slug}
           heading={activeHeading}
           queue={queueSection}
+          fallback={activeFallback}
         />
       </SectionBoundary>
 
@@ -365,8 +384,8 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           is static and in the prerendered
           shell, outside every boundary. Each
           island awaits searchParams, so the Suspense inside its boundary is a
-          real streaming boundary: the shell carries the fallback (nothing for
-          the links, a loading line for the list) and the island streams in at
+          real streaming boundary: the shell carries the fallback (the disabled
+          box for the search, a skeleton for the links and for the list) and the island streams in at
           request time (from the cached scope, or from the database on a miss
           after a completion or the lifetime). If getHistory throws (database
           down, an RLS change), the error lands in that island's panel, in its
@@ -374,10 +393,10 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           instead of the segment's error.tsx replacing the pane. A server
           component is a fine child of this client boundary; the hole
           semantics are unchanged. HistoryTransition holds the one transition
-          the search box navigates in; HistoryResults dims the list while it is
+          the search box and the page arrows navigate in; HistoryResults dims the list while it is
           pending. A search-param-only navigation keeps the segment and a
           transition never re-hides revealed content, so the list dims instead
-          of falling back to its loading line. */}
+          of falling back to its skeleton. */}
       <HistoryTransition>
         <section>
           <SectionHeading
@@ -385,21 +404,28 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
             description="Completed runs, newest first. A run completes when its pull request was merged by the merge gate: tests green, review without blockers, CI green."
             detail="Completed runs never change, so this list is cached and only refreshed when a new run completes."
             controls={
+              // Deliberately not a skeleton: the fallback is the real box,
+              // disabled, already the live one's size.
               <SectionBoundary fallback={<HistorySearchFallback />} detail="Search did not load.">
                 <HistorySearchBox slug={slug} searchParams={searchParams} />
               </SectionBoundary>
             }
             actions={
-              <SectionBoundary fallback={null} detail="Pagination did not load.">
+              // Known limit: a history of one page renders no links, so the
+              // skeleton goes away. From md the slot sits on the title row and
+              // no height changes; below md it is its own line, which
+              // collapses.
+              <SectionBoundary
+                fallback={<HistoryLinksSkeleton />}
+                detail="Pagination did not load."
+              >
                 <HistoryPagination slug={slug} searchParams={searchParams} />
               </SectionBoundary>
             }
           />
           <HistoryResults>
             <SectionBoundary
-              fallback={
-                <p className="text-sm text-neutral-500 dark:text-neutral-400">Loading history...</p>
-              }
+              fallback={<RunListSkeleton variant="history" rows={HISTORY_PAGE_SIZE} />}
               detail="This project's history did not load."
             >
               <CompletedRuns slug={slug} searchParams={searchParams} />

@@ -5,8 +5,9 @@ The ADW (AI Developer Workflow) profile of this repository. The toolkit's slash 
 what this repository is, how it installs, builds and tests, which ports matter, what must never run
 here. Committed so every worktree under `trees/<adw_id>/` carries it. The nine `##` headings and
 their order are a contract with those commands (`adws/PROFILE.md` in the toolkit): add facts under
-them, never rename or reorder them. `AGENTS.md` stays the rule book; this file restates the subset
-the ADW commands need and must be kept in step with it and with `README.md`.
+them, never rename or reorder them. `AGENTS.md` holds the working rules and the feature docs under
+`app_docs/` hold each feature's rules; this file restates the subset the ADW commands need and must
+be kept in step with them and with `README.md`.
 
 ## Identity
 
@@ -61,8 +62,9 @@ key. Nothing here writes to it. Do not start the dev server during install.
 ## Tests
 
 In the order the test phase runs them, all from the root, unfiltered: lint `yarn lint` (autofix
-`yarn lint:fix`); typecheck `yarn typecheck` (`next typegen` then `tsc --noEmit`; it rewrites the
-gitignored `next-env.d.ts`, never stage it); dead code `yarn knip` (scans `src/**`, see `knip.json`);
+`yarn lint:fix`; `eslint.config.mjs` ignores `trees/**` and `agents/**`); typecheck
+`yarn typecheck` (`next typegen` then `tsc --noEmit`; `tsconfig.json` excludes `trees` and
+`agents`; it rewrites the gitignored `next-env.d.ts`, never stage it); dead code `yarn knip` (scans `src/**`, see `knip.json`);
 format `yarn format:check` (write `yarn format`); unit `yarn test` (vitest, `src/**/*.test.ts`
 only, see `vitest.config.ts`); build `yarn build`.
 
@@ -74,9 +76,12 @@ E2E code suite: `none` (no `@playwright/test` specs). `e2e/*.md` holds agent-dri
 (currently `e2e/test_connection_indicator_scope.md`, `e2e/test_header_section_active.md`,
 `e2e/test_landing_no_filters.md`, `e2e/test_landing_today_refresh.md`,
 `e2e/test_queue_row_single_line.md`, `e2e/test_section_tooltip_layering.md`,
-`e2e/test_day_card_charts.md`, `e2e/test_active_runs_shared_entry.md` and
-`e2e/test_row_full_title_top_align.md`) that the test phase runs through the Playwright
-MCP server.
+`e2e/test_day_card_charts.md`, `e2e/test_active_runs_shared_entry.md`,
+`e2e/test_row_full_title_top_align.md`, `e2e/test_single_background_color.md`,
+`e2e/test_projects_skeleton_fallbacks.md`, `e2e/test_sticky_header.md`,
+`e2e/test_run_row_phase_label.md`, `e2e/test_history_card_fields.md`,
+`e2e/test_history_page_turn.md` and `e2e/test_worker_status_widget.md`) that the test
+phase runs through the Playwright MCP server.
 
 lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every commit and
 `yarn test` on every push. Never bypass it.
@@ -100,7 +105,8 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
   `.ports.env` or any committed file.
 - Never stage `next-env.d.ts`, `.ports.env`, `.env*` (except `.env.example`), `agents/` or `trees/`.
 - No em-dashes in any file. Use commas, periods, colons or parentheses.
-- Every "do not" in `AGENTS.md` is an invariant: no clock read outside the cached boundary, one data
+- Every "do not" in `AGENTS.md` and in the Rules of the feature docs under `app_docs/` is an
+  invariant: no clock read outside the cached boundary, one data
   boundary under `src/data/`, query keys only from `src/data/query-keys.ts`, tag spellings only from
   `src/lib/history-tags.ts`, revalidate before refresh, two boundaries and never a bare `Suspense`.
 
@@ -108,13 +114,16 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 
 - Plans: `specs/issue-<issue_number>-adw-<adw_id>-sdlc_planner-<slug>.md`; patch plans:
   `specs/patch/patch-adw-<adw_id>-<slug>.md`.
-- Feature docs: none. Documentation is exactly two files, edited in place to describe the current
-  code: `README.md` (what the app is and how it works) and `AGENTS.md` (behavioural rules; a new
-  invariant goes there as a rule). No `docs/` hub, no `app_docs/`, no per-feature file, no dated
-  changelog entries. A change to `specs/`, tests alone or a dependency bump needs no documentation.
-- Index to update: none. `CLAUDE.md` is an include of `AGENTS.md`.
-- Read before planning: `AGENTS.md` in full, the `README.md` sections for the area touched, and the
-  installed Next docs under `node_modules/next/dist/docs/` for anything about caching or Realtime.
+- Feature docs: `app_docs/<feature-slug>.md`, one file per feature, updated in place by later runs
+  (never a second file for a feature the index lists). Assets: `app_docs/assets/`. `README.md`
+  holds what the app is and how to run it, `AGENTS.md` holds rules; neither describes a feature. A
+  change to `specs/`, tests alone or a dependency bump needs no documentation. `CLAUDE.md` is an
+  include of `AGENTS.md`. No dated changelog entries.
+- Index to update: `docs/conditional-docs.md`, one line per doc in `app_docs/`, saying when to read
+  it.
+- Read before planning: `AGENTS.md`, then `docs/conditional-docs.md` and the docs whose line
+  matches; the installed Next docs under `node_modules/next/dist/docs/` for anything about caching
+  or Realtime.
 - Commits: Conventional Commits with a bare type and no scope (`feat: ...`, `fix: ...`,
   `chore: ...`). No trailers of any kind: no `Co-Authored-By`, no `Signed-off-by`, no "Generated
   with". The `adw: <agent> <id>` body line is a body line, not a trailer.
@@ -123,13 +132,16 @@ lefthook runs prettier, `yarn lint`, `yarn typecheck` and `yarn knip` on every c
 ## Review
 
 - Open at `http://localhost:$PORT`: `/` (the summary: heading, intro, note, the today card with a
-  Refresh button above the past day cards with their work-by-class and tokens-by-model chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar plus every active run
+  Refresh button above the past day cards with their work-by-class, tokens-by-model and cost-by-phase chart cards, per-project tables; no sidebar, no pill), `/projects` (project sidebar, with the worker status widget at its bottom, plus every active run
   grouped by project under an `Active` heading, or "No runs in progress." when none) and `/projects/SBub/issebya-homes-ai-system` (header, Active section, Queue
   section, History section), or the first project the sidebar lists if that slug is 404. Capture each at desktop 1920x1080 and mobile
   375x667, full page, into `agents/<adw_id>/<agent_name>/review_img/` in the worktree.
 - The sidebar's connection indicator (dashboard routes only; `/` has none) moves from `connecting` to `live` once the Realtime channel
   joins; wait for `live` in a `browser_snapshot` before judging live data, and do not report
   `connecting` as a defect unless the spec is about the indicator.
+- The sidebar's worker widget reads "Worker status..." until its first read and "Worker offline"
+  whenever the queue worker is not running on the operator's machine. Neither is a defect unless
+  the spec is about the widget.
 - A route handler (`src/app/api/revalidate`), a server action, a reducer or a helper has no rendered
   surface: no visual review, evidence is the diff, the tests and the spec's commands.
 - Browser automation is the Playwright MCP server in `.mcp.json`, configured by

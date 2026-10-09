@@ -2,7 +2,8 @@
 // time the caller read, the past window that ends the day before it, the
 // report and the today card assembled from adw.daily_summary rows (and the
 // adw.daily_model_summary rows, summed per model by sumModelUsage in
-// src/lib/model-usage.ts), the class bar's segments, the column charts'
+// src/lib/model-usage.ts, and the adw.daily_phase_summary rows, summed per
+// phase by sumPhaseUsage in src/lib/phase-usage.ts), the class bar's segments, the column charts'
 // class counts, heights and value placement, and the number labels. No clock, no cache, no IO, so every
 // case is unit-tested with fixed inputs (src/lib/daily-summary.test.ts). The
 // data boundary (getSummaryPast and getSummaryToday in src/data/index.ts)
@@ -10,6 +11,7 @@
 // only call the label helpers.
 import type {
   DailyModelSummary,
+  DailyPhaseSummary,
   DailySummary,
   SummaryDay,
   SummaryProject,
@@ -17,6 +19,7 @@ import type {
   SummaryReport,
 } from "@/types/adw";
 import { sumModelUsage } from "./model-usage";
+import { sumPhaseUsage } from "./phase-usage";
 
 /** The window in days the summary page always shows. */
 export const SUMMARY_DEFAULT_DAYS = 30;
@@ -70,7 +73,6 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
     runs: sum(rows, (row) => row.runs),
     completed: sum(rows, (row) => row.completed),
     failed: sum(rows, (row) => row.failed),
-    halted: sum(rows, (row) => row.halted),
     features: sum(rows, (row) => row.features),
     bugs: sum(rows, (row) => row.bugs),
     chores: sum(rows, (row) => row.chores),
@@ -91,11 +93,14 @@ function dayTotals(day: string, rows: readonly SummaryProjectDay[]): SummaryDay[
  * rounded to 4 decimals against float noise). A day's `models` are its model
  * rows of visible projects summed per model; a day with model rows but no
  * daily_summary row is not added (the model view keys on started_at, so such
- * a day only holds runs that finished later). Never mutates its inputs.
+ * a day only holds runs that finished later). A day's `phases` are its phase
+ * rows of visible projects summed per phase in pipeline order; phase rows of
+ * a day with no daily_summary row add no day either. Never mutates its inputs.
  */
 export function toSummaryReport(
   rows: readonly DailySummary[],
   modelRows: readonly DailyModelSummary[],
+  phaseRows: readonly DailyPhaseSummary[],
   projects: readonly (SummaryProject & { id: string })[],
   options: { days: number; from: string | null; to: string | null },
 ): SummaryReport {
@@ -116,6 +121,13 @@ export function toSummaryReport(
     if (list) list.push(row);
     else modelsByDay.set(row.day, [row]);
   }
+  const phasesByDay = new Map<string, DailyPhaseSummary[]>();
+  for (const row of phaseRows) {
+    if (!byId.has(row.project_id)) continue;
+    const list = phasesByDay.get(row.day);
+    if (list) list.push(row);
+    else phasesByDay.set(row.day, [row]);
+  }
   const days = [...byDay.keys()].sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
   return {
     from: options.from,
@@ -130,6 +142,7 @@ export function toSummaryReport(
         totals: dayTotals(day, list),
         projects: list,
         models: sumModelUsage(modelsByDay.get(day) ?? []),
+        phases: sumPhaseUsage(phasesByDay.get(day) ?? []),
       };
     }),
   };
@@ -137,21 +150,23 @@ export function toSummaryReport(
 
 /**
  * One day's SummaryDay from the views' rows, assembled by toSummaryReport (so
- * the same naming, hidden-project drop, ordering, totals and models), or null
- * when no visible project finished a run that day. Rows of other days are
- * ignored, in both arrays.
+ * the same naming, hidden-project drop, ordering, totals, models and phases),
+ * or null when no visible project finished a run that day. Rows of other days
+ * are ignored, in all three arrays.
  * The today card's server prefetch and its browser refetch both return this,
  * so the two cannot drift. Never mutates its inputs.
  */
 export function toSummaryDay(
   rows: readonly DailySummary[],
   modelRows: readonly DailyModelSummary[],
+  phaseRows: readonly DailyPhaseSummary[],
   projects: readonly (SummaryProject & { id: string })[],
   day: string,
 ): SummaryDay | null {
   const report = toSummaryReport(
     rows.filter((row) => row.day === day),
     modelRows.filter((row) => row.day === day),
+    phaseRows.filter((row) => row.day === day),
     projects,
     { days: 1, from: day, to: day },
   );
@@ -270,11 +285,4 @@ export function tokensLabel(n: number | null): string {
     if (rounded < 1000 || unit === "B") return `${rounded.toFixed(1)}${unit}`;
   }
   return String(n);
-}
-
-/** A cost in US dollars with two decimals, "<$0.01" under a cent, "n/a" for null. */
-export function costLabel(usd: number | null): string {
-  if (usd === null) return "n/a";
-  if (usd > 0 && usd < 0.01) return "<$0.01";
-  return `$${(Math.round(usd * 100) / 100).toFixed(2)}`;
 }

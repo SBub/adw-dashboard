@@ -1,7 +1,6 @@
 # E2E Test: Queue Row Single Line
 
-Checks that each row of a project's Queue section is one row, the title may wrap (issue number, title, `Queued <time>`,
-status pill), with no `label:` chip, no wait and no start hint, and that the rail markers (`next`,
+Checks that each row of a project's Queue section is one row, the title may wrap (issue number, title, status pill), with no `label:` chip, no wait and no start hint, and that the rail markers (`next`,
 then the ordinals) are intact. The hosted database is read only: the journey never adds items, it
 looks for a project that already has queued items.
 
@@ -24,17 +23,23 @@ So that the queue reads as a list of what runs next, without repeated labels and
    result that the row checks were not applicable, skip to step 10 and pass.
 6. **Verify** the Queue list's first item shows the `next` marker and, when present, the second and
    third items show `2` and `3`.
-7. **Verify** every Queue list item contains `#<number>`, `Queued` and a `queued` status pill.
-8. **Verify** no Queue list item contains the text `label:`, `waiting` or `starts `.
-9. **Verify** a `manual` item (if any) still shows `manual` and
-   `Removing the label does not remove it.`.
+7. **Verify** every Queue list item contains `#<number>` and a `queued` status pill, and its title
+   when it has one.
+8. **Verify** no Queue list item contains the text `label:`, `waiting`, `starts `, `manual`,
+   `Removing the label` or `Queued`. The lower-case `queued` pill is expected; match `Queued`
+   case-sensitively.
+9. With `browser_evaluate`, for the first Queue row, **verify** the pill's
+   `getBoundingClientRect().top` is within 2px of the title span's `getBoundingClientRect().top`
+   (or of the `#<number>` link's top when there is no title), and the pill's right edge is within
+   2px of the card's content right edge (the card's right edge minus its border and padding).
 10. Take a screenshot of the project page at 1920x1080.
 11. Resize the browser to 375x667 and take a screenshot of the project page.
 
 ## Success Criteria
 
 - Queue rows show the `next` marker on the head and ordinals on the others.
-- Every Queue row holds `#<number>`, `Queued` and the `queued` pill, in one row (the title may wrap).
-- No Queue row shows `label:`, a wait (`waiting`) or a start hint (`starts `).
-- A manual item keeps its `manual` badge and visible hint.
+- Every Queue row holds `#<number>`, the title and the `queued` pill, the pill on the title's first
+  line at desktop width (the title may wrap).
+- No Queue row shows `label:`, `manual`, `Removing the label`, `Queued`, a wait (`waiting`) or a
+  start hint (`starts `).
 - 2 screenshots are taken.
