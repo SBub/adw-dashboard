@@ -30,6 +30,11 @@
 // pipeline phase and UTC day of runs.finished_at) for the same days, in the
 // same Promise.all, for the day cards' tokens by model and cost by phase
 // charts.
+//
+// The sidebar's worker widget reads the adw.workers heartbeat table
+// (getWorkers): browser only, polled by the worker store in WorkerStatus,
+// never in the query cache, never in a cache scope and not on Realtime (the
+// table is not in the publication).
 import { pastDaysWindow, toSummaryDay, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
@@ -54,6 +59,7 @@ import type {
   RunMetrics,
   SummaryDay,
   SummaryReport,
+  Worker,
 } from "@/types/adw";
 import { getSupabase } from "./supabase";
 
@@ -94,6 +100,9 @@ const DAILY_MODEL_SUMMARY_COLUMNS =
 /** The columns of adw.daily_phase_summary the summary page reads, which are exactly the fields of DailyPhaseSummary. */
 const DAILY_PHASE_SUMMARY_COLUMNS =
   "project_id, day, phase, runs, input, cache_read, cache_creation, output, cost_usd, duration_s";
+
+/** The columns of adw.workers the worker widget reads, which are exactly the fields of Worker. */
+const WORKER_COLUMNS = "id, host, pid, started_at, heartbeat_at, version";
 
 /**
  * One History page plus each shown run's cost in US dollars, keyed by adw_id.
@@ -500,4 +509,24 @@ export async function getSummaryToday(today: string): Promise<SummaryDay | null>
     projects,
     today,
   );
+}
+
+/**
+ * Every queue worker's heartbeat row, in no order: workerState
+ * (src/lib/worker-state.ts) picks the freshest, so a stale leftover row never
+ * counts as a second worker.
+ *
+ * Called only from the worker store in WorkerStatus, in the browser, never on
+ * the server. It is not a queryFn, has no query key and no cache scope, and is
+ * not on Realtime (adw.workers is not in the publication), so the store polls
+ * it. It reads no clock; the store reads the clock after this resolves.
+ */
+export async function getWorkers(): Promise<Worker[]> {
+  const { data, error } = await getSupabase().from("workers").select(WORKER_COLUMNS);
+  if (error) {
+    throw new Error(`workers: ${error.message}`);
+  }
+  // The selected columns are exactly the fields of Worker, so this cast is the
+  // one place the table's shape is asserted.
+  return (data ?? []) as Worker[];
 }

@@ -8,6 +8,7 @@
 - specs/issue-145-adw-6726a682-sdlc_planner-history-card-full-branch.md
 - specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-152-adw-a6b99270-sdlc_planner-fix-between-phase-complete-label.md
+- specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
 
 ## Overview
 
@@ -25,8 +26,17 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   state and scroll position when the selection changes. Below the `md`
   breakpoint it becomes a horizontal strip above the detail. From `md` up it
   is sticky: it sits `--header-height` + 1.5rem from the top, below the
-  sticky root header, and its max height subtracts the header height and both
-  1.5rem gaps, so its last item stays reachable through its own scroll.
+  sticky root header, and it is a full-height column (its height subtracts the
+  header height and both 1.5rem gaps): the project list scrolls inside it and
+  the worker status widget sits at its bottom, always visible. Below `md` the
+  widget follows the strip.
+  The widget (`WorkerStatus`) shows whether the toolkit's queue worker is
+  running: "Worker online" (emerald dot) while the freshest heartbeat is under
+  90 s old, "Worker offline" (rose ring) otherwise, each followed by "last
+  beat" and the beat's `Timestamp`, or "never seen" when there is no row.
+  Before its first read (the static shell, hydration, the first poll in
+  flight) it reads "Worker status..." with a dashed neutral ring. It never
+  shows the worker's host, pid or `started_at`.
   Every run and queue state has one colour wherever it appears (queued
   amber, running emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
@@ -135,7 +145,8 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `ActiveRunsOverview`, which reads every project's active runs and the
   project list from the query cache on `/projects`,
   `QueueView`, which reads the queued items from the query cache,
-  `ConnectionIndicator`, which subscribes to its store, `HeaderLink`, which
+  `ConnectionIndicator`, which subscribes to its store, `WorkerStatus`, which
+  subscribes to its polling store, `HeaderLink`, which
   reads the pathname to mark the header's current section, `HistorySearch`, which
   holds the search box's local text and calls the router, and
   `HistoryPageLink`, which navigates the History pages inside the shared
@@ -205,5 +216,7 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   `emerald`, `amber`, `sky`, `rose` or `red` class inline;
   `src/lib/status-colors.test.ts` scans `src/` and fails on one. The
   connection pill in `ConnectionIndicator` is the one exemption (it describes
-  the socket, not a run). Issue class badges are not states and use hues
+  the socket, not a run). The worker widget takes its colours from the map
+  (`running` online, `failed` offline, `neutral` unknown), not an exemption,
+  and has no `role="status"`: the pill is the one status element. Issue class badges are not states and use hues
   outside the palette.

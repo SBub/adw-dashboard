@@ -29,7 +29,8 @@ metrics has no row).
 
 ## Rules
 
-- `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`) and the view
+- `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`,
+  `Worker`) and the view
   model (`ProjectSummary`) in clearly separated sections. Row types mirror the
   schema column for column; `ProjectSummary` is produced by the data layer.
   `DailySummary`, `DailyModelSummary` and `DailyPhaseSummary` mirror the
