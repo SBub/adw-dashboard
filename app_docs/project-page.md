@@ -8,6 +8,7 @@
 - specs/issue-146-adw-7a7f315b-sdlc_planner-show-history-run-cost.md
 - specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-148-adw-d2fdf4c1-sdlc_planner-history-page-turn-keep-scroll.md
+- specs/issue-153-adw-44b38a65-sdlc_planner-history-order-by-finished-at.md
 
 ## Overview
 
