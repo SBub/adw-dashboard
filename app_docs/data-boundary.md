@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
 
 ## Overview
 
@@ -143,6 +144,14 @@ loudly instead of shipping an empty sidebar. `generateStaticParams` never
 returns an empty array: under `cacheComponents` that fails the build, so an
 empty project list yields one placeholder slug (`_/none`) that falls through
 to `notFound()` at request time.
+
+`getWorkers()` reads `adw.workers`, the toolkit's queue-worker heartbeat table,
+selecting `WORKER_COLUMNS` with no order: `workerState`
+(`src/lib/worker-state.ts`) picks the freshest row by `heartbeat_at` in the
+browser. It is the one read outside the query layer: only the worker store in
+`WorkerStatus` calls it, by polling in the browser (the table is not in the
+Realtime publication), so it has no cache scope, no query key and no server
+call (see `app_docs/screens-and-components.md`).
 
 ### The query layer
 

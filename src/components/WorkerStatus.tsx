@@ -39,12 +39,13 @@ const listeners = new Set<() => void>();
 let timer: ReturnType<typeof setInterval> | undefined;
 // Bumped on the last unsubscribe, so a poll started before it is dropped.
 let generation = 0;
-let inFlight = false;
+// The generation whose read is in flight, so an old read never blocks a new subscriber's.
+let inFlightGeneration: number | null = null;
 
 async function poll() {
-  if (inFlight) return;
-  inFlight = true;
+  if (inFlightGeneration === generation) return;
   const started = generation;
+  inFlightGeneration = started;
   try {
     const rows = await getWorkers();
     if (started !== generation) return;
@@ -57,7 +58,7 @@ async function poll() {
     // Keep the last snapshot: unknown stays unknown, a known state stays.
     console.warn("worker status: the adw.workers read failed", error);
   } finally {
-    inFlight = false;
+    if (inFlightGeneration === started) inFlightGeneration = null;
   }
 }
 

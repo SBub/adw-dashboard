@@ -3,10 +3,11 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
 
 ## Overview
 
-Why no component reads the clock under `cacheComponents`, the two clock reads the codebase allows, and how labels such as a run's duration are derived from timestamps alone (`src/lib/run-view.ts`).
+Why no component reads the clock under `cacheComponents`, the three clock reads the codebase allows, and how labels such as a run's duration are derived from timestamps alone (`src/lib/run-view.ts`).
 
 ## How it works
 
@@ -42,11 +43,26 @@ clock-free server snapshot. `getCompletedRuns` reads no clock at all: history
 needs no snapshot, and its cache scope exists for the tag, not for a
 clock-read permission.
 
-There is one other argument-less clock read: `utcDay(Date.now())` in the
+There is a second argument-less clock read: `utcDay(Date.now())` in the
 summary page's `requestToday` (`src/app/page.tsx`), which turns the request
 time into today's UTC date. It runs only after `await connection()`, so only at
 request time, never in a prerender pass and never in client render, and the
 day it yields is passed down as an argument (see `app_docs/summary.md`).
+
+### The worker store's clock read
+
+The third and last argument-less clock read is `Date.now()` in the worker
+store's `poll` callback (`src/components/WorkerStatus.tsx`). It runs only in
+the browser, only after `getWorkers()` resolves, never in render or a hook
+body, and its value goes straight into the pure
+`nextWorkerSnapshot(previous, rows, nowMs)` (`src/lib/worker-state.ts`), which
+returns the previous snapshot itself when nothing changed, so a poll that finds
+the same state re-renders nothing. The store's `getServerSnapshot` is the
+constant `unknown` state and reads no clock, so the static shell and hydration
+both render "Worker status..." and the first poll after subscribe supplies the
+real state. It is the first instance of the shape the Rules prescribe for a
+time-dependent label: a client leaf with a `useSyncExternalStore` store whose
+server snapshot is data-free.
 
 ## Rules
 

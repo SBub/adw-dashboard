@@ -8,6 +8,7 @@
 - specs/issue-145-adw-6726a682-sdlc_planner-history-card-full-branch.md
 - specs/issue-147-adw-50c77227-sdlc_planner-history-card-pr-link.md
 - specs/issue-152-adw-a6b99270-sdlc_planner-fix-between-phase-complete-label.md
+- specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
 
 ## Overview
 
@@ -29,6 +30,13 @@ see `app_docs/summary.md`). `/projects` is a two-pane screen:
   header height and both 1.5rem gaps): the project list scrolls inside it and
   the worker status widget sits at its bottom, always visible. Below `md` the
   widget follows the strip.
+  The widget (`WorkerStatus`) shows whether the toolkit's queue worker is
+  running: "Worker online" (emerald dot) while the freshest heartbeat is under
+  90 s old, "Worker offline" (rose ring) otherwise, each followed by "last
+  beat" and the beat's `Timestamp`, or "never seen" when there is no row.
+  Before its first read (the static shell, hydration, the first poll in
+  flight) it reads "Worker status..." with a dashed neutral ring. It never
+  shows the worker's host, pid or `started_at`.
   Every run and queue state has one colour wherever it appears (queued
   amber, running emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
