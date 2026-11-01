@@ -22,8 +22,8 @@ export const queryKeys = {
    */
   allQueues: ["queue"] as const,
   /**
-   * One project's queued items, by slug: prefetched by the page, read by
-   * QueueView, written by the queue_items listener and the catch-up. The slug is
+   * One project's Queue section items (queued, or held on a dependency), by
+   * slug: prefetched by the page, read by QueueView, written by the queue_items listener and the catch-up. The slug is
    * part of the hash; the page assembles it once and every caller passes it
    * as is.
    */

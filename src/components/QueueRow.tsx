@@ -1,3 +1,4 @@
+import { dependencyHoldReason, isDependencyHeld } from "@/lib/queue-hold";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import type { QueueItem } from "@/types/adw";
 import { StatusBadge } from "./StatusBadge";
@@ -6,23 +7,32 @@ interface QueueRowProps {
   item: QueueItem;
   /** "owner/repo", used to build the GitHub issue link. */
   projectSlug: string;
-  /** 1-based ordinal in ledger order, from queuePositions; 1 is the head. */
-  position: number;
+  /**
+   * 1-based ordinal among the queued items in ledger order, from
+   * queuePositions; 1 is the head. Null for an item held on a dependency,
+   * which cannot start and has no ordinal.
+   */
+  position: number | null;
 }
 
 /**
- * One queued item, as stored, as a stop on the queue rail. The left gutter
- * holds the marker (filled `next` for the head, the ordinal otherwise, both
- * from the `position` prop) and is reserved for a future drag handle. The
- * card is one row: the issue link, the title (shown in full, wrapping and
- * taking the remaining width) and the status pill, all top-aligned on the
- * title's first line, the pill right-aligned on that line at every width.
- * `source` and `queued_at` are not rendered (the queue is ordered by
- * `position`). Nothing here reads the clock. The queued pill uses the same
+ * One Queue section item, as stored, as a stop on the queue rail. The left
+ * gutter holds the marker (filled `next` for the head, the ordinal for a later
+ * queued item, an empty hollow circle for an item held on a dependency, all
+ * from the `position` prop) and is reserved for a future drag handle. The card
+ * is one row: the issue link, the title (shown in full, wrapping and taking
+ * the remaining width), for an item held on a dependency the toolkit's reason
+ * after the prefix (one line, truncated, the full text in `title`), and the
+ * status pill (`queued`, or `waiting` when held on a dependency), all
+ * top-aligned on the title's first line, the pill right-aligned on that line
+ * at every width. `source` and `queued_at` are not rendered (the queue is
+ * ordered by `position`). Nothing here reads the clock. The pill uses the same
  * colour map as run rows.
  */
 export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
   const isHead = position === 1;
+  const status = isDependencyHeld(item) ? "waiting" : "queued";
+  const reason = dependencyHoldReason(item);
 
   return (
     <li className="group relative flex gap-3">
@@ -45,6 +55,11 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
             >
               next
             </span>
+          ) : position === null ? (
+            <span
+              aria-hidden
+              className={`relative z-10 inline-flex size-5 rounded-full border bg-background ${STATUS_COLORS.waiting.border}`}
+            />
           ) : (
             <span
               className={`relative z-10 inline-flex h-5 min-w-5 items-center justify-center rounded-full border bg-background px-1 text-xs text-neutral-500 tabular-nums dark:text-neutral-400 ${STATUS_COLORS.neutral.border}`}
@@ -70,8 +85,16 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
               {item.issue_title}
             </span>
           )}
+          {reason !== null && (
+            <span
+              title={reason}
+              className="min-w-0 flex-1 truncate text-sm leading-6 text-neutral-500 dark:text-neutral-400"
+            >
+              {reason}
+            </span>
+          )}
           <div className="ml-auto flex h-6 shrink-0 items-center">
-            <StatusBadge status="queued" />
+            <StatusBadge status={status} />
           </div>
         </div>
       </div>

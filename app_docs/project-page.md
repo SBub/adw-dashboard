@@ -257,22 +257,32 @@ phase` and no `Started`.
   `QueueView` and `ActiveRunsView`. The project header (`PageHeader`) is
   rendered by the page, not by `ActiveRunsView`, which has no not-found
   branch.
-- The Queue is a rail. A row's ordinal (`next` for 1) comes only from
-  `queuePositions` in `src/lib/queue-order.ts`: the rank in ledger order
-  (`position`, then `issue_number`), never `queued_at` and never the array
-  index. `byQueuePosition` in the same file is the one ledger comparator,
-  shared by `queuePositions` and `applyQueueChange`; both are pure and tested
-  in `src/lib/queue-order.test.ts`, and every change to them goes with a test
-  case. A row holds the issue link, the title and the status pill, and nothing
-  else (no source badge, no queued time); the title is shown in full and
-  wraps (never `truncate`, `line-clamp` or a `title` tooltip for it), every
-  element is top-aligned on the title's first line, and the pill stays on
-  that line at every width; it shows no label chip, no wait
-  and no start hint. Rows stay keyed by `issue_number`, and the
+- The Queue is a rail. Its items are state `queued` plus state `held` whose
+  reason starts with `DEPENDENCY_HOLD_PREFIX`; that predicate
+  (`inQueueSection`, `QUEUE_SECTION_FILTER`) lives only in
+  `src/lib/queue-hold.ts`, and a `held` item with any other reason stays a
+  run. A row's ordinal (`next` for 1) comes only from
+  `queuePositions` in `src/lib/queue-order.ts`: the rank of state `queued`
+  items only in ledger order (`position`, then `issue_number`), never
+  `queued_at` and never the array index; an item held on a dependency has no
+  ordinal and an empty hollow marker. `byQueuePosition` in the same file is
+  the one ledger comparator, shared by `queuePositions` and
+  `applyQueueChange`; both are pure and tested in
+  `src/lib/queue-order.test.ts`, and every change to them goes with a test
+  case. A row holds the issue link, the title, for an item held on a
+  dependency its reason (the text after `DEPENDENCY_HOLD_PREFIX`, one line,
+  `truncate` with a `title`), and the status pill (`queued`, or `waiting`
+  for a dependency hold), and nothing else (no source badge, no queued time);
+  the title is shown in full and wraps (never `truncate`, `line-clamp` or a
+  `title` tooltip for it), every element is top-aligned on the title's first
+  line, and the pill stays on that line at every width; it shows no label
+  chip. A queued row shows no wait and no start hint; a held row shows only
+  the toolkit's reason. Rows stay keyed by `issue_number`, and the
   left gutter stays reserved for the marker and the future drag handle. The
   rail line and the `next` marker take their colours from
-  `STATUS_COLORS.queued`, the hollow markers from
-  `STATUS_COLORS.neutral.border`.
+  `STATUS_COLORS.queued`, the ordinal markers from
+  `STATUS_COLORS.neutral.border`, the empty held marker from
+  `STATUS_COLORS.waiting.border`.
 - History is server-rendered and never enters the React Query cache. It is
   read by `getCompletedRuns` inside the page's `getHistory` (`"use cache"`,
   ``cacheTag(`history:${slug}`)``), and so are the shown runs' costs, by the

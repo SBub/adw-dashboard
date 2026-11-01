@@ -8,8 +8,9 @@ import { queuePositions } from "@/lib/queue-order";
 import { QueueRow } from "./QueueRow";
 
 /**
- * The Queue section of the detail pane: one project's items in state queued,
- * in the order they will run. A client component so its data lives in the
+ * The Queue section of the detail pane: one project's items the queue will
+ * start, queued plus held on a dependency (see src/lib/queue-hold.ts), in
+ * ledger order. A client component so its data lives in the
  * React Query cache, where the queue_items Realtime listener can update it in
  * place. The page prefetches it under the same key and hydrates it, so the
  * query below is a cache hit on the first render and the server HTML already
@@ -17,7 +18,8 @@ import { QueueRow } from "./QueueRow";
  * its own HydrationBoundary and QueryBoundary.
  *
  * The list is a rail: an amber line down the left gutter and one marker per
- * row, `next` on the head and the ordinal on the others. Ordinals come from
+ * row, `next` on the head and the ordinal on the other queued items, an empty
+ * hollow marker on an item held on a dependency. Ordinals come from
  * queuePositions (ledger order), never from the array index, and rows are
  * keyed by issue_number, so a move changes the numbers and nothing else.
  *
@@ -56,8 +58,8 @@ export function QueueView({ slug, heading }: { slug: string; heading: ReactNode 
               key={item.issue_number}
               item={item}
               projectSlug={slug}
-              // Every item is in the map; the fallback only satisfies the type.
-              position={positions.get(item.issue_number) ?? 0}
+              // Only queued items are ranked; a dependency-held item has none.
+              position={positions.get(item.issue_number) ?? null}
             />
           ))}
         </ol>

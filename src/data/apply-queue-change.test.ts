@@ -76,6 +76,12 @@ function remove(issue: number, projectId = PROJECT): QueueChange {
 
 const issues = (list: QueueItem[]) => list.map((i) => i.issue_number);
 
+const DEPENDENCY_HOLD = {
+  state: "held",
+  reason: "waiting on a dependency: blocked by #30 (queued); starts on its own once #30 merges",
+} as const;
+const GATE_HOLD = { state: "held", reason: "hold label adw:hold" } as const;
+
 describe("queuedIn", () => {
   it("is undefined for an absent entry", () => {
     expect(queuedIn(undefined, 1)).toBeUndefined();
@@ -86,6 +92,12 @@ describe("queuedIn", () => {
     expect(queuedIn(current, 2)).toBe(true);
     expect(queuedIn(current, 3)).toBe(false);
     expect(queuedIn([], 1)).toBe(false);
+  });
+
+  it("is false for a cached item held on a dependency", () => {
+    const current = [item(1), item(2, DEPENDENCY_HOLD)];
+    expect(queuedIn(current, 1)).toBe(true);
+    expect(queuedIn(current, 2)).toBe(false);
   });
 });
 
@@ -107,6 +119,24 @@ describe("applyQueueChange", () => {
     it("is a no-op for a duplicate", () => {
       const current = [item(1)];
       expect(applyQueueChange(current, insert(item(1)))).toBe(current);
+    });
+
+    it("lands an item held on a dependency in position order", () => {
+      const current = [item(1, { position: 0 }), item(3, { position: 2 })];
+      const next = applyQueueChange(current, insert(item(2, { position: 1, ...DEPENDENCY_HOLD })));
+
+      expect(issues(next)).toEqual([1, 2, 3]);
+      expect(next[1]?.state).toBe("held");
+    });
+
+    it("ignores an item the merge gate held", () => {
+      const current = [item(1)];
+      expect(applyQueueChange(current, insert(item(2, GATE_HOLD)))).toBe(current);
+    });
+
+    it("is a no-op for a replayed held item", () => {
+      const current = [item(1, DEPENDENCY_HOLD)];
+      expect(applyQueueChange(current, insert(item(1, DEPENDENCY_HOLD)))).toBe(current);
     });
   });
 
@@ -142,6 +172,37 @@ describe("applyQueueChange", () => {
       const next = applyQueueChange(current, update(item(2, { position: 0 })));
 
       expect(issues(next)).toEqual([2, 1]);
+    });
+
+    it("keeps an item that moves from queued to held on a dependency", () => {
+      const current = [item(1), item(2)];
+      const next = applyQueueChange(current, update(item(1, DEPENDENCY_HOLD)));
+
+      expect(issues(next)).toEqual([1, 2]);
+      expect(next[0]?.state).toBe("held");
+      expect(next[0]?.reason).toBe(DEPENDENCY_HOLD.reason);
+    });
+
+    it("keeps an item that moves from held on a dependency to queued", () => {
+      const current = [item(1, DEPENDENCY_HOLD), item(2)];
+      const next = applyQueueChange(current, update(item(1)));
+
+      expect(issues(next)).toEqual([1, 2]);
+      expect(next[0]?.state).toBe("queued");
+    });
+
+    it("removes an item held on a dependency that starts", () => {
+      const current = [item(1, DEPENDENCY_HOLD), item(2)];
+      const next = applyQueueChange(current, update(item(1, { state: "running" })));
+
+      expect(issues(next)).toEqual([2]);
+    });
+
+    it("removes an item held on a dependency that the merge gate then holds", () => {
+      const current = [item(1, DEPENDENCY_HOLD), item(2)];
+      const next = applyQueueChange(current, update(item(1, GATE_HOLD)));
+
+      expect(issues(next)).toEqual([2]);
     });
 
     it("returns the input when a non-queued item is absent", () => {
@@ -232,6 +293,21 @@ describe("applyQueueChangeToSummaries", () => {
   it("leaves the list for a DELETE with an unknown previous state", () => {
     const current = list();
     expect(applyQueueChangeToSummaries(current, remove(1), undefined)).toBe(current);
+  });
+
+  it("raises the count when an item held on a dependency is queued", () => {
+    expect(queuedOf(applyQueueChangeToSummaries(list(), update(item(1)), false))).toBe(3);
+  });
+
+  it("drops the count when a queued item is held on a dependency", () => {
+    const ev = update(item(1, DEPENDENCY_HOLD));
+    expect(queuedOf(applyQueueChangeToSummaries(list(), ev, true))).toBe(1);
+  });
+
+  it("leaves the list for an INSERT of an item held on a dependency", () => {
+    const current = list();
+    const ev = insert(item(9, DEPENDENCY_HOLD));
+    expect(applyQueueChangeToSummaries(current, ev, undefined)).toBe(current);
   });
 
   it("never goes below 0", () => {
