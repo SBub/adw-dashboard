@@ -10,9 +10,10 @@ import {
 
 // The Queue section shows items held on a dependency (issue #255): state held
 // with a reason starting `waiting on a dependency: ` sits in Up next with a
-// `waiting` pill and the reason after the prefix on the same line, while a
-// gate-held item (any other reason) stays out. Ordinals and `next` count the
-// queued items only.
+// `waiting` pill and the reason after the prefix (on its own line under the
+// title on a phone, on the title's line from `sm` up), while a gate-held item
+// (any other reason) stays out. Ordinals and `next` count the queued items
+// only.
 //
 // The hosted database is never written (see the Protected rules), so the
 // browser's own /rest/v1/queue_items read (the channel's first catch-up calls
@@ -24,8 +25,10 @@ import {
 // returns one row and the count of 3 fails.
 
 const PREFIX = "waiting on a dependency: ";
-const REASON_A = "blocked by #925502 (queued); starts on its own once #925502 merges";
-const REASON_B = "blocked by #925501 (held); starts on its own once #925501 merges";
+const REASON_A =
+  "blocked by #925502 (queued); starts on its own once #925502 merges; the runner picks it up after the dependency's pull request is merged into the default branch and its checks pass";
+const REASON_B =
+  "blocked by #925501 (held); starts on its own once #925501 merges; the runner picks it up after the dependency's pull request is merged into the default branch and its checks pass";
 
 interface Row {
   project_id: string;
@@ -130,8 +133,14 @@ for (const width of [390, 1440]) {
       await expect(reasonSpan).toHaveAttribute("title", reason);
     }
 
-    // One line: the link, the reason and the pill share the link's top, and
-    // the reason is a single 24px line box.
+    // The link and the pill share the first line and the title is not
+    // squeezed: on a phone it takes all of the first line's remaining width;
+    // from `sm` up the queued row's title is at least half the card's content
+    // width, a held row's title is at least as wide as its (long, truncated)
+    // reason and at least 0.3 of the card's content width, and the card is
+    // only as tall as the title's wrapped height. A
+    // held row's reason is a single 24px line: on its own full-width line
+    // under the first line on a phone, on the link's line from `sm` up.
     for (let i = 0; i < 3; i++) {
       const g = await rows.nth(i).evaluate((li) => {
         const card = li.querySelector(":scope > div:last-of-type");
@@ -141,20 +150,62 @@ for (const width of [390, 1440]) {
           ["queued", "waiting"].includes(s.textContent?.trim() ?? ""),
         );
         if (!pill) throw new Error("the queue row has no pill");
+        const title = link.nextElementSibling;
+        if (!title || title.tagName !== "SPAN" || title.hasAttribute("title"))
+          throw new Error("the queue row has no title after the link");
         const reason = card.querySelector("span[title]");
-        const top = (el: Element) => el.getBoundingClientRect().top;
+        const style = getComputedStyle(card);
+        const px = (v: string) => parseFloat(v) || 0;
+        const cardContentWidth =
+          card.getBoundingClientRect().width -
+          px(style.borderLeftWidth) -
+          px(style.borderRightWidth) -
+          px(style.paddingLeft) -
+          px(style.paddingRight);
+        const cardContentHeight =
+          card.getBoundingClientRect().height -
+          px(style.borderTopWidth) -
+          px(style.borderBottomWidth) -
+          px(style.paddingTop) -
+          px(style.paddingBottom);
+        const rect = (el: Element) => el.getBoundingClientRect();
         return {
-          linkTop: top(link),
-          pillTop: top(pill),
-          reasonTop: reason ? top(reason) : null,
-          reasonHeight: reason ? reason.getBoundingClientRect().height : null,
+          linkTop: rect(link).top,
+          linkBottom: rect(link).bottom,
+          pillTop: rect(pill).top,
+          titleWidth: rect(title).width,
+          titleHeight: rect(title).height,
+          titleRight: rect(title).right,
+          pillBoxLeft: rect(pill.closest("div") ?? pill).left,
+          cardContentWidth,
+          cardContentHeight,
+          reasonTop: reason ? rect(reason).top : null,
+          reasonHeight: reason ? rect(reason).height : null,
+          reasonWidth: reason ? rect(reason).width : null,
         };
       });
       expect(Math.abs(g.pillTop - g.linkTop)).toBeLessThanOrEqual(2);
+      if (width === 390) {
+        // The link and the pill leave less than half of a phone card, so the
+        // title takes all of what remains: it ends one 12px gap before the
+        // pill's box.
+        expect(g.pillBoxLeft - g.titleRight).toBeLessThanOrEqual(14);
+      } else if (i === 1) {
+        expect(g.titleWidth).toBeGreaterThanOrEqual(0.5 * g.cardContentWidth);
+      } else {
+        expect(g.titleWidth).toBeGreaterThanOrEqual((g.reasonWidth ?? 0) - 1);
+        expect(g.titleWidth).toBeGreaterThanOrEqual(0.3 * g.cardContentWidth);
+        expect(Math.abs(g.cardContentHeight - Math.max(g.titleHeight, 24))).toBeLessThanOrEqual(2);
+      }
       if (i !== 1) {
         expect(g.reasonTop).not.toBeNull();
-        expect(Math.abs((g.reasonTop ?? 0) - g.linkTop)).toBeLessThanOrEqual(2);
         expect(g.reasonHeight ?? 0).toBeLessThanOrEqual(26);
+        if (width === 390) {
+          expect(g.reasonTop ?? 0).toBeGreaterThanOrEqual(g.linkBottom - 2);
+          expect(g.reasonWidth ?? 0).toBeGreaterThanOrEqual(0.9 * g.cardContentWidth);
+        } else {
+          expect(Math.abs((g.reasonTop ?? 0) - g.linkTop)).toBeLessThanOrEqual(2);
+        }
       }
     }
 

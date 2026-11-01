@@ -179,13 +179,16 @@ covered by `src/data/apply-run-change.test.ts`:
 `adw.queue_items` event (type `QueueChange`), both pure and covered by
 `src/data/apply-queue-change.test.ts`:
 
-- `applyQueueChange(current: QueueItem[], ev): QueueItem[]` holds the queued
-  items only. INSERT or UPDATE with state `queued` adds or replaces the item by
-  `issue_number` and re-sorts by `position, issue_number` (a move changes
-  positions); an UPDATE to any other state removes it (the item started or was
-  stopped); DELETE removes the `issue_number` in `ev.old`. A duplicate INSERT
-  or a non-queued INSERT is a no-op, and the input is returned by identity
-  when nothing changed.
+- `applyQueueChange(current: QueueItem[], ev): QueueItem[]` holds the Queue
+  section's items, the ones `inQueueSection` in `src/lib/queue-hold.ts`
+  accepts (state `queued`, or state `held` whose `reason` starts with
+  `DEPENDENCY_HOLD_PREFIX`). An INSERT or UPDATE whose new row is in the
+  section adds or replaces the item by `issue_number` and re-sorts by
+  `position, issue_number` (a move changes positions); an UPDATE to anything
+  else removes it (the item started, was stopped, or was held by the merge
+  gate, a `held` with any other reason); DELETE removes the `issue_number` in
+  `ev.old`. A duplicate INSERT or an INSERT outside the section is a no-op,
+  and the input is returned by identity when nothing changed.
 - `applyQueueChangeToSummaries(current, ev, wasQueued)` moves the project's
   `queued` by `(queued now) - (queued before)`, never below 0, touching no
   other count. UPDATE is included, not only INSERT and DELETE, because the
@@ -193,7 +196,11 @@ covered by `src/data/apply-run-change.test.ts`:
   to `running`) or being re-queued arrives as an UPDATE, and the unchanged
   upsert (`queued` to `queued`) is a zero delta. `wasQueued` is read with
   `queuedIn(current, issue_number)` from the cached queue entry **before** it
-  is rewritten, for the same replica-identity reason as `oldStatus`. It is
+  is rewritten, for the same replica-identity reason as `oldStatus`.
+  `queuedIn` reads only cached items in state `queued` (a cached
+  dependency-held item counts as not queued), so the sidebar count stays the
+  view's `queued`: a held to queued UPDATE moves it by +1, queued to
+  dependency-held by -1. It is
   `undefined` when the queue is not cached; an INSERT then counts as not
   queued before, an UPDATE or DELETE leaves the count alone. Known gap: an
   UPDATE or DELETE for a project whose queue was not loaded this session does
@@ -357,9 +364,12 @@ live updates (above) go through the query cache, not this store.
   `applyRunChangeToSummaries` never touches `running` or `failed` (they are
   counted from the Active entry); it keeps `completed` (+1 on an INSERT of a
   completed row and on an UPDATE to completed from a known running or failed
-  status) and `last_run_at`. `applyQueueChange` holds state `queued` only and
-  removes an item whose new state is anything else; do not make it keep
-  started or stopped items (they are runs). Never `invalidateQueries` or `refetchQueries` from
+  status) and `last_run_at`. `applyQueueChange` holds the Queue section's items
+  only (`inQueueSection`: state `queued`, or `held` with the
+  `DEPENDENCY_HOLD_PREFIX` reason) and removes an item whose new row is
+  anything else, a gate-held `held` included; do not make it keep started,
+  stopped or gate-held items (they are runs), and do not test the hold
+  anywhere but `src/lib/queue-hold.ts`. Never `invalidateQueries` or `refetchQueries` from
   the realtime module: every query here is `staleTime: "static"` and both skip
   static queries silently.
 - Every updater passed to `setQueryData` from the realtime module has the form

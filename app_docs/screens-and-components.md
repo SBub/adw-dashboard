@@ -47,7 +47,8 @@ projects. `/`, the landing page, is a static intro (see `app_docs/home.md`).
   flight) it reads "Checking status..." with a dashed neutral ring. It never
   shows the worker's host, pid or `started_at`.
   Every run and queue state has one colour wherever it appears (queued
-  amber, running emerald with a pulsing dot, completed sky, failed rose, a
+  amber, waiting indigo for a queue item held on a dependency, running
+  emerald with a pulsing dot, completed sky, failed rose, a
   zero count neutral), taken from the one map in `src/lib/status-colors.ts`;
   the sidebar's connection pill keeps its own colours.
 - The right pane shows the selected project's runs and queue: an Active
@@ -245,10 +246,10 @@ projects. `/`, the landing page, is a static intro (see `app_docs/home.md`).
   a second Work with me link for phones (the one `HireLink` changes position
   by width), and never put the floating buttons at or above `HEADER_LAYER`.
 - Status colours come only from `STATUS_COLORS` in `src/lib/status-colors.ts`
-  (queued amber, running emerald with the pulse dot, completed sky, failed
+  (queued amber, waiting indigo, running emerald with the pulse dot, completed sky, failed
   rose, `neutral` for zeros), written as full literal class strings so
   Tailwind sees them; never interpolate a hue name. No component writes an
-  `emerald`, `amber`, `sky`, `rose` or `red` class inline;
+  `emerald`, `amber`, `indigo`, `sky`, `rose` or `red` class inline;
   `src/lib/status-colors.test.ts` scans `src/` and fails on one. The
   connection pill in `ConnectionIndicator` (it describes the socket, not a
   run) is the one exemption. The worker widget takes its colours from the map

@@ -20,13 +20,16 @@ interface QueueRowProps {
  * gutter holds the marker (filled `next` for the head, the ordinal for a later
  * queued item, an empty hollow circle for an item held on a dependency, all
  * from the `position` prop) and is reserved for a future drag handle. The card
- * is one row: the issue link, the title (shown in full, wrapping and taking
- * the remaining width), for an item held on a dependency the toolkit's reason
- * after the prefix (one line, truncated, the full text in `title`), and the
- * status pill (`queued`, or `waiting` when held on a dependency), all
- * top-aligned on the title's first line, the pill right-aligned on that line
- * at every width. `source` and `queued_at` are not rendered (the queue is
- * ordered by `position`). Nothing here reads the clock. The pill uses the same
+ * holds the issue link, the title (shown in full, wrapping and taking the
+ * remaining width of the first line) and the status pill (`queued`, or
+ * `waiting` when held on a dependency), top-aligned on the title's first line
+ * at every width, the pill right-aligned. For an item held on a dependency it
+ * adds the toolkit's reason after the prefix, one truncated line (the full
+ * text in `title`): on its own full-width line under the title below `sm`,
+ * inline after the title from `sm` up, where it shares the remaining width
+ * equally with the title (both flex basis 0) and truncates inside its share,
+ * so it never takes width from the title. `source` and `queued_at` are not
+ * rendered (the queue is ordered by `position`). Nothing here reads the clock. The pill uses the same
  * colour map as run rows.
  */
 export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
@@ -70,8 +73,10 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
         </span>
       </div>
       <div className="min-w-0 flex-1 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-        {/* The row never wraps, so the pill stays on the title's first line. */}
-        <div className="flex items-start gap-x-3">
+        {/* Below `sm` the row wraps only to put a held row's reason on its own
+            line under the title; the link, title and pill never wrap apart,
+            so the pill stays on the title's first line. */}
+        <div className="flex flex-wrap items-start gap-x-3 gap-y-1 sm:flex-nowrap">
           <a
             href={`https://github.com/${projectSlug}/issues/${item.issue_number}`}
             target="_blank"
@@ -88,7 +93,7 @@ export function QueueRow({ item, projectSlug, position }: QueueRowProps) {
           {reason !== null && (
             <span
               title={reason}
-              className="min-w-0 flex-1 truncate text-sm leading-6 text-neutral-500 dark:text-neutral-400"
+              className="order-last min-w-0 basis-full truncate text-sm leading-6 text-neutral-500 sm:order-none sm:flex-1 sm:basis-0 dark:text-neutral-400"
             >
               {reason}
             </span>

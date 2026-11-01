@@ -10,8 +10,8 @@ import {
 
 // Each Queue row is one row (issue number, title, the `queued` or `waiting`
 // pill, the title may wrap). A queued row has no `label:` chip, no wait and no
-// start hint; a row held on a dependency adds only the toolkit's reason, on
-// the same line. The rail markers read `next`, then the ordinals, over the
+// start hint; a row held on a dependency adds only the toolkit's reason, one
+// line (under the title on a phone, beside it from `sm` up). The rail markers read `next`, then the ordinals, over the
 // queued rows only; a waiting row's marker is empty.
 
 test.describe("queue row single line", () => {
