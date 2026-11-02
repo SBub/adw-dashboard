@@ -5,6 +5,7 @@ import {
   sectionRows,
   test,
   waitForLive,
+  waitForSkeletonsGone,
   type Page,
 } from "./fixtures";
 
@@ -105,8 +106,15 @@ for (const width of [390, 1440]) {
   test(`dependency-held items show as waiting rows at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await routeQueue(page);
-    await openFirstProject(page);
+    // A full load of the project page, not the client navigation alone: the
+    // catch-up runs once, 1 s after the first SUBSCRIBED, and reads only the
+    // queues already cached. Started on /projects it can run before the
+    // project's queue is cached, and the page then keeps the server-rendered
+    // (real) queue. Started on the project page, the queue is cached by then.
+    const href = await openFirstProject(page);
+    await page.goto(href);
     await waitForLive(page);
+    await waitForSkeletonsGone(page);
 
     const rows = sectionRows(page, "Up next");
     await expect(rows).toHaveCount(3, { timeout: 15_000 });
