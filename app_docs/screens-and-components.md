@@ -14,6 +14,7 @@
 - specs/issue-211-adw-c1f6991d-sdlc_planner-nts-slow-focus-radio-bar.md
 - specs/issue-214-adw-b4882b73-sdlc_planner-header-one-row-floating-hire.md
 - specs/issue-216-adw-155628ce-sdlc_planner-radio-bar-sticky-footer.md
+- specs/issue-258-adw-106aa5eb-sdlc_planner-history-branch-text-pr-link.md
 
 ## Overview
 
