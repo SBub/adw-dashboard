@@ -55,6 +55,19 @@ export async function openFirstProject(page: Page): Promise<string> {
   return href;
 }
 
+// Waits until React has hydrated the element `locator` points at: React sets
+// its `__reactProps$<id>` key on every DOM node it hydrates, a deterministic
+// client-only signal.
+export async function waitForHydrated(locator: Locator): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        locator.evaluate((el) => Object.keys(el).some((key) => key.startsWith("__reactProps$"))),
+      { message: "the element was never hydrated", timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
 // Clicks a link and waits for the address to become `url`. The link is in the
 // server HTML, so it is visible before React hydrates; a click then can be
 // lost, and under `next dev` the target route may still have to compile. So
@@ -66,12 +79,7 @@ export async function openFirstProject(page: Page): Promise<string> {
 // compile, and a second failure is the normal Playwright error.
 export async function clickToNavigate(link: Locator, url: string | RegExp): Promise<void> {
   const page = link.page();
-  await expect
-    .poll(
-      () => link.evaluate((el) => Object.keys(el).some((key) => key.startsWith("__reactProps$"))),
-      { message: "the link was never hydrated", timeout: 30_000 },
-    )
-    .toBe(true);
+  await waitForHydrated(link);
   const before = page.url();
   await link.click();
   try {
