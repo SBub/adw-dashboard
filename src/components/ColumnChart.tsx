@@ -56,7 +56,7 @@ function idPart(value: string): string {
  * column takes an equal grid slot of at most 80px (`minmax(0, 5rem)`), never
  * sized from its name; the bar is capped at 28px (`max-w-7`) and centred in
  * its slot, so adjacent bars are equally spaced. A name wider than its slot wraps (under
- * its dot when there is one) and then inside the word, never widening the slot; five or more
+ * its dot when there is one) and then inside the word, never widening the slot; four or more
  * columns take a 4px gap, so the row fits a one-third card at 1024px and a
  * stacked card at 375px. A column with
  * `detail` is focusable and holds a CSS-only popover (group hover and
@@ -75,7 +75,7 @@ export function ColumnChart({
   tiltValues = true,
 }: ColumnChartProps) {
   const heights = columnHeights(columns.map((column) => column.value));
-  const gap = columns.length >= 5 ? "gap-1" : "gap-2 sm:gap-4";
+  const gap = columns.length >= 4 ? "gap-1" : "gap-2 sm:gap-4";
 
   return (
     <figure className="min-w-0 rounded-md border border-neutral-200 p-3 dark:border-neutral-800">

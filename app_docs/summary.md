@@ -255,7 +255,7 @@ open daily log updates through Refresh or the next visit.
   is capped (`max-w-7`) and centred in it, so adjacent bars are equally
   spaced. A name never widens its slot and is never cut (no `truncate`): it
   wraps (under its dot in the class chart) and then inside the word (`wrap-anywhere`). A chart
-  with five or more columns uses `gap-1` so
+  with four or more columns uses `gap-1` so
   the row fits a one-third card at `lg` and a stacked card at 375px; the plot box is 180px
   (`h-45`). Every value sits above its bar, never inside it, in regular
   weight, rotated -45 degrees from the bar's top centre (a `transform`, not

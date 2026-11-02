@@ -7,7 +7,7 @@
 
 ## Overview
 
-The shared row and view-model types in `src/types/adw.ts`: database rows that mirror the schema column for column, and the view models the data layer produces.
+The shared row and view-model types in `src/types/adw.ts`: database rows that mirror the schema's columns the dashboard reads, and the view models the data layer produces.
 
 ## How it works
 
@@ -15,7 +15,8 @@ The shared row and view-model types in `src/types/adw.ts`: database rows that mi
 
 `src/types/adw.ts` has two sections. `Project`, `Run` and `QueueItem` (with
 `QueueState`, the table's state check constraint) mirror the database tables
-column for column; `Run` includes `pr_number`, the number of the pull request
+column for column, except that `Run` leaves out `runs.state` (the toolkit's
+jsonb run state), which nothing reads (issue #243); `Run` includes `pr_number`, the number of the pull request
 the run opened (published by the toolkit; null for runs published before it
 wrote the column and for runs that opened none). `ProjectSummary` is the one view model the screens
 need that the database does not store (the counts and `last_run_at`); it comes
@@ -32,7 +33,9 @@ metrics has no row).
 - `src/types/adw.ts` keeps database-row types (`Project`, `Run`, `QueueItem`,
   `Worker`) and the view
   model (`ProjectSummary`) in clearly separated sections. Row types mirror the
-  schema column for column; `ProjectSummary` is produced by the data layer.
+  schema column for column, with one deliberate exception: `Run` omits the
+  unread `runs.state` jsonb (issue #243), so do not add it back without a
+  screen that reads it; `ProjectSummary` is produced by the data layer.
   `DailySummary`, `DailyModelSummary` and `DailyPhaseSummary` mirror the
   summary views' columns and sit with the view models, beside the report types
   (`SummaryDay`, `SummaryModel`, `SummaryPhase`) assembled from them.

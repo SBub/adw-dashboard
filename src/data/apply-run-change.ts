@@ -1,20 +1,28 @@
 // Folds one Realtime change event on the adw.runs table into the two cache
 // entries it affects: the one Active entry, every visible project's running
-// and failed runs (applyRunChange), and the project list's completed count and
-// last_run_at (applyRunChangeToSummaries),
+// runs and failed runs from the last 7 days (applyRunChange), and the project
+// list's completed count and last_run_at (applyRunChangeToSummaries),
 // and says whether the event changed the project's history (isHistoryChange),
-// which is server-rendered and never in the cache. All three are pure: they
+// which is server-rendered and never in the cache. It also merges the
+// incremental catch-up read into the Active entry (applyChangedRuns). All are pure: they
 // never touch the cache, the client or the clock, they just return the next
 // value, which is what makes them unit-testable without a socket. The
 // realtime module hands their results to queryClient.setQueryData.
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import type { ProjectSummary, Run, RunStatus } from "@/types/adw";
-import type { ActiveRuns } from "./index";
+import { isInActiveWindow } from "@/lib/active-runs";
+import type { ActiveRuns, ChangedRuns } from "./index";
 
 /** One change event on adw.runs, as the channel delivers it. */
 export type RunChange = RealtimePostgresChangesPayload<Run>;
 
-/** The two statuses the Active list holds; a failed run can be resumed, so it is still live. */
+/**
+ * The two statuses the Active list holds; a failed run can be resumed, so it
+ * is still live. No window check here: the event path reads no clock, and an
+ * UPDATE stamps updated_at through the database trigger, so a failed event is
+ * always fresh. The next catch-up prunes failed runs older than the window
+ * (applyChangedRuns).
+ */
 function isActive(status: RunStatus): boolean {
   return status === "running" || status === "failed";
 }
@@ -46,6 +54,29 @@ export function runStatusIn(
   return current.active.find((run) => isRun(run, projectId, adwId))?.status;
 }
 
+/**
+ * Exactly the fields of Run, copied from a row. A Realtime event carries the
+ * whole row (including the state jsonb the dashboard does not read); only the
+ * screen fields enter the cache.
+ */
+function toRun(row: Run): Run {
+  return {
+    project_id: row.project_id,
+    adw_id: row.adw_id,
+    issue_number: row.issue_number,
+    issue_title: row.issue_title,
+    issue_class: row.issue_class,
+    branch_name: row.branch_name,
+    pr_number: row.pr_number,
+    phase: row.phase,
+    status: row.status,
+    toolkit_version: row.toolkit_version,
+    started_at: row.started_at,
+    updated_at: row.updated_at,
+    finished_at: row.finished_at,
+  };
+}
+
 function without(runs: Run[], projectId: string, adwId: string): Run[] {
   // Same array back when nothing was removed, so the untouched list keeps its
   // identity and React skips re-rendering its rows.
@@ -72,6 +103,9 @@ function without(runs: Run[], projectId: string, adwId: string): Run[] {
  *   That is the runs primary key, so both are present in `old` under the
  *   default replica identity; nothing else is relied on.
  *
+ * Only the fields of Run are stored (toRun), never the state jsonb the event
+ * carries.
+ *
  * `fetched_at` is kept as is: it records when the rows were read, which a
  * change event does not alter (nothing in the UI reads it today, see
  * ActiveRuns in src/data/index.ts). The input is never mutated, and is
@@ -82,7 +116,7 @@ export function applyRunChange(current: ActiveRuns, ev: RunChange): ActiveRuns {
     case "INSERT": {
       if (!isActive(ev.new.status)) return current;
       if (runStatusIn(current, ev.new.project_id, ev.new.adw_id) !== undefined) return current;
-      return { ...current, active: [ev.new, ...current.active] };
+      return { ...current, active: [toRun(ev.new), ...current.active] };
     }
     case "UPDATE": {
       const { project_id: projectId, adw_id: adwId } = ev.new;
@@ -92,8 +126,9 @@ export function applyRunChange(current: ActiveRuns, ev: RunChange): ActiveRuns {
         return { ...current, active: without(current.active, projectId, adwId) };
       }
       const active = [...current.active];
-      if (previousIndex === -1) active.unshift(ev.new);
-      else active[previousIndex] = ev.new;
+      const row = toRun(ev.new);
+      if (previousIndex === -1) active.unshift(row);
+      else active[previousIndex] = row;
       return { ...current, active };
     }
     case "DELETE": {
@@ -103,6 +138,49 @@ export function applyRunChange(current: ActiveRuns, ev: RunChange): ActiveRuns {
       return { ...current, active: without(current.active, projectId, adwId) };
     }
   }
+}
+
+/**
+ * Returns the active runs after merging the incremental catch-up read (every
+ * run changed since the cursor, any status; getChangedRuns in src/data/index.ts):
+ *
+ * - Every failed run already in the entry whose updated_at fell out of the
+ *   window (`read.failed_since`) is pruned, changed or not.
+ * - A changed row that is in the window (running, or failed since the cutoff)
+ *   replaces the row with the same key in place, or, when the entry does not
+ *   hold it, is prepended; the new rows keep the read's order (newest first),
+ *   like applyRunChange's INSERT.
+ * - A changed row that is out of the window (completed, cancelled, any other
+ *   non-live status, or a failure older than the window) removes the row with
+ *   that key. This is why the read takes any status: a run that completed
+ *   while the socket was down is only seen by reading it.
+ *
+ * A row the entry already holds (the overlap re-reads the last minute) just
+ * replaces itself, so no row is ever duplicated. A run deleted while the
+ * socket was down cannot be seen here and stays until the next full read.
+ * `fetched_at` comes from the read. The input is never mutated.
+ */
+export function applyChangedRuns(current: ActiveRuns, read: ChangedRuns): ActiveRuns {
+  const active = current.active.filter(
+    (run) => run.status !== "failed" || isInActiveWindow(run, read.failed_since),
+  );
+  const added: Run[] = [];
+  for (const changed of read.changed) {
+    const { project_id: projectId, adw_id: adwId } = changed;
+    const index = active.findIndex((run) => isRun(run, projectId, adwId));
+    if (!isInActiveWindow(changed, read.failed_since)) {
+      if (index !== -1) active.splice(index, 1);
+      continue;
+    }
+    const row = toRun(changed);
+    if (index !== -1) {
+      active[index] = row;
+      continue;
+    }
+    const addedIndex = added.findIndex((run) => isRun(run, projectId, adwId));
+    if (addedIndex === -1) added.push(row);
+  }
+  return { active: [...added, ...active], fetched_at: read.fetched_at };
 }
 
 /**

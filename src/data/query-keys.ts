@@ -8,7 +8,8 @@ export const queryKeys = {
   /** The project list: the layout's prefetch, ProjectNav, and realtime.ts. */
   projects: ["projects"] as const,
   /**
-   * The one Active entry: every visible project's running and failed runs.
+   * The one Active entry: every visible project's running runs and failed
+   * runs from the last 7 days.
    * Prefetched per request by getActiveRunsState, read (through
    * activeRunsQuery) by ProjectNav, ActiveRunsOverview and ActiveRunsView,
    * each narrowing it with a select, and written by the runs listener and the

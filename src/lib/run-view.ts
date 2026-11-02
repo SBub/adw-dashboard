@@ -63,16 +63,6 @@ export function runCosts(rows: readonly RunMetrics[]): Record<string, number> {
   return Object.fromEntries(rows.map((row) => [row.adw_id, row.cost_usd]));
 }
 
-/**
- * The GitHub tree URL of a run's branch in "owner/repo". Each path segment is
- * percent-encoded on its own, so the branch's slashes stay path separators
- * while a "#" or "?" in a segment is escaped instead of cutting the URL.
- */
-export function branchTreeHref(projectSlug: string, branch: string): string {
-  const path = branch.split("/").map(encodeURIComponent).join("/");
-  return `https://github.com/${projectSlug}/tree/${path}`;
-}
-
 /** The GitHub URL of pull request `prNumber` in "owner/repo". */
 export function pullRequestHref(projectSlug: string, prNumber: number): string {
   return `https://github.com/${projectSlug}/pull/${prNumber}`;

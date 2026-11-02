@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectSummary, Run } from "@/types/adw";
 import {
+  applyChangedRuns,
   applyRunChange,
   applyRunChangeToSummaries,
   isHistoryChange,
   type RunChange,
   runStatusIn,
 } from "./apply-run-change";
-import type { ActiveRuns } from "./index";
+import type { ActiveRuns, ChangedRuns } from "./index";
 
 const PROJECT = "11111111-1111-1111-1111-111111111111";
 const OTHER_PROJECT = "22222222-2222-2222-2222-222222222222";
@@ -23,7 +24,6 @@ function run(adwId: string, overrides: Partial<Run> = {}): Run {
     pr_number: null,
     phase: "adw_build_iso",
     status: "running",
-    state: {},
     toolkit_version: "0.9.3",
     started_at: "2026-10-02T10:00:00Z",
     updated_at: "2026-10-02T10:30:00Z",
@@ -334,6 +334,125 @@ describe("applyRunChange", () => {
         current,
       );
     });
+  });
+});
+
+describe("applyRunChange stores only the Run fields", () => {
+  // A Realtime event carries the whole row, the state jsonb included.
+  const withState = (record: Run) => ({ ...record, state: { big: "x" } }) as unknown as Run;
+
+  it("drops state from an INSERT", () => {
+    const next = applyRunChange(active([]), insert(withState(run("aaaa"))));
+    expect(next.active[0]).toEqual(run("aaaa"));
+    expect(next.active[0]).not.toHaveProperty("state");
+  });
+
+  it("drops state from an UPDATE, in place and as an add", () => {
+    const replaced = applyRunChange(
+      active([run("aaaa")]),
+      update(withState(run("aaaa", { phase: "adw_test_iso" }))),
+    );
+    expect(replaced.active[0]).not.toHaveProperty("state");
+    const added = applyRunChange(active([]), update(withState(run("bbbb"))));
+    expect(added.active[0]).not.toHaveProperty("state");
+  });
+});
+
+describe("applyChangedRuns", () => {
+  // The window's cutoff in these reads: failed runs updated before it are out.
+  const FAILED_SINCE = "2026-10-01T00:00:00.000Z";
+
+  function read(changed: Run[]): ChangedRuns {
+    return { changed, failed_since: FAILED_SINCE, fetched_at: "2026-10-08T00:00:00.000Z" };
+  }
+
+  it("prepends a new running run", () => {
+    const next = applyChangedRuns(active([run("aaaa")]), read([run("bbbb")]));
+    expect(ids(next.active)).toEqual(["bbbb", "aaaa"]);
+  });
+
+  it("prepends several new runs in the read's order", () => {
+    const next = applyChangedRuns(active([run("aaaa")]), read([run("cccc"), run("bbbb")]));
+    expect(ids(next.active)).toEqual(["cccc", "bbbb", "aaaa"]);
+  });
+
+  it("replaces an updated running run in place, keeping the order", () => {
+    const current = active([run("aaaa"), run("bbbb"), run("cccc")]);
+    const next = applyChangedRuns(current, read([run("bbbb", { phase: "adw_test_iso" })]));
+    expect(ids(next.active)).toEqual(["aaaa", "bbbb", "cccc"]);
+    expect(next.active[1]?.phase).toBe("adw_test_iso");
+  });
+
+  it("matches on the primary key, not adw_id alone", () => {
+    const current = active([run("aaaa"), other("aaaa")]);
+    const next = applyChangedRuns(
+      current,
+      read([finished("aaaa", "completed", "2026-10-07T00:00:00Z")]),
+    );
+    expect(keys(next.active)).toEqual(["o:aaaa"]);
+  });
+
+  it("removes a run that became completed", () => {
+    const current = active([run("aaaa"), run("bbbb")]);
+    const next = applyChangedRuns(
+      current,
+      read([finished("aaaa", "completed", "2026-10-07T00:00:00Z")]),
+    );
+    expect(ids(next.active)).toEqual(["bbbb"]);
+  });
+
+  it("removes a run with any other non-live status", () => {
+    const current = active([run("aaaa"), run("bbbb")]);
+    const cancelled = run("bbbb", { status: "cancelled" as Run["status"] });
+    expect(ids(applyChangedRuns(current, read([cancelled])).active)).toEqual(["aaaa"]);
+  });
+
+  it("removes a changed failed run older than the window", () => {
+    const current = active([run("aaaa"), run("bbbb")]);
+    const old = finished("aaaa", "failed", "2026-09-30T23:59:59Z");
+    expect(ids(applyChangedRuns(current, read([old])).active)).toEqual(["bbbb"]);
+  });
+
+  it("keeps and adds failed runs inside the window", () => {
+    const current = active([finished("aaaa", "failed", "2026-10-02T00:00:00Z")]);
+    const fresh = finished("bbbb", "failed", "2026-10-07T00:00:00Z");
+    expect(ids(applyChangedRuns(current, read([fresh])).active)).toEqual(["bbbb", "aaaa"]);
+  });
+
+  it("prunes an untouched failed run in the entry that aged out of the window", () => {
+    const current = active([run("aaaa"), finished("bbbb", "failed", "2026-09-20T00:00:00Z")]);
+    expect(ids(applyChangedRuns(current, read([])).active)).toEqual(["aaaa"]);
+  });
+
+  it("leaves no duplicate for a row the entry already holds (the overlap)", () => {
+    const current = active([run("aaaa"), run("bbbb")]);
+    const next = applyChangedRuns(current, read([run("bbbb"), run("aaaa")]));
+    expect(next.active).toEqual(current.active);
+  });
+
+  it("changes nothing else for a completed run the entry never held", () => {
+    const current = active([run("aaaa")]);
+    const next = applyChangedRuns(
+      current,
+      read([finished("zzzz", "completed", "2026-10-07T00:00:00Z")]),
+    );
+    expect(next.active).toEqual(current.active);
+  });
+
+  it("stores only the Run fields of a changed row", () => {
+    const row = { ...run("bbbb"), state: { big: "x" } } as unknown as Run;
+    const next = applyChangedRuns(active([]), read([row]));
+    expect(next.active[0]).not.toHaveProperty("state");
+  });
+
+  it("takes fetched_at from the read and never mutates the input", () => {
+    const rows = [run("aaaa"), finished("bbbb", "failed", "2026-09-20T00:00:00Z")];
+    const current = active(rows);
+    const snapshot = structuredClone(current);
+    const next = applyChangedRuns(current, read([run("cccc"), run("aaaa", { phase: "x" })]));
+    expect(next.fetched_at).toBe("2026-10-08T00:00:00.000Z");
+    expect(current).toEqual(snapshot);
+    expect(current.active).toBe(rows);
   });
 });
 

@@ -20,8 +20,10 @@ be kept in step with them and with `README.md`.
 - Node: 24 (`.nvmrc`; `volta` pins 24.21.0).
 - Blog posts: `src/content/posts/<slug>.mdx`, registered in `src/content/posts/index.ts`.
 - Changelog entries: `src/content/changelog/<YYYY-MM-DD>-pr<N>.mdx`, registered in
-  `src/content/changelog/index.ts`; drafted once by `node scripts/backfill-changelog.ts` (with the
-  production pull request's stats), then title, description and lines rewritten by hand from the diff.
+  `src/content/changelog/index.ts`; drafted by the release workflow (`.github/workflows/release.yml`
+  runs `scripts/release.ts`, which runs `node scripts/backfill-changelog.ts` with the production pull
+  request's stats) as a pull request into `develop`, then title, description and lines rewritten by
+  hand from the diff before it merges.
 
 ## Workspaces
 

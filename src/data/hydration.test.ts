@@ -85,7 +85,6 @@ describe("hydrate into an existing entry", () => {
       pr_number: null,
       phase: "adw_plan_iso",
       status: "running",
-      state: {},
       toolkit_version: "0.9.3",
       started_at: "2026-10-02T11:05:00Z",
       updated_at: "2026-10-02T11:05:00Z",

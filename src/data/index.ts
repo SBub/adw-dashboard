@@ -7,10 +7,11 @@
 //
 // The runs are read in two halves with two different lifetimes:
 //
-// - Active (status running or failed; a failed run can be resumed, so it is
-//   still live) is one React Query entry for every project, read per request
-//   on the server, hydrated, and patched in the browser by the Realtime
-//   listener; each screen narrows it to what it shows. getActiveRuns.
+// - Active (status running, or failed in the last 7 days; a failed run can be
+//   resumed, so it is still live) is one React Query entry for every project,
+//   read per request on the server, hydrated, and patched in the browser by
+//   the Realtime listener; each screen narrows it to what it shows.
+//   getActiveRuns, and getChangedRuns for the incremental catch-up.
 // - History (status completed) is immutable. It is read one keyset page at a
 //   time and rendered on the server inside a "use cache" scope; every page of
 //   a project shares the one per-project tag, never enters the query cache,
@@ -35,6 +36,7 @@
 // (getWorkers): browser only, polled by the worker store in WorkerStatus,
 // never in the query cache, never in a cache scope and not on Realtime (the
 // table is not in the publication).
+import { changedRunsSince, failedRunCutoff } from "@/lib/active-runs";
 import { pastDaysWindow, toSummaryDay, toSummaryReport } from "@/lib/daily-summary";
 import {
   HISTORY_PAGE_SIZE,
@@ -65,8 +67,8 @@ import { getSupabase } from "./supabase";
 
 export interface ActiveRuns {
   /**
-   * Every visible project's runs with status "running" or "failed", most
-   * recently updated first.
+   * Every visible project's runs with status "running", or "failed" with
+   * updated_at in the last 7 days, most recently updated first.
    */
   active: Run[];
   /**
@@ -80,7 +82,7 @@ export interface ActiveRuns {
 
 /** The columns of adw.runs the screens read, which are exactly the fields of Run. */
 const RUN_COLUMNS =
-  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, pr_number, phase, status, state, toolkit_version, started_at, updated_at, finished_at";
+  "project_id, adw_id, issue_number, issue_title, issue_class, branch_name, pr_number, phase, status, toolkit_version, started_at, updated_at, finished_at";
 
 /** The columns of adw.run_metrics the History page reads, which are exactly the fields of RunMetrics. */
 const RUN_METRICS_COLUMNS = "adw_id, cost_usd";
@@ -187,30 +189,53 @@ export async function getProjectSlug(projectId: string): Promise<string | null> 
 }
 
 /**
- * Every visible project's live runs (status running or failed), most recently
- * updated first. One read of adw.runs, filtered to the two live statuses in
- * SQL; RLS limits the rows to public projects. Completed runs are not read
- * here: they are history, served by getCompletedRuns from a server-rendered
- * cache scope. No label is derived from the current time anywhere (removed
- * pending issue #3); the screens render the rows as stored, and each screen
- * narrows the one list itself (src/lib/active-runs.ts).
+ * The one clock read of the Active reads: their fetched_at and the failed-run
+ * window's cutoff. Allowed because on the server it only runs inside
+ * getActiveRuns, which only runs inside getActiveRunsState after
+ * connection(); in the browser it runs in the queryFn on a cache miss and in
+ * the realtime catch-up callback, never in render.
+ */
+function activeReadClock(): { fetched_at: string; failed_since: string } {
+  const now = Date.now();
+  return { fetched_at: new Date(now).toISOString(), failed_since: failedRunCutoff(now) };
+}
+
+/**
+ * The PostgREST `or` filter for the Active rows: every running run, and the
+ * failed runs updated at or after `failedSince`. The timestamp is quoted
+ * because it holds "." and ":".
+ */
+function activeRunsFilter(failedSince: string): string {
+  return `status.eq.running,and(status.eq.failed,updated_at.gte."${failedSince}")`;
+}
+
+/**
+ * Every visible project's live runs (status running, or failed with updated_at
+ * in the last FAILED_RUN_WINDOW_DAYS days, see src/lib/active-runs.ts), most
+ * recently updated first. One read of adw.runs, filtered in SQL, with the
+ * narrow RUN_COLUMNS (no state jsonb); RLS limits the rows to public projects.
+ * Completed runs are not read here: they are history, served by
+ * getCompletedRuns from a server-rendered cache scope. No label is derived
+ * from the current time anywhere (removed pending issue #3); the screens
+ * render the rows as stored, and each screen narrows the one list itself
+ * (src/lib/active-runs.ts).
  *
  * Also the queryFn of queryKeys.activeRuns (activeRunsQuery in
  * active-runs-query.ts). On the server it runs only inside getActiveRunsState
  * (active-runs-state.ts), after connection(), so at request time and never in
  * a prerender pass; nothing it returns is frozen into the static shell. In
- * the browser it runs on a cache miss and in the realtime catch-up.
+ * the browser it runs on a cache miss and as the realtime catch-up's first
+ * (full) read, which sets the runs cursor (see getChangedRuns).
  *
- * fetched_at is the one clock read in the data layer. On the server it is
- * allowed because it only ever runs after connection() (a clock read before
- * it would fail the prerender, next-prerender-current-time); in the browser
- * the clock read is unconstrained.
+ * Its clock read (fetched_at and the window's cutoff) is activeReadClock, the
+ * one clock read in the data layer.
  */
 export async function getActiveRuns(): Promise<ActiveRuns> {
+  const { fetched_at, failed_since } = activeReadClock();
   const { data, error } = await getSupabase()
     .from("runs")
     .select(RUN_COLUMNS)
-    .in("status", ["running", "failed"])
+    .or(activeRunsFilter(failed_since))
     .order("updated_at", { ascending: false });
   if (error) {
     throw new Error(`runs: ${error.message}`);
@@ -221,8 +246,42 @@ export async function getActiveRuns(): Promise<ActiveRuns> {
     // one place the table's shape is asserted (getCompletedRuns casts the same
     // select).
     active: (data ?? []) as Run[],
-    fetched_at: new Date().toISOString(),
+    fetched_at,
   };
+}
+
+/** What the incremental catch-up read returns: every run changed since the cursor, any status. */
+export interface ChangedRuns {
+  /** The runs with updated_at at or after the cursor minus the overlap, most recently updated first. */
+  changed: Run[];
+  /** The failed-run window's cutoff at the moment of the read, for the merge. */
+  failed_since: string;
+  /** ISO timestamp of the moment the rows were read. */
+  fetched_at: string;
+}
+
+/**
+ * Every visible run whose updated_at is at or after `cursor` minus
+ * CATCH_UP_OVERLAP_MS, any status, narrow columns. Browser only: called by
+ * the realtime catch-up after a full getActiveRuns read set the cursor, which
+ * is always a server updated_at, never the client clock. Any status, because a
+ * run that became completed while the socket was down must be read to be
+ * removed (applyChangedRuns in apply-run-change.ts). It cannot see a deleted
+ * run; the next page load's full read drops it.
+ */
+export async function getChangedRuns(cursor: string): Promise<ChangedRuns> {
+  const { fetched_at, failed_since } = activeReadClock();
+  const { data, error } = await getSupabase()
+    .from("runs")
+    .select(RUN_COLUMNS)
+    .gte("updated_at", changedRunsSince(cursor))
+    .order("updated_at", { ascending: false });
+  if (error) {
+    throw new Error(`runs: ${error.message}`);
+  }
+
+  // The same cast as in getActiveRuns: the selected columns are exactly the fields of Run.
+  return { changed: (data ?? []) as Run[], failed_since, fetched_at };
 }
 
 /**

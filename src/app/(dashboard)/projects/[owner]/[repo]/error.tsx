@@ -1,5 +1,9 @@
 "use client";
 
+import posthog from "posthog-js";
+import { useEffect } from "react";
+import { readAnalyticsContext, reportBoundaryError } from "@/lib/analytics";
+
 // Error boundary for the project segment. Rendered inside the two-pane shell
 // when the page throws, so the sidebar stays put and the next project is one
 // click away. notFound() does not land here; it renders not-found.tsx instead.
@@ -10,6 +14,14 @@ export default function ProjectError({
   error: Error & { digest?: string };
   retry: () => void;
 }) {
+  // Send the error to PostHog once per error (production only, never from an
+  // automated browser). A server render that failed arrives here with its
+  // digest, which matches the server-side exception.
+  useEffect(() => {
+    const { env, browser } = readAnalyticsContext();
+    reportBoundaryError(env, browser, posthog, error, "project");
+  }, [error]);
+
   return (
     <div className="flex min-h-64 items-center justify-center rounded-lg border border-dashed border-neutral-300 p-8 text-center dark:border-neutral-700">
       <div>

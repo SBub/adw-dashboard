@@ -1,6 +1,7 @@
 // Domain types. The interfaces in the first section (Project, Run, QueueItem
-// and Worker) mirror the database tables column for column; keep them in
-// lockstep with the schema. The second
+// and Worker) mirror the columns of the database tables the dashboard reads;
+// keep them in lockstep with the schema. Run leaves out runs.state on purpose
+// (see Run). The second
 // section holds what the data layer reads from a view or assembles for a
 // screen, never a leaf component: ProjectSummary (the project_summaries view),
 // DailySummary (the daily_summary columns the page reads), DailyModelSummary
@@ -30,6 +31,11 @@ export interface Project {
   updated_at: string;
 }
 
+/**
+ * The adw.runs columns the dashboard reads. runs.state (the toolkit's jsonb
+ * run state) is deliberately not read: no screen shows it, and it was about
+ * half the bytes of every Active read (issue #243).
+ */
 export interface Run {
   project_id: string;
   adw_id: string;
@@ -40,7 +46,6 @@ export interface Run {
   pr_number: number | null;
   phase: string | null;
   status: RunStatus;
-  state: Record<string, unknown>;
   toolkit_version: string | null;
   started_at: string;
   updated_at: string;

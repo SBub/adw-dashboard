@@ -9,8 +9,8 @@ import { groupActiveRuns } from "@/lib/active-runs";
 import { RunRow } from "./RunRow";
 
 /**
- * Every active run (status running or failed) of every visible project, on
- * /projects, grouped by project in the sidebar's order. A client component
+ * Every active run (status running, or failed in the last 7 days) of every
+ * visible project, on /projects, grouped by project in the sidebar's order. A client component
  * so it reads the one Active entry from the React Query cache, the same rows
  * the sidebar counts and every project page shows, where the runs Realtime
  * listener updates them in place. The entry is read per request and hydrated

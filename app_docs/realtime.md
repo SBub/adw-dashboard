@@ -4,10 +4,12 @@
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
 - specs/issue-169-adw-98e70d08-sdlc_planner-who-you-are-home-page.md
+- specs/issue-240-adw-94a45897-sdlc_planner-cut-realtime-request-bursts.md
+- specs/issue-243-adw-e2976ef7-sdlc_planner-narrow-active-runs-reads.md
 
 ## Overview
 
-Live updates over one Supabase Realtime channel, `adw`, opened by `startRealtime` in `src/data/realtime.ts` from `Providers`: the pure reducers that write each event into the query cache, the catch-up read on every `SUBSCRIBED`, and the connection indicator.
+Live updates over one Supabase Realtime channel, `adw`, opened by `startRealtime` in `src/data/realtime.ts` from `Providers` once the page has been visible for 2 s: the pure reducers that write each event into the query cache, the coalesced catch-up read requested on every `SUBSCRIBED`, the reconnect backoff, and the connection indicator.
 
 ## How it works
 
@@ -35,7 +37,11 @@ dropping `history:<slug>` followed by a route refresh (see "The move" in `app_do
 
 `src/data/realtime.ts` exports `startRealtime(queryClient, options)`, where
 `options.onHistoryChange?: (slug) => void` is the hook `Providers` uses to
-start the move (`app_docs/history-revalidation.md`). It opens one channel named `adw` with three
+start the move (`app_docs/history-revalidation.md`), and
+`options.onStatus?: (state) => void` is called with every channel state after
+the indicator is set; `Providers` passes the Realtime connection tracker
+there (`realtime_connected`, `realtime_disconnected`, see
+`app_docs/analytics.md`). It only observes. It opens one channel named `adw` with three
 `postgres_changes` listeners, every event on `adw.projects`, `adw.runs` and
 `adw.queue_items`. A projects event goes through
 `applyProjectChange` (next section) and the result is written under
@@ -64,18 +70,28 @@ version defaulted a missing list to `[]`, which could do exactly that).
 
 The channel's subscribe callback is the one writer of the connection
 indicator: `SUBSCRIBED` sets `Live`, `CHANNEL_ERROR` and `TIMED_OUT` set
-`Reconnecting`, `CLOSED` sets `Connecting`. `SUBSCRIBED` also runs the
-catch-up read (below). The function returns a closer that removes the channel
-and resets the indicator to `Connecting`.
+`Reconnecting`, `CLOSED` sets `Connecting`. `SUBSCRIBED` also requests the
+catch-up read (below). The same callback signals the reconnect backoff:
+`realtimeBackoff.up()` on `SUBSCRIBED`, `realtimeBackoff.down()` on
+`CHANNEL_ERROR`, `TIMED_OUT` and `CLOSED`. The function returns a closer that
+cancels the catch-up runner, removes the channel and resets the indicator to
+`Connecting`, so the next start begins like a fresh page (its first
+`SUBSCRIBED` catches up).
 
-`src/app/providers.tsx` starts it from a `useEffect`, passing
+`src/app/providers.tsx` starts it from a `useEffect` through
+`deferWhileVisible` (`src/lib/request-pacing.ts`): the channel opens only once
+the page has been visible for 2 s in one stretch, a page hidden before then
+clears the timer, and a page that has not opened it yet tries again 2 s after
+it becomes visible. Once opened, the channel stays open while the page is
+hidden. The indicator reads `connecting` for those first 2 s. The call passes
 `onHistoryChange: (slug) => { void revalidateHistory(slug).then(() => { if (isProjectPath(window.location.pathname, slug)) router.refresh(); }).catch(() => {}) }`
 (revalidate first, refresh second and only when that project's page is the
 route on screen; a failed action is swallowed and leaves History stale until
-the cache lifetime). The returned closer is the effect's
-cleanup, so the channel is removed when the provider unmounts. In development React's strict mode runs
-mount, cleanup, mount, so the indicator shows one connect, close and reconnect;
-production connects once.
+the cache lifetime). The deferral's stop function is the effect's cleanup: it
+clears a pending timer, or calls the closer if the channel was opened, so the
+channel is removed when the provider unmounts. React's development-mode double
+mount (mount, cleanup, mount) clears the first timer before it fires, so
+development opens the channel once, like production.
 
 ### Event to cache
 
@@ -109,9 +125,21 @@ covered by `src/data/apply-run-change.test.ts`:
   back to `running` stays where it was, now `running`) and **removes** it when
   the new status is `completed`; a live run that is not in the list is added
   as an insert would, since the event carries the full row. DELETE removes the
-  run keyed by `ev.old`. `fetched_at` is never touched: it records when
+  run keyed by `ev.old`. Only the fields of `Run` are stored (`toRun`), never
+  the `state` jsonb the event carries. There is no window check in the event
+  path (no clock there): an UPDATE stamps `updated_at` through the database
+  trigger, so a failed event is always fresh, and the next catch-up prunes
+  failed runs older than 7 days. `fetched_at` is never touched: it records when
   the rows were read, which an event does not change. The input is returned
   by identity when nothing changed.
+- `applyChangedRuns(current: ActiveRuns, read: ChangedRuns): ActiveRuns`
+  merges the incremental catch-up read. It prunes every failed run in the
+  entry that aged out of the window (`read.failed_since`), replaces in place
+  or prepends (in the read's order) every changed row that is in the window
+  (`isInActiveWindow`), and removes the row of every changed run that is not
+  (completed, cancelled, any non-live status, or a failure older than the
+  window). A row the overlap re-reads replaces itself, so nothing is
+  duplicated. `fetched_at` comes from the read; the input is never mutated.
 - `isHistoryChange(ev, previousStatus): boolean` says whether the event
   changed the project's completed runs, which the cache does not hold: true
   for an INSERT or UPDATE whose new status is `completed`, and for a DELETE of
@@ -178,11 +206,10 @@ reconnect the cache must be re-read. The first connect has the same gap: the
 page's entries come from a static shell whose cache may be up to 15 minutes old
 (the server-side `cacheLife`), and anything that changed between that fill and
 the moment the channel joined was never an event this browser saw. Both are
-handled by one path: on **every** `SUBSCRIBED`, `realtime.ts` calls
-`getProjects()` and writes the result under `queryKeys.projects`, then calls
-`getActiveRuns()` and writes the result under `queryKeys.activeRuns`
-unconditionally (it is the complete list read from the database, not a
-one-event seed, so the `current &&` rule does not apply), then for every
+handled by one path: on **every** `SUBSCRIBED`, `realtime.ts` requests a
+catch-up from `createCoalescedRunner` (`src/lib/request-pacing.ts`), which then
+calls `getProjects()` and writes the result under `queryKeys.projects`, then
+reads the runs, then for every
 queue entry in the cache (`queryClient.getQueryCache().findAll(...)` with `queryKeys.allQueues`, the `["queue"]` prefix exported from
 `query-keys.ts`) calls `getQueue(slug)` and writes the result under `queryKeys.queue(slug)`.
 There is no "was I disconnected" flag to keep in step; the first `SUBSCRIBED`
@@ -190,23 +217,86 @@ and a reconnect are the same case. History needs no catch-up: it is not in the
 cache, and a completion this browser missed is the "unwatched completion"
 caveat above.
 
+The runs step is full first, then incremental (issue #243), through a runs
+cursor held in the `startRealtime` closure:
+
+- The first catch-up of a `startRealtime` calls `getActiveRuns()`, the full
+  windowed narrow read, because the served page can be old, and writes it
+  under `queryKeys.activeRuns` unconditionally (it is the complete list read
+  from the database, not a one-event seed, so the `current &&` rule does not
+  apply). It sets the cursor to the highest `updated_at` it read
+  (`latestUpdatedAt`). An empty read leaves the cursor unset, so the next
+  catch-up is another (tiny) full read.
+- Every run INSERT or UPDATE advances the cursor once it is set (an event
+  before the first catch-up must not make that catch-up incremental; an event
+  dropped for an unknown project does not advance it).
+- Every later catch-up calls `getChangedRuns(cursor)`: the runs with
+  `updated_at >= cursor - 60 s` (`CATCH_UP_OVERLAP_MS`, which covers writes
+  committed slightly out of order), any status, narrow columns, and merges
+  them with `applyChangedRuns` into the entry that is there. When the entry is
+  absent it writes nothing and resets the cursor, so the next catch-up is a
+  full read. The cursor then moves to the highest `updated_at` read.
+- The cursor is always a server `updated_at` the tab received, never the
+  client clock, and only moves after its write succeeded. The closer resets
+  it, so a restart begins with a full read like a fresh page.
+- Queues stay full `getQueue` reads: a deleted queue item is invisible to an
+  incremental read. A run deleted, or a project made private, while the tab is
+  open stays in the Active entry until the next page load, for the same
+  reason.
+
 It writes with `setQueryData`, not `invalidateQueries` or `refetchQueries`:
 both skip queries with `staleTime: "static"`, which every query here has, so
 they would be a silent no-op. The reads go through the boundary functions
 themselves, so the refreshed entries have exactly the shape the prefetch put
-there. `getActiveRuns` stamps a fresh `fetched_at`, which nothing in the UI
+there. Both runs reads stamp a fresh `fetched_at`, which nothing in the UI
 reads today.
 
-Cost: one `project_summaries` read, one `runs` read, and one `getQueue` (two
-reads) per cached queue entry, per (re)connect. The cache holds the project
+The runner coalesces requests with a 1 s debounce, so a burst of `SUBSCRIBED`
+runs one catch-up. A run never starts while one is in flight, and a run
+requested less than 10 s after the previous one finished is skipped. The
+closer cancels the runner and puts it back to a fresh state, so the first
+`SUBSCRIBED` of a page always catches up. Events missed by a reconnect that
+falls inside that 10 s window are recovered at the next catch-up or by the next
+event for that row, the same "next event corrects it" stance as the in-flight
+case below.
+
+The socket's reconnect delay comes from `createReconnectBackoff`
+(`realtimeBackoff` in `src/data/supabase.ts`, passed as
+`realtime.reconnectAfterMs`, see "The client" in `app_docs/data-boundary.md`):
+2, 4, 8, 16, then 30 s, each up to 25% longer and never above 30 s. Its
+attempt counter resets only after the channel has stayed `SUBSCRIBED` for
+60 s. realtime-js's own default resets on every open, so a socket that opened
+and then dropped reconnected every few seconds, with a full catch-up each time.
+
+Cost: one `project_summaries` read, one `runs` read (the windowed narrow
+Active list the first time, then only the rows changed since the cursor;
+never the `state` jsonb, about half the bytes of a row), and one `getQueue`
+(two reads) per cached queue entry, once per page that stays visible at least 2 s,
+plus at most one per reconnect burst (coalesced and cooled down as above), with
+reconnects spaced by the backoff. The cache holds the project
 list, the one Active entry and the queue of each project visited this
-session, so this is a handful of small reads;
-in development React's strict mode connects twice on mount, so it runs twice
-there. A failed catch-up is logged with `console.warn` and swallowed: the cache
+session, so this is a handful of small reads. A failed catch-up is logged with `console.warn` and swallowed: the cache
 stays as it was and the next event or reconnect tries again. An event that
 arrives while a catch-up read is in flight is applied first and then
 overwritten by the read's result, which can predate it by the round-trip time;
 the next event for that row corrects it.
+
+### Request budget
+
+`e2e/realtime_request_budget.spec.ts` pins the budget in the browser. Its
+limits are ceilings with headroom, not exact counts:
+
+- A steady minute on `/projects` opens one socket, reads `project_summaries`
+  and `runs` at most twice each and `workers` at most four times, and the pill
+  is still `live` at the end.
+- A socket the test closes 3 s after every open opens at most six sockets and
+  reads `project_summaries` at most six times in a minute.
+- Sixty synthetic `visibilitychange` events, one every 500 ms, poll `workers`
+  at most five times (see "The worker store's clock read" in
+  `app_docs/clock-and-prerender.md`).
+- Twenty one-second page visits open at most two sockets.
+- A page left open still goes `live` with exactly one socket and reads
+  `project_summaries` after it opened (the catch-up).
 
 ### The indicator
 
@@ -291,17 +381,30 @@ live updates (above) go through the query cache, not this store.
   `onHistoryChange` call last, after both `setQueryData` writes. Likewise the
   previous queue membership is read with `queuedIn` BEFORE the queue entry is
   rewritten in `applyQueueEvent`, and passed to `applyQueueChangeToSummaries`.
-- The catch-up read runs on every `SUBSCRIBED` (first connect and every
-  reconnect, one path, no flag) and writes with `setQueryData` through the
-  boundary functions (`getProjects`, `getActiveRuns`, `getQueue`). It must
-  never throw out of the socket callback: failures are `console.warn`ed and
-  swallowed. It writes `getActiveRuns()` under `queryKeys.activeRuns`
-  unconditionally (a complete list read from the database, not a one-event
-  seed, so the `current &&` rule above does not apply to it). Enumerate the
+- The catch-up read is requested on every `SUBSCRIBED` (first connect and
+  every reconnect, one path, no flag) through the coalesced runner
+  (`createCoalescedRunner` in `src/lib/request-pacing.ts`); do not call
+  `catchUp` directly from the callback, and do not drop the debounce or the
+  cooldown. It writes with `setQueryData` through the
+  boundary functions (`getProjects`, `getActiveRuns`, `getChangedRuns`,
+  `getQueue`). It must never throw out of the socket callback: failures are
+  `console.warn`ed and swallowed. It writes `getActiveRuns()` under
+  `queryKeys.activeRuns` unconditionally (a complete list read from the
+  database, not a one-event seed, so the `current &&` rule above does not
+  apply to it). Do not seed the Active entry from an incremental read: it
+  only merges into an entry that is there. The incremental catch-up never
+  compares the client clock with `updated_at`: its since value comes from the
+  runs cursor, a server timestamp. Enumerate the
   cached queue entries with `queryKeys.allQueues`, the prefix in
   `query-keys.ts`, not an inline `["queue"]`. It never reads
   history.
 - One channel, named `adw`, opened by `startRealtime` and started only from
-  `Providers`, which is also the only place the `onHistoryChange` option is
-  wired (it needs `useRouter`). All three listeners (projects, runs,
+  `Providers`, which is also the only place the `onHistoryChange` and
+  `onStatus` options are wired (the first needs `useRouter`). `onStatus` only
+  observes; nothing in the channel, the indicator or the catch-up depends on
+  it. All three listeners (projects, runs,
   queue_items) live on that channel; do not open a second one or start it from another component.
+- Do not start the channel before the 2 s visibility deferral
+  (`deferWhileVisible` in `Providers`), and do not replace
+  `realtime.reconnectAfterMs` with one that resets on open. The pacing
+  helpers read no clock; durations are timers.

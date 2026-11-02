@@ -98,6 +98,44 @@ export interface AnalyticsClient {
 }
 
 /**
+ * The one gate every PostHog send in this app goes through: the production
+ * deploy, both public variables set, and a real browser (`navigator.webdriver`
+ * not true). The server error handler (src/lib/server-errors.ts) passes no
+ * browser check of its own, see serverAnalyticsEnabled.
+ */
+function analyticsEnabled(env: AnalyticsEnv, browser: AnalyticsBrowser | undefined): boolean {
+  return serverAnalyticsEnabled(env) && browser !== undefined && browser.webdriver !== true;
+}
+
+/** The environment half of analyticsEnabled: production, with both variables set. */
+export function serverAnalyticsEnabled(env: AnalyticsEnv): boolean {
+  return env.vercelEnv === "production" && Boolean(env.projectToken) && Boolean(env.host);
+}
+
+/**
+ * The three public variables, read literally so Next inlines them at build
+ * time, and what the browser says about itself (undefined on the server).
+ * instrumentation-client.ts and the client components that send events read
+ * them through here, so the gate cannot drift between call sites.
+ */
+export function readAnalyticsContext(): {
+  env: AnalyticsEnv;
+  browser: AnalyticsBrowser | undefined;
+} {
+  return {
+    env: {
+      vercelEnv: process.env.NEXT_PUBLIC_VERCEL_ENV,
+      projectToken: process.env.NEXT_PUBLIC_POSTHOG_PROJECT_TOKEN,
+      host: process.env.NEXT_PUBLIC_POSTHOG_HOST,
+    },
+    browser:
+      typeof navigator !== "undefined" && typeof window !== "undefined"
+        ? { webdriver: navigator.webdriver, search: window.location.search }
+        : undefined,
+  };
+}
+
+/**
  * Initialises PostHog on production, with both variables set, in a browser
  * that is not automated (`navigator.webdriver` is not true), then applies the
  * `?internal=` tag. The client is passed in, as with createIdentityStore, so
@@ -110,18 +148,82 @@ export function startAnalytics(
   browser: AnalyticsBrowser | undefined,
   client: AnalyticsClient,
 ): boolean {
-  if (
-    env.vercelEnv !== "production" ||
-    !env.projectToken ||
-    !env.host ||
-    browser === undefined ||
-    browser.webdriver === true
-  ) {
-    return false;
-  }
+  // The last three repeat the gate only so TypeScript narrows them.
+  if (!analyticsEnabled(env, browser) || !env.projectToken || !env.host || !browser) return false;
   client.init(env.projectToken, env.host);
   const action = internalTagAction(browser.search);
   if (action === "tag") client.register({ [INTERNAL_PROPERTY]: true });
   if (action === "untag") client.unregister(INTERNAL_PROPERTY);
   return true;
+}
+
+/** The one PostHog call the realtime tracker needs; posthog satisfies it. */
+export interface CaptureClient {
+  capture(event: string, properties: Record<string, string | boolean>): void;
+}
+
+/** The channel states the tracker reports; REALTIME_SUBSCRIBE_STATES values. */
+export type RealtimeState = "SUBSCRIBED" | "CHANNEL_ERROR" | "TIMED_OUT" | "CLOSED";
+
+/**
+ * The Realtime connection events, for a chart of sockets opened per visit.
+ * Returns the status callback startRealtime calls on every channel state:
+ * `realtime_connected` on each SUBSCRIBED, with `reconnect` false for the
+ * first one in this page (this document, across Providers remounts, as long
+ * as the same tracker is used) and true after it, and `realtime_disconnected`
+ * with the `state` on CHANNEL_ERROR, TIMED_OUT and CLOSED. Outside the
+ * analyticsEnabled gate (not production, a variable missing, an automated
+ * browser, the server) it returns a callback that sends nothing. It never
+ * throws: it runs inside the socket's status callback.
+ */
+export function createRealtimeTracker(
+  env: AnalyticsEnv,
+  browser: AnalyticsBrowser | undefined,
+  client: CaptureClient,
+): (state: RealtimeState) => void {
+  if (!analyticsEnabled(env, browser)) return () => {};
+  let connects = 0;
+  return (state) => {
+    try {
+      if (state === "SUBSCRIBED") {
+        client.capture("realtime_connected", { reconnect: connects > 0 });
+        connects += 1;
+      } else {
+        client.capture("realtime_disconnected", { state });
+      }
+    } catch {
+      // Analytics must never break the socket callback.
+    }
+  };
+}
+
+/** The one PostHog call an error boundary needs; posthog satisfies it. */
+export interface ExceptionClient {
+  captureException(error: unknown, properties: Record<string, string>): void;
+}
+
+/**
+ * Sends an error a segment or section boundary caught, tagged with which
+ * boundary (`boundary`) and, for a server render that failed, the `digest`
+ * that matches the server-side exception (src/lib/server-errors.ts). The same
+ * gate as every other send. Never throws: it runs while React renders the
+ * fallback.
+ */
+export function reportBoundaryError(
+  env: AnalyticsEnv,
+  browser: AnalyticsBrowser | undefined,
+  client: ExceptionClient,
+  error: unknown,
+  boundary: "project" | "section" | "query",
+): void {
+  if (!analyticsEnabled(env, browser)) return;
+  const digest =
+    typeof error === "object" && error !== null && "digest" in error
+      ? String(error.digest)
+      : undefined;
+  try {
+    client.captureException(error, digest ? { boundary, digest } : { boundary });
+  } catch {
+    // Reporting must never break the error fallback.
+  }
 }

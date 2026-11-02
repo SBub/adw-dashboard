@@ -11,9 +11,10 @@ import {
 
 // A History card shows Branch, Finished, Duration, then PR and Cost when the
 // run has them, with no status pill, no Final phase and no Started. The branch
-// is shown in full, selected whole by one click, with a GitHub tree link
-// beside it; the fields sit on one row at 1280px and stack at 375px. The long
-// branch is set in the test browser's DOM only.
+// is shown in full as plain text, selected whole by one click, never a link
+// (the toolkit deletes merged branches); the PR field is the card's pull
+// request link. The fields sit on one row at 1280px and stack at 375px. The
+// long branch is set in the test browser's DOM only.
 
 const BRANCH_DT = /^Branch$/;
 const PR_DT = /^PR$/;
@@ -79,11 +80,7 @@ test.describe("history card fields", () => {
   });
 
   test("the first card shows exactly its fields", async ({ page }) => {
-    const href = await requireProject(
-      page,
-      firstCardHasBranch,
-      "no project has a History row with a branch",
-    );
+    await requireProject(page, firstCardHasBranch, "no project has a History row with a branch");
     const card = sectionRows(page, "Shipped").first();
 
     const dts = (await card.locator("dt").allTextContents()).map((t) => t.trim());
@@ -112,19 +109,17 @@ test.describe("history card fields", () => {
     expect(styles.whiteSpace).not.toBe("nowrap");
     expect(styles.noOverflow).toBe(true);
 
-    const treePath = branch.split("/").map(encodeURIComponent).join("/");
-    const link = card.getByRole("link", { name: `Open branch ${branch} on GitHub` });
-    await expect(link).toHaveAttribute(
-      "href",
-      `https://github.com/${slugOf(href)}/tree/${treePath}`,
-    );
-    await expect(link).toHaveAttribute("target", "_blank");
-    await expect(link).toHaveAttribute("rel", "noreferrer");
+    await expect(dd.locator("a")).toHaveCount(0);
 
     // One row at 1280px.
     const [firstTop, ...tops] = await fieldTops(card);
     if (firstTop === undefined) throw new Error("the card has no fields");
     for (const top of tops) expect(Math.abs(top - firstTop)).toBeLessThanOrEqual(2);
+  });
+
+  test("no History card links to a branch tree", async ({ page }) => {
+    await requireProject(page, firstCardHasBranch, "no project has a History row with a branch");
+    await expect(section(page, "Shipped").locator('a[href*="/tree/"]')).toHaveCount(0);
   });
 
   test("a PR field links to the pull request", async ({ page }) => {

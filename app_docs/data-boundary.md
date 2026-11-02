@@ -6,6 +6,7 @@
 - specs/issue-158-adw-a58f07d8-sdlc_planner-worker-status-widget.md
 - specs/issue-164-adw-cf1087b2-sdlc_planner-hire-me-page-contact-form.md
 - specs/issue-169-adw-98e70d08-sdlc_planner-who-you-are-home-page.md
+- specs/issue-240-adw-94a45897-sdlc_planner-cut-realtime-request-bursts.md
 
 ## Overview
 
@@ -47,12 +48,23 @@ Active or History, a held or skipped one is not shown. It selects `QUEUE_COLUMNS
 The runs are read in two halves, because they have two lifetimes:
 
 - `getActiveRuns()` (no argument) reads the rows of `adw.runs` **whose
-  `status` is `running` or `failed`**, for every project the publishable key
+  `status` is `running`, or `failed` with `updated_at` within the last
+  `FAILED_RUN_WINDOW_DAYS` (7) days**, for every project the publishable key
   can see (RLS), ordered by `updated_at` descending, and returns them as
   `{ active, fetched_at }`, stamped with `fetched_at`, the ISO time the rows
-  were read. It is one entry for every project: the sidebar counts it,
-  `/projects` groups it and each project page selects its own rows from it
-  (`src/lib/active-runs.ts`).
+  were read. The window is one PostgREST `or` filter,
+  `status.eq.running,and(status.eq.failed,updated_at.gte."<cutoff>")`, the
+  cutoff quoted like the History keyset filters. It is one entry for every
+  project: the sidebar counts it, `/projects` groups it and each project
+  page selects its own rows from it (`src/lib/active-runs.ts`).
+- `getChangedRuns(cursor)` (browser only, the realtime catch-up after its
+  first full read) reads every visible run whose `updated_at` is at or after
+  `cursor` minus 60 s, any status, `updated_at` descending, and returns
+  `ChangedRuns`, `{ changed: Run[]; failed_since: string; fetched_at: string }`.
+  Any status, because a run that completed must be read to be removed
+  (`applyChangedRuns`, see `app_docs/realtime.md`). It cannot see a deleted
+  run. Both runs reads take their clock from one private helper,
+  `activeReadClock()` (see `app_docs/clock-and-prerender.md`).
 - `getCompletedRuns(slug, bookmark, q)` reads the project row from
   `adw.project_summaries` by slug, then one
   page of the rows of `adw.runs` for that id where `status` is `completed`
@@ -80,9 +92,13 @@ In SQL terms:
 
 ```sql
 select project_id, adw_id, issue_number, issue_title, issue_class, branch_name,
-       pr_number, phase, status, state, toolkit_version, started_at, updated_at, finished_at
-  from adw.runs where status in ('running', 'failed')
+       pr_number, phase, status, toolkit_version, started_at, updated_at, finished_at
+  from adw.runs where status = 'running'
+    or (status = 'failed' and updated_at >= now() - interval '7 days')
  order by updated_at desc;                                    -- Active, all projects
+select <same columns>
+  from adw.runs where updated_at >= $cursor - interval '60 seconds'
+ order by updated_at desc;                                    -- catch-up after the first
 select * from adw.project_summaries where slug = $1;
 select <same columns>
   from adw.runs where project_id = $2 and status = 'completed'
@@ -111,6 +127,8 @@ returns):
 - `getProjects(): Promise<ProjectSummary[]>`
 - `getActiveRuns(): Promise<ActiveRuns>`, where `ActiveRuns` is
   `{ active: Run[]; fetched_at: string }`
+- `getChangedRuns(cursor): Promise<ChangedRuns>`, where `ChangedRuns` is
+  `{ changed: Run[]; failed_since: string; fetched_at: string }`
 - `getCompletedRuns(slug, bookmark, q): Promise<CompletedRunsPage>`, where
   `CompletedRunsPage` (exported from `src/data/index.ts`) is `HistoryPage`
   plus `costs: Record<string, number>` (each shown run's cost in US dollars
@@ -129,7 +147,8 @@ plumbing, not data, and the server action in `src/app/actions/` touches no
 data at all (it drops cache tags). The Supabase client is untyped (no
 generated `Database` type yet), so the boundary casts rows once: the view's
 rows to `ProjectSummary`, the runs rows to `Run[]` (the shared `RUN_COLUMNS`
-select is exactly the fields of `Run`) and the queue rows to `QueueItem[]`
+select is exactly the fields of `Run`, which leaves out the unread `state`
+jsonb) and the queue rows to `QueueItem[]`
 (`QUEUE_COLUMNS`, exactly the fields of `QueueItem`) and the `run_metrics`
 rows to `RunMetrics[]` (`RUN_METRICS_COLUMNS`, exactly the fields of
 `RunMetrics`). Generating types for the
@@ -170,7 +189,8 @@ enter the query cache.
 - `queryKeys` in `query-keys.ts`, the single home of every query key:
   `queryKeys.projects` (`["projects"]`) for the project list,
   `queryKeys.activeRuns` (`["active-runs"]`) for the one Active entry (every
-  project's running and failed runs; there is no per-project runs key),
+  project's running runs and failed runs from the last 7 days; there is no
+  per-project runs key),
   `queryKeys.queue(slug)` (`["queue", slug]`) for a project's queued items,
   `queryKeys.summaryToday(day)` (`["summary-today", day]`) for the summary
   page's today card, and the prefix `queryKeys.allQueues`
@@ -291,6 +311,19 @@ if either variable is missing rather than connecting to nowhere. The same
 client serves the server-side read of `project_summaries` in `getProjects()`;
 on the server no channel is ever subscribed, so no socket is opened there.
 
+`createClient` is called with
+`realtime: { reconnectAfterMs: () => realtimeBackoff.next() }`.
+`realtimeBackoff` (exported from the same file, built by
+`createReconnectBackoff` in `src/lib/request-pacing.ts`) replaces realtime-js's
+default reconnect delay (1, 2, 5, 10 s), whose `tries` counter restarts after
+every successful open, so a socket that opened then dropped reconnected every
+few seconds forever. The replacement keeps its own counter (2, 4, 8, 16, 30 s,
+each up to 25% longer, never above 30 s), reset only after the channel has
+stayed `SUBSCRIBED` for 60 s, signalled from `src/data/realtime.ts`. Only the
+socket delay is replaced; the channel's own rejoin timer keeps its default and
+rejoins when the socket reopens. On the server no channel subscribes, so the
+option is inert there. It is still the one `createClient` call.
+
 ## Rules
 
 - Wiring happens at one boundary, `src/data/`. Pages and components import
@@ -313,7 +346,7 @@ on the server no channel is ever subscribed, so no socket is opened there.
   boundary adds nothing; do not reintroduce one); `getCompletedRuns` is never
   a `queryFn`. All four are async database reads: `getProjects` reads the
   `project_summaries` view, `getActiveRuns()` (no argument) reads the `runs`
-  table with `status in (running, failed)` for every visible project,
+  table for every running run and every failed run of the last 7 days of every visible project,
   `updated_at desc`, and returns `{ active, fetched_at }`,
   `getCompletedRuns(slug, bookmark, q)` the view by slug and then `runs` by
   `project_id` with `status = completed` and a `finished_at`

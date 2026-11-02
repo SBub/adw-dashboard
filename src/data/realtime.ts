@@ -15,15 +15,27 @@ import {
   queuedIn,
 } from "./apply-queue-change";
 import {
+  applyChangedRuns,
   applyRunChange,
   applyRunChangeToSummaries,
   isHistoryChange,
   type RunChange,
   runStatusIn,
 } from "./apply-run-change";
-import { type ActiveRuns, getActiveRuns, getProjects, getQueue } from "./index";
+import { type ActiveRuns, getActiveRuns, getChangedRuns, getProjects, getQueue } from "./index";
 import { queryKeys } from "./query-keys";
-import { getSupabase } from "./supabase";
+import { latestUpdatedAt } from "@/lib/active-runs";
+import { createCoalescedRunner } from "@/lib/request-pacing";
+import { getSupabase, realtimeBackoff } from "./supabase";
+
+/**
+ * The runs cursor of one startRealtime: the highest server updated_at this
+ * tab has read or been sent, or null before the first full read. Held by
+ * reference so the catch-up and the event handler share it.
+ */
+interface RunsCursor {
+  seen: string | null;
+}
 
 export interface RealtimeOptions {
   /**
@@ -35,6 +47,13 @@ export interface RealtimeOptions {
    * Called after the cache writes for the event.
    */
   onHistoryChange?: (slug: string) => void;
+  /**
+   * Called with every channel state after the indicator is set, so Providers
+   * can send the Realtime connection events (createRealtimeTracker in
+   * src/lib/analytics.ts). It only observes: nothing here depends on it, and
+   * it must not throw.
+   */
+  onStatus?: (state: `${REALTIME_SUBSCRIBE_STATES}`) => void;
 }
 
 /**
@@ -47,13 +66,18 @@ export interface RealtimeOptions {
  * not in the cache stays absent (setQueryData ignores an undefined result),
  * because seeding one from a single event would create a one-row list that
  * looks complete and is not. The channel's status callback is the one writer
- * of the connection indicator, and the trigger of the catch-up read.
+ * of the connection indicator, the trigger of the catch-up read (through a
+ * coalesced runner) and the up and down signal of the reconnect backoff.
  *
- * Returns the closer: it removes the channel and puts the indicator back to
- * Connecting, so the next start begins from the same state as a fresh page.
+ * Returns the closer: it cancels any pending catch-up, removes the channel,
+ * resets the runs cursor and puts the indicator back to Connecting, so the
+ * next start begins from the same state as a fresh page (its first SUBSCRIBED
+ * catches up with a full read).
  */
 export function startRealtime(queryClient: QueryClient, options: RealtimeOptions = {}): () => void {
   const supabase = getSupabase();
+  const runsCursor: RunsCursor = { seen: null };
+  const catchUpRunner = createCoalescedRunner(() => catchUp(queryClient, runsCursor));
 
   const channel: RealtimeChannel = supabase
     .channel("adw")
@@ -64,7 +88,7 @@ export function startRealtime(queryClient: QueryClient, options: RealtimeOptions
       );
     })
     .on<Run>("postgres_changes", { event: "*", schema: "adw", table: "runs" }, (ev) => {
-      applyRunEvent(queryClient, ev, options);
+      applyRunEvent(queryClient, ev, options, runsCursor);
     })
     .on<QueueItem>(
       "postgres_changes",
@@ -77,19 +101,25 @@ export function startRealtime(queryClient: QueryClient, options: RealtimeOptions
       switch (state) {
         case REALTIME_SUBSCRIBE_STATES.SUBSCRIBED:
           setConnectionStatus(ConnectionStatus.Live);
-          void catchUp(queryClient);
+          realtimeBackoff.up();
+          catchUpRunner.request();
           break;
         case REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR:
         case REALTIME_SUBSCRIBE_STATES.TIMED_OUT:
           setConnectionStatus(ConnectionStatus.Reconnecting);
+          realtimeBackoff.down();
           break;
         case REALTIME_SUBSCRIBE_STATES.CLOSED:
           setConnectionStatus(ConnectionStatus.Connecting);
+          realtimeBackoff.down();
           break;
       }
+      options.onStatus?.(state);
     });
 
   return () => {
+    catchUpRunner.cancel();
+    runsCursor.seen = null;
     void supabase.removeChannel(channel);
     setConnectionStatus(ConnectionStatus.Connecting);
   };
@@ -114,8 +144,19 @@ export function startRealtime(queryClient: QueryClient, options: RealtimeOptions
  * the history callback, so by the time the server re-renders the completed
  * run is already out of the Active entry (step one of the move; see Providers
  * for steps two and three).
+ *
+ * An INSERT or UPDATE advances the runs cursor to its updated_at (a server
+ * timestamp) when that is later, but only once the cursor is set: an event
+ * that lands before the first catch-up must not turn that first catch-up
+ * incremental. An event dropped for an unknown project does not advance it;
+ * the overlap and the next full read cover that.
  */
-function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: RealtimeOptions) {
+function applyRunEvent(
+  queryClient: QueryClient,
+  ev: RunChange,
+  options: RealtimeOptions,
+  cursor: RunsCursor,
+) {
   const key = ev.eventType === "DELETE" ? ev.old : ev.new;
   const { project_id: projectId, adw_id: adwId } = key;
   if (projectId === undefined || adwId === undefined) return;
@@ -139,6 +180,9 @@ function applyRunEvent(queryClient: QueryClient, ev: RunChange, options: Realtim
     queryKeys.projects,
     (current) => current && applyRunChangeToSummaries(current, ev, oldStatus),
   );
+  if (ev.eventType !== "DELETE" && cursor.seen !== null) {
+    cursor.seen = latestUpdatedAt([ev.new], cursor.seen);
+  }
 
   if (isHistoryChange(ev, oldStatus)) options.onHistoryChange?.(project.slug);
 }
@@ -188,7 +232,11 @@ function cachedSlugs(queryClient: QueryClient, prefix: readonly string[]): strin
 }
 
 /**
- * Refreshes the cached entries from the database, on every SUBSCRIBED.
+ * Refreshes the cached entries from the database. Every SUBSCRIBED requests
+ * it through the coalesced runner in startRealtime (src/lib/request-pacing.ts):
+ * SUBSCRIBED callbacks within 1 s give one catch-up, a catch-up never runs
+ * while another is in flight, and one requested less than 10 s after the
+ * previous one finished is skipped. The first SUBSCRIBED always catches up.
  *
  * Why on every SUBSCRIBED and not only after a drop. Events that happen while
  * the channel is down are never delivered, so a reconnect must re-read. But
@@ -204,24 +252,42 @@ function cachedSlugs(queryClient: QueryClient, prefix: readonly string[]): strin
  * ProjectNav for why), so they would be a silent no-op. The data is read
  * through the boundary functions themselves and written under the same keys
  * the reads use, which is also what keeps the hydration-era prefetch and this
- * refresh identical in shape. getActiveRuns stamps a fresh fetched_at, which
+ * refresh identical in shape. Both runs reads stamp a fresh fetched_at, which
  * nothing in the UI reads today.
+ *
+ * Runs: full first, then incremental (issue #243). The first catch-up of a
+ * startRealtime is a full windowed read (getActiveRuns), because the served
+ * page can be old; it sets the runs cursor to the highest updated_at it read.
+ * Every later catch-up reads only the runs changed since the cursor minus 60 s
+ * (getChangedRuns, any status) and merges them (applyChangedRuns). The cursor
+ * is always a server updated_at, never the client clock, and only moves after
+ * its write succeeded. An empty full read leaves it null, so the next
+ * catch-up is another (tiny) full read. A run deleted, or a project made
+ * private, while the tab is open stays until the next page load: an
+ * incremental read cannot see either. Queues stay full reads, because a
+ * deleted queue item is invisible to an incremental read.
  *
  * History needs no catch-up: it is server-rendered from a cache scope that a
  * completion drops through the server action, and a completion this browser
  * missed while disconnected leaves that page's History as the server has it,
  * which is refilled on the cache lifetime or the next completion anyone sees.
  *
- * The Active entry is written unconditionally, unlike the per-event updaters
- * (`current && ...`): getActiveRuns is the complete list read from the
- * database, not a one-row seed, so writing it when it was absent cannot make
- * a partial list look complete. The queue entries are only refreshed where
+ * The full read writes the Active entry unconditionally, unlike the per-event
+ * updaters (`current && ...`): getActiveRuns is the complete list read from
+ * the database, not a one-row seed, so writing it when it was absent cannot
+ * make a partial list look complete. The incremental read is never a seed: it
+ * only merges into an entry that is there, and when the entry is absent it
+ * resets the cursor so the next catch-up is a full read. The queue entries are only refreshed where
  * they are cached (one per project page visited this session).
  *
- * Cost: one project_summaries read, one runs read, and one getQueue (two
- * reads) per queue entry in the cache, per (re)connect: a handful of small
- * reads. In development React's strict mode connects twice on mount, so it
- * runs twice there.
+ * Cost: one project_summaries read, one runs read (the windowed narrow list
+ * the first time, only the rows changed since the cursor afterwards; never the
+ * state jsonb), and one getQueue (two reads) per queue entry in the cache, per
+ * catch-up: once per page that stays
+ * visible for 2 s (Providers defers the channel), plus at most one per burst
+ * of reconnects, which the backoff in getSupabase() spaces out. Events missed
+ * by a reconnect inside the 10 s skip window are recovered at the next
+ * catch-up or the next event for that row.
  *
  * Failures are logged and swallowed: a failed refresh leaves the cache as it
  * was, which is the state before the refresh, and the next event or
@@ -230,12 +296,27 @@ function cachedSlugs(queryClient: QueryClient, prefix: readonly string[]): strin
  * and then overwritten by the read's result, which may predate it by the
  * round-trip time; the next event for that row corrects it.
  */
-async function catchUp(queryClient: QueryClient) {
+async function catchUp(queryClient: QueryClient, cursor: RunsCursor) {
   try {
     const projects = await getProjects();
     queryClient.setQueryData<ProjectSummary[]>(queryKeys.projects, projects);
 
-    queryClient.setQueryData<ActiveRuns>(queryKeys.activeRuns, await getActiveRuns());
+    if (cursor.seen === null) {
+      const active = await getActiveRuns();
+      queryClient.setQueryData<ActiveRuns>(queryKeys.activeRuns, active);
+      cursor.seen = latestUpdatedAt(active.active, null);
+    } else {
+      const read = await getChangedRuns(cursor.seen);
+      if (queryClient.getQueryData<ActiveRuns>(queryKeys.activeRuns)) {
+        queryClient.setQueryData<ActiveRuns>(
+          queryKeys.activeRuns,
+          (current) => current && applyChangedRuns(current, read),
+        );
+        cursor.seen = latestUpdatedAt(read.changed, cursor.seen);
+      } else {
+        cursor.seen = null;
+      }
+    }
     await Promise.all(
       cachedSlugs(queryClient, queryKeys.allQueues).map(async (slug) => {
         const items = await getQueue(slug);

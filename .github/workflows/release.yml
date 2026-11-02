@@ -1,0 +1,95 @@
+name: release
+
+# The release of a production pull request, after CI's check passes on a push
+# to master: the annotated tag release-<YYYY-MM-DD>-pr<N> on its merge commit,
+# a GitHub Release with the develop pull requests it shipped, a pull request
+# into develop with the changelog draft (never merged automatically) and a
+# PostHog release annotation. A rerun reports "already released" for each
+# step. workflow_dispatch with dry_run prints what it would create. See
+# app_docs/changelog.md, "Release workflow", and app_docs/analytics.md,
+# "Release markers".
+
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [master]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print what would be created, create nothing"
+        type: boolean
+        default: true
+      sha:
+        description: "Merge commit on master (default: master's head)"
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    # CI on a pull request into master, or a failed CI, never releases.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - run: git fetch origin master develop --tags
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable
+      - run: yarn install --immutable
+        env:
+          LEFTHOOK: 0
+      - id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha || inputs.sha }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          if [ -n "$SHA" ]; then args+=(--sha "$SHA"); fi
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          node scripts/release.ts "${args[@]}"
+      - name: Create PostHog annotation
+        # Only for a tag pushed in this run; a marker is nice to have, so
+        # nothing here may fail the release.
+        if: steps.release.outputs.tag_created == 'true'
+        continue-on-error: true
+        env:
+          POSTHOG_PERSONAL_API_KEY: ${{ secrets.POSTHOG_PERSONAL_API_KEY }}
+          TAG: ${{ steps.release.outputs.tag }}
+          MERGED_AT: ${{ steps.release.outputs.merged_at }}
+        run: |
+          if [ -z "$POSTHOG_PERSONAL_API_KEY" ]; then
+            echo "::notice::POSTHOG_PERSONAL_API_KEY is not set; skipping the PostHog release annotation."
+            exit 0
+          fi
+          content="adw-dashboard ${TAG}"
+          body="$(jq -n --arg content "$content" --arg date "$MERGED_AT" \
+            '{content: $content, date_marker: $date, scope: "project"}')"
+          status="$(curl -sS -o "$RUNNER_TEMP/annotation.json" -w '%{http_code}' \
+            -X POST "https://eu.posthog.com/api/projects/302689/annotations/" \
+            -H "Authorization: Bearer ${POSTHOG_PERSONAL_API_KEY}" \
+            -H "Content-Type: application/json" \
+            --data "$body")" || status="curl-error"
+          if [ "$status" = "201" ] || [ "$status" = "200" ]; then
+            echo "Created PostHog annotation: $content"
+          else
+            echo "::warning::PostHog annotation not created (HTTP $status)."
+          fi

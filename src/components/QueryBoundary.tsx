@@ -1,8 +1,10 @@
 "use client";
 
 import { useQueryErrorResetBoundary } from "@tanstack/react-query";
+import posthog from "posthog-js";
 import { type ReactNode, Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
+import { readAnalyticsContext, reportBoundaryError } from "@/lib/analytics";
 import { ErrorPanel } from "./ErrorPanel";
 
 type QueryBoundaryProps = {
@@ -14,6 +16,12 @@ type QueryBoundaryProps = {
   /** Replaces the default panel. Call `retry` to reset the boundary and refetch. */
   errorFallback?: (retry: () => void) => ReactNode;
 };
+
+/** Sends a caught error to PostHog (production only, never from an automated browser). */
+function reportError(error: unknown) {
+  const { env, browser } = readAnalyticsContext();
+  reportBoundaryError(env, browser, posthog, error, "query");
+}
 
 /**
  * The boundary every suspended query is rendered inside: a Suspense boundary
@@ -38,6 +46,7 @@ export function QueryBoundary({ children, fallback, detail, errorFallback }: Que
 
   return (
     <ErrorBoundary
+      onError={reportError}
       onReset={reset}
       fallbackRender={({ resetErrorBoundary }) =>
         errorFallback ? (

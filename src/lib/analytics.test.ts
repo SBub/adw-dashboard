@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { createIdentityStore, internalTagAction, startAnalytics } from "./analytics";
+import {
+  createIdentityStore,
+  createRealtimeTracker,
+  internalTagAction,
+  reportBoundaryError,
+  startAnalytics,
+} from "./analytics";
 
 const ANON = "0192a1b2-anonymous";
 
@@ -181,5 +187,94 @@ describe("startAnalytics", () => {
     const client = fakeAnalyticsClient();
     expect(() => startAnalytics(PROD, undefined, client)).not.toThrow();
     expect(client.init).not.toHaveBeenCalled();
+  });
+});
+
+const BROWSER = { webdriver: false, search: "" };
+
+describe("createRealtimeTracker", () => {
+  it("sends realtime_connected with reconnect false first and true after", () => {
+    const client = { capture: vi.fn() };
+    const track = createRealtimeTracker(PROD, BROWSER, client);
+    track("SUBSCRIBED");
+    track("CHANNEL_ERROR");
+    track("SUBSCRIBED");
+    track("SUBSCRIBED");
+    expect(client.capture.mock.calls).toEqual([
+      ["realtime_connected", { reconnect: false }],
+      ["realtime_disconnected", { state: "CHANNEL_ERROR" }],
+      ["realtime_connected", { reconnect: true }],
+      ["realtime_connected", { reconnect: true }],
+    ]);
+  });
+
+  it("sends realtime_disconnected with each non-subscribed state", () => {
+    const client = { capture: vi.fn() };
+    const track = createRealtimeTracker(PROD, BROWSER, client);
+    track("CHANNEL_ERROR");
+    track("TIMED_OUT");
+    track("CLOSED");
+    expect(client.capture.mock.calls).toEqual([
+      ["realtime_disconnected", { state: "CHANNEL_ERROR" }],
+      ["realtime_disconnected", { state: "TIMED_OUT" }],
+      ["realtime_disconnected", { state: "CLOSED" }],
+    ]);
+  });
+
+  it.each([
+    ["a preview deploy", { ...PROD, vercelEnv: "preview" }],
+    ["a local build", { ...PROD, vercelEnv: undefined }],
+    ["a missing token", { ...PROD, projectToken: undefined }],
+    ["a missing host", { ...PROD, host: undefined }],
+  ])("sends nothing on %s", (_label, env) => {
+    const client = { capture: vi.fn() };
+    const track = createRealtimeTracker(env, BROWSER, client);
+    track("SUBSCRIBED");
+    track("CLOSED");
+    expect(client.capture).not.toHaveBeenCalled();
+  });
+
+  it("sends nothing from an automated browser or with no browser", () => {
+    const client = { capture: vi.fn() };
+    createRealtimeTracker(PROD, { webdriver: true, search: "" }, client)("SUBSCRIBED");
+    createRealtimeTracker(PROD, undefined, client)("SUBSCRIBED");
+    expect(client.capture).not.toHaveBeenCalled();
+  });
+
+  it("never throws when capture throws", () => {
+    const client = {
+      capture: vi.fn(() => {
+        throw new Error("boom");
+      }),
+    };
+    const track = createRealtimeTracker(PROD, BROWSER, client);
+    expect(() => track("SUBSCRIBED")).not.toThrow();
+  });
+});
+
+describe("reportBoundaryError", () => {
+  it("sends the error with the boundary and the digest when there is one", () => {
+    const client = { captureException: vi.fn() };
+    const error = Object.assign(new Error("render failed"), { digest: "123" });
+    reportBoundaryError(PROD, BROWSER, client, error, "project");
+    reportBoundaryError(PROD, BROWSER, client, new Error("plain"), "section");
+    expect(client.captureException).toHaveBeenNthCalledWith(1, error, {
+      boundary: "project",
+      digest: "123",
+    });
+    expect(client.captureException.mock.calls[1]?.[1]).toEqual({ boundary: "section" });
+  });
+
+  it("sends nothing off production or from an automated browser", () => {
+    const client = { captureException: vi.fn() };
+    reportBoundaryError(
+      { ...PROD, vercelEnv: "preview" },
+      BROWSER,
+      client,
+      new Error("x"),
+      "query",
+    );
+    reportBoundaryError(PROD, { webdriver: true, search: "" }, client, new Error("x"), "query");
+    expect(client.captureException).not.toHaveBeenCalled();
   });
 });

@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-173-adw-3fe1f775-sdlc_planner-production-changelog-backfill.md
+- specs/issue-248-adw-35167e14-sdlc_planner-release-automation.md
 
 ## Overview
 
@@ -57,7 +58,7 @@ label comes from `changelogCountsLabel`: "N features, N fixes, N chores", "Branc
 three are 0, "Revert" for a revert. `getChangelogEntry` rejects an id that fails `isChangelogId` or
 is not in the registry before importing any module.
 
-### How it was generated
+### How a draft is generated
 
 ```sh
 git fetch origin master develop
@@ -80,16 +81,61 @@ committing (see What an entry says). A production pull request titled `revert:` 
 line naming the reverted issue and pull request (`parseRevert`). A release with no develop pull
 requests gets the line "No new pull requests; branch sync." and zero counts.
 
-The script stops when a merge commit is missing locally, when any target `.mdx` already exists (it
-refuses to overwrite, and checks before calling the API for stats) and on an em-dash in an entry. It rewrites
-`src/content/changelog/index.ts` from the folder.
+The script is incremental: it drafts only the production pull requests that have no `.mdx` yet,
+and checks merge commits and calls `gh api` for stats only for those. It never overwrites: each
+file is written with the `wx` flag. It rewrites `src/content/changelog/index.ts` from the folder and
+`PRODUCTION_PRS` in `src/content/changelog/registry.test.ts` with every production pull request.
+When nothing is missing it prints `No production pull request without an entry; nothing to draft.`
+and exits 0. It still stops on a missing merge commit and on an em-dash in an entry.
+`scripts/release.ts` runs it for the release workflow.
 
-### Adding an entry by hand
+### Release workflow
 
-Until a release script exists, write `src/content/changelog/<YYYY-MM-DD>-pr<N>.mdx` in the same
-shape (stats from `gh api repos/SBub/adw-dashboard/pulls/<N>`), add one line with a string-literal import to `CHANGELOG_ENTRIES` in
-`src/content/changelog/index.ts`, and add the pull request number to `PRODUCTION_PRS` in
-`src/content/changelog/registry.test.ts`. Keep `counts` equal to the number of lines under each
+`.github/workflows/release.yml` runs on `workflow_run` after a successful `ci` on a push to
+`master` (a pull request into `master`, or a failed CI, never releases), and on
+`workflow_dispatch`. One run at a time (`concurrency: release`). It runs `node scripts/release.ts`
+for the merge commit: the CI run's `head_sha`, or the dispatch's `sha` (default `master`'s head).
+
+The tag is the annotated tag `release-<entry id>` (`release-<YYYY-MM-DD>-pr<N>`, `releaseTag` in
+`src/lib/release.ts`) on the production pull request's merge commit. It is never moved or
+overwritten: a tag on another commit stops the run.
+
+The GitHub Release for that tag has notes listing the develop pull requests it shipped, grouped
+Features, Fixes and Chores by `groupPullRequests` and `sectionForPrefix`, the same code as the
+draft.
+
+The draft pull request, `chore: changelog draft for release-<id>`, goes from the branch
+`changelog/release-<id>` into `develop`. It carries what `scripts/backfill-changelog.ts` drafted,
+formatted, plus `index.ts` and `PRODUCTION_PRS`. The owner rewrites the title, description and
+lines (see What an entry says) before merging; `registry.test.ts` fails on the unedited draft. It
+is never merged automatically. CI does not run on it until the owner pushes to it, because pull
+requests opened with `GITHUB_TOKEN` trigger no workflows.
+
+The last step creates the PostHog release annotation; see `app_docs/analytics.md`, Release
+markers.
+
+Dry run: `workflow_dispatch` with `dry_run` (default true) and an optional `sha` prints the tag,
+the notes and the draft diff and creates nothing. The local equivalent:
+
+```sh
+git fetch origin master develop --tags
+node scripts/release.ts --sha <sha> --dry-run
+```
+
+Rerun: every step checks GitHub first and reports `already released` when its artefact exists, so
+a rerun is a no-op. After a failure, fix the cause and dispatch with the `sha`; never
+`gh run rerun`.
+
+Repository setting (one time, by the owner): `GITHUB_TOKEN` can open the draft pull request only
+with "Allow GitHub Actions to create and approve pull requests" on (Settings > Actions > General;
+`can_approve_pull_request_reviews` in `gh api repos/SBub/adw-dashboard/actions/permissions/workflow`,
+set with `gh api -X PUT repos/SBub/adw-dashboard/actions/permissions/workflow -f
+default_workflow_permissions=read -F can_approve_pull_request_reviews=true`). With it off the draft
+step fails. It is a setting, not a secret; the workflow never changes it.
+
+An entry can still be written by hand in the same shape: stats from `gh api
+repos/SBub/adw-dashboard/pulls/<N>`, one line with a string-literal import in `CHANGELOG_ENTRIES`,
+the pull request number in `PRODUCTION_PRS`, and `counts` equal to the number of lines under each
 heading. The registry test checks the files against the registry, that every production pull
 request has exactly one entry, the counts against the lines, that every entry has `stats`, and that
 no title or description reads like a promotion pull request ("promote", "develop to master", an ISO
@@ -107,7 +153,7 @@ there.
 
 ## Rules
 
-- The site build never calls GitHub or git; only the offline script does.
+- The site build never calls GitHub or git; only the offline scripts and the release workflow do.
 - No `fs` at runtime; only `registry.test.ts` and the script read the folder.
 - No clock reads in `src/lib/changelog.ts` or the pages: a date is a string from `meta`, never
   compared with the clock.
@@ -123,3 +169,7 @@ there.
   empty array (keep the `_` placeholder).
 - No em-dashes in entries: the script stops on one rather than rewriting text.
 - `changelog` stays a static segment, and no project page gets a one-segment URL.
+- Release tags are never moved or overwritten.
+- The changelog draft pull request is never merged automatically.
+- The release workflow runs only for a push to `master` (or a manual dispatch).
+- Never `gh run rerun` a failed release; fix the cause and dispatch with the `sha` instead.

@@ -31,7 +31,6 @@ function run(adw_id: string, finished_at: string | null, updated_at = finished_a
     pr_number: null,
     phase: "document",
     status: "completed",
-    state: {},
     toolkit_version: "1.0.0",
     started_at: "2026-10-01T09:00:00Z",
     updated_at,

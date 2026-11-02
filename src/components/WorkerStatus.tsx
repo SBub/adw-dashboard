@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 import { getWorkers } from "@/data";
+import { createCooldownGate } from "@/lib/request-pacing";
 import { STATUS_COLORS } from "@/lib/status-colors";
 import { nextWorkerSnapshot, type WorkerSnapshot } from "@/lib/worker-state";
 import { Timestamp } from "./Timestamp";
@@ -14,9 +15,9 @@ import { Timestamp } from "./Timestamp";
  * as ConnectionIndicator's: one writer (the poll below, outside React) and a
  * change must re-render this component and nothing else. adw.workers is not
  * in the Realtime publication, so the store polls getWorkers: once when the
- * first subscriber arrives, then every 30 s, and once more whenever the tab
- * becomes visible. The last unsubscribe stops it, and a response that lands
- * after that is dropped.
+ * first subscriber arrives, then every 30 s, and when the tab becomes visible,
+ * unless a poll started in the last 10 s (a timer gate, no clock read). The
+ * last unsubscribe stops it, and a response that lands after that is dropped.
  *
  * This file holds the third and last clock read in the codebase: Date.now()
  * in poll(), in the browser, after the rows arrive, never in render or a hook
@@ -31,6 +32,9 @@ import { Timestamp } from "./Timestamp";
  */
 
 const POLL_MS = 30_000;
+// A visibilitychange polls only when no poll started in this long.
+const VISIBILITY_GAP_MS = 10_000;
+const visibilityGate = createCooldownGate(VISIBILITY_GAP_MS);
 
 const UNKNOWN: WorkerSnapshot = { state: "unknown" };
 
@@ -44,6 +48,7 @@ let inFlightGeneration: number | null = null;
 
 async function poll() {
   if (inFlightGeneration === generation) return;
+  visibilityGate.arm();
   const started = generation;
   inFlightGeneration = started;
   try {
@@ -63,7 +68,7 @@ async function poll() {
 }
 
 function onVisibility() {
-  if (document.visibilityState === "visible") void poll();
+  if (document.visibilityState === "visible" && visibilityGate.tryPass()) void poll();
 }
 
 function subscribe(listener: () => void) {
@@ -79,6 +84,7 @@ function subscribe(listener: () => void) {
       clearInterval(timer);
       timer = undefined;
       document.removeEventListener("visibilitychange", onVisibility);
+      visibilityGate.reset();
       generation += 1;
     }
   };

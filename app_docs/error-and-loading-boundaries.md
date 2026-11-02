@@ -97,3 +97,8 @@ server-rendered section that can fail independently goes in
   static shell. `HistorySearchFallback` stays the real box, disabled, not a
   skeleton, and the error panels are unchanged. The summary page (`/projects/log`) and
   `HeaderLink`'s fallback are not part of this rule.
+- `SectionBoundary`, `QueryBoundary` (both through `onError`) and the project
+  segment's `error.tsx` (in an effect) send the error they catch to PostHog
+  through `reportBoundaryError` in `src/lib/analytics.ts`, production only
+  (see `app_docs/analytics.md`). Keep that when changing them; reporting never
+  changes what the boundary renders or how Retry works.

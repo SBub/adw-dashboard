@@ -14,5 +14,5 @@
     "type": true
   },
   "ignoreDependencies": ["@playwright/mcp"],
-  "entry": ["scripts/backfill-changelog.ts"]
+  "entry": ["scripts/backfill-changelog.ts", "scripts/release.ts"]
 }

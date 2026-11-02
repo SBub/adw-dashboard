@@ -1,16 +1,18 @@
-// One-off generator of the changelog: one MDX entry per merged pull request
-// into master, listing the develop pull requests that first reached master
-// with it, with the production pull request's stats from the GitHub API, plus
-// the registry. Reads gh and git; the site build never runs it. Refuses to
-// overwrite an existing entry. What it writes is a draft: the owner rewrites
-// the title and the lines and writes the description from the diff.
+// Drafter of the changelog: one MDX entry per merged pull request into master
+// that has none yet, listing the develop pull requests that first reached
+// master with it, with the production pull request's stats from the GitHub
+// API, then the registry and PRODUCTION_PRS in registry.test.ts. Incremental:
+// it skips a production pull request whose entry exists and never overwrites
+// a file. Reads gh and git; the site build never runs it; scripts/release.ts
+// runs it for the release workflow. What it writes is a draft: the owner
+// rewrites the title and the lines and writes the description from the diff.
 //
 //   git fetch origin master develop
 //   node scripts/backfill-changelog.ts
 //   yarn format
 
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import {
   type ChangelogStats,
   type EntryInput,
@@ -23,17 +25,14 @@ import {
   pullStats,
   renderEntryMdx,
   renderRegistry,
+  shippedPullNumbers,
   utcDate,
+  withProductionPrs,
 } from "../src/lib/changelog-backfill.ts";
+import type { ProductionPr } from "../src/lib/release.ts";
 
 const DIR = "src/content/changelog";
-
-interface ProductionPr {
-  number: number;
-  title: string;
-  mergedAt: string;
-  mergeCommit: { oid: string } | null;
-}
+const REGISTRY_TEST = `${DIR}/registry.test.ts`;
 
 function gh(args: string[]): string {
   return execFileSync("gh", args, { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -101,7 +100,16 @@ function titleOf(n: number): string {
   return title;
 }
 
-for (const pr of production) {
+const missing = production.filter(
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- offline script; paths are src/content/changelog/<validated id>.mdx
+  (pr) => !existsSync(`${DIR}/${entryId(utcDate(pr.mergedAt), pr.number)}.mdx`),
+);
+if (missing.length === 0) {
+  console.log("No production pull request without an entry; nothing to draft.");
+  process.exit(0);
+}
+
+for (const pr of missing) {
   const oid = pr.mergeCommit?.oid;
   if (!oid) fail(`PR #${pr.number} has no merge commit`);
   if (!commitExists(oid))
@@ -110,20 +118,13 @@ for (const pr of production) {
     );
 }
 
-for (const pr of production) {
-  const id = entryId(utcDate(pr.mergedAt), pr.number);
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- one-off offline script; paths are src/content/changelog/<validated id>.mdx
-  if (existsSync(`${DIR}/${id}.mdx`))
-    fail(`${DIR}/${id}.mdx already exists; refusing to overwrite`);
-}
-
 // Additions, deletions, commits, changed files and comments, read once here;
 // the site never calls GitHub.
 function statsOf(n: number): ChangelogStats {
   return pullStats(JSON.parse(gh(["api", `repos/${REPO}/pulls/${n}`])));
 }
 
-const entries: { id: string; input: EntryInput }[] = production.map((pr) => {
+const entries: { id: string; input: EntryInput }[] = missing.map((pr) => {
   const oid = pr.mergeCommit!.oid;
   const date = utcDate(pr.mergedAt);
   const { prefix, text: title } = parsePrTitle(pr.title);
@@ -134,11 +135,9 @@ const entries: { id: string; input: EntryInput }[] = production.map((pr) => {
       input: { ...base, kind: "revert", reverted: parseRevert(pr.title) },
     };
   }
-  const shipped = git(["log", "--first-parent", "--format=%H%x09%s", `${oid}^2`, `^${oid}^1`])
-    .split("\n")
-    .map((line) => /^[0-9a-f]+\tMerge pull request #(\d+) /.exec(line)?.[1])
-    .filter((n): n is string => n !== undefined)
-    .map((n) => ({ number: Number(n), title: titleOf(Number(n)) }));
+  const shipped = shippedPullNumbers(
+    git(["log", "--first-parent", "--format=%H%x09%s", `${oid}^2`, `^${oid}^1`]),
+  ).map((n) => ({ number: n, title: titleOf(n) }));
   return {
     id: entryId(date, pr.number),
     input: { ...base, kind: "release", groups: groupPullRequests(shipped) },
@@ -147,14 +146,22 @@ const entries: { id: string; input: EntryInput }[] = production.map((pr) => {
 
 const rendered = entries.map(({ id, input }) => ({ id, input, text: renderEntryMdx(input) }));
 for (const { id, text } of rendered) {
-  // eslint-disable-next-line security/detect-non-literal-fs-filename -- one-off offline script; paths are src/content/changelog/<validated id>.mdx
-  writeFileSync(`${DIR}/${id}.mdx`, text);
+  // Exclusive create: a race or a bug fails here rather than overwriting.
+  // eslint-disable-next-line security/detect-non-literal-fs-filename -- offline script; paths are src/content/changelog/<validated id>.mdx
+  writeFileSync(`${DIR}/${id}.mdx`, text, { flag: "wx" });
 }
 
 const ids = readdirSync(DIR)
   .filter((name) => name.endsWith(".mdx"))
   .map((name) => name.slice(0, -".mdx".length));
 writeFileSync(`${DIR}/index.ts`, renderRegistry(ids));
+writeFileSync(
+  REGISTRY_TEST,
+  withProductionPrs(
+    readFileSync(REGISTRY_TEST, "utf8"),
+    production.map((pr) => pr.number),
+  ),
+);
 
 for (const { id, input } of rendered) {
   const counts = input.kind === "release" ? countsOf(input.groups) : null;

@@ -3,6 +3,7 @@
 **Specifications:**
 
 - specs/issue-127-adw-2ab91140-sdlc_planner-move-feature-docs.md
+- specs/issue-243-adw-e2976ef7-sdlc_planner-narrow-active-runs-reads.md
 
 ## Overview
 
@@ -12,7 +13,8 @@ The one Active query entry shared by the sidebar, `/projects` and every project 
 
 ### Prefetch and hydration of the Active runs
 
-Active (status `running` or `failed`) is one React Query entry for every
+Active (every `running` run, and the `failed` runs whose `updated_at` is
+within `FAILED_RUN_WINDOW_DAYS`, 7 days) is one React Query entry for every
 project, `queryKeys.activeRuns`, read on the server **per request** and
 never cached there:
 
@@ -41,6 +43,12 @@ never cached there:
    `groupActiveRuns(runs, projects)` (the overview's groups, in sidebar
    order). All three read the same rows, so the sidebar, `/projects` and a
    project page cannot disagree.
+4. The same module holds the failed-run window and the catch-up cursor
+   helpers, all pure and clock-free (`src/lib/active-runs.test.ts`):
+   `FAILED_RUN_WINDOW_DAYS`, `failedRunCutoff(nowMs)`,
+   `isInActiveWindow(run, failedSince)` (running always, failed at or after
+   the cutoff by instant, anything else never), `CATCH_UP_OVERLAP_MS`,
+   `changedRunsSince(cursor)` and `latestUpdatedAt(runs, seen)`.
 
 The browser keeps the entry current through Realtime (one reducer, see
 "Event to cache") and the catch-up on every `SUBSCRIBED`, which re-reads it.
@@ -81,9 +89,16 @@ getActiveRuns)`. It is never `"use cache"` (a prerendered scope is served
   `activeRunCounts`, never from `ProjectSummary.running` or `.failed` (those
   mirror the view and nothing renders them), so the sidebar, `/projects` and
   every project page show the same rows.
-- Active means status `running` or `failed`; History means `completed` only.
-  A failed run can be resumed, so it is live and stays in the Active entry.
-  Do not move failed runs into History or add a status toggle to it.
+- Active means every `running` run and the `failed` runs whose `updated_at`
+  is within `FAILED_RUN_WINDOW_DAYS` (7) days (`src/lib/active-runs.ts`);
+  History means `completed` only. A failed run can be resumed, so it stays in
+  the Active entry for 7 days after its last update; older failed runs leave
+  the Active list and the sidebar's failed count, and are not shown on the
+  project page at all (the Daily log still counts them). Do not move failed
+  runs into History or add a status toggle to it.
+- The Active reads never select `runs.state` (issue #243): `RUN_COLUMNS` is
+  the narrow list, and an event's row enters the cache through `toRun`. Do
+  not add `state` back to the Active read.
 - There is no Active tag: Active is read per request and never cached on
   the server, so a completion has nothing to drop for it. Do not add a
   `runs:` tag or a `"use cache"` scope for Active back. The tag spellings

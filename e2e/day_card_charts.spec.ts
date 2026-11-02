@@ -488,7 +488,16 @@ test.describe("day card charts", () => {
   });
 
   test("status counts, Work with me and the class bars keep their colours", async ({ page }) => {
-    const card = await openLog(page);
+    await openLog(page);
+    // A day's runs count every run whose finished_at falls on it, whatever its
+    // status: a failed run that is resumed is running again but keeps the
+    // finished_at of its failure, so while it runs its day shows "1 run, 0
+    // completed, 0 failed" next to all three charts. Take the first chart card
+    // that has a non-zero count instead of the first chart card.
+    const nonZero = page.locator("header").getByText(/^[1-9]\d* (completed|failed)$/);
+    const withCounts = chartCards(page).filter({ has: nonZero });
+    test.skip((await withCounts.count()) === 0, "no day with a completed or failed run");
+    const card = withCounts.first();
     const counts = card.locator("header").getByText(/^[1-9]\d* (completed|failed)$/);
     await expect(counts.first()).toBeVisible();
     const color = await counts.first().evaluate((el) => getComputedStyle(el).color);

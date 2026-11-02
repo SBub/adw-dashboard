@@ -21,13 +21,16 @@ The project page at `/projects/<owner>/<repo>` (`src/app/(dashboard)/projects/[o
 The project page splits a project's runs by lifetime, and the two halves take
 two different paths to the screen.
 
-**Active** (status `running` or `failed`) is live. It is one React Query entry
+**Active** (status `running`, or `failed` within the last 7 days) is live. It is one React Query entry
 for every project, `queryKeys.activeRuns`, holding the `ActiveRuns` payload:
 read per request on the server, hydrated, and patched in the browser by the
 Realtime listener. The project page selects its own rows from it
 (`activeRunsOf`); `/projects` lists all of them grouped by project.
 A failed run is still in it because the toolkit can resume a failed run; it
-leaves the list only by completing or being deleted.
+leaves the list by completing, by being deleted, or 7 days after its last
+update (`FAILED_RUN_WINDOW_DAYS`, see `app_docs/active-runs.md`). An older
+failed run is not shown on the project page at all (History is `completed`
+only).
 
 **History** (status `completed`) is immutable, so it is not in the query cache
 at all. The page renders it on the server inside a `"use cache"` scope tagged
@@ -170,7 +173,8 @@ History is rendered below that, by the same page:
    and `src/components/RunHistoryList.tsx` are server components with no
    state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant shows Branch (in
-   full, spanning two of the 4 `sm` columns), Finished, Duration, PR (only
+   full, spanning two of the 4 `sm` columns, as plain text with no link),
+   Finished, Duration, PR (only
    when the run has a `pr_number`: `#<n>` linking to
    `https://github.com/<slug>/pull/<n>` in a new tab, built by
    `pullRequestHref`) and Cost (only when the run has a metrics row,

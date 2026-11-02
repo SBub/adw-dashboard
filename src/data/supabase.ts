@@ -8,6 +8,7 @@
 // fine in .env.example and in the repository. The secret (service role) key is
 // a different key, has no place in this dashboard and never enters this repo.
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createReconnectBackoff } from "@/lib/request-pacing";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
@@ -57,6 +58,18 @@ let client: AdwClient | null = null;
 const serverFetch: typeof fetch = (input, init) => fetch(input, { ...init, cache: "no-store" });
 
 /**
+ * The Realtime socket's reconnect delay (issue #240). realtime-js's default
+ * steps 1, 2, 5, 10 s, but the counter it passes resets on every successful
+ * open, so a socket that opens and then drops reconnects every few seconds
+ * forever, with a full catch-up each time. This backoff keeps its own counter
+ * (2, 4, 8, 16, 30 s, with jitter) and resets it only after the channel has
+ * stayed SUBSCRIBED for 60 s; src/data/realtime.ts signals up and down from
+ * the channel's status callback. On the server no channel is ever subscribed,
+ * so it is inert there.
+ */
+export const realtimeBackoff = createReconnectBackoff();
+
+/**
  * Lazily builds the client on first use and returns the same instance after
  * that, so the page holds one websocket however many callers there are. Throws
  * when either variable is missing rather than connecting to nowhere silently.
@@ -69,6 +82,7 @@ export function getSupabase(): AdwClient {
   }
   client ??= createClient(url, key, {
     db: { schema: "adw" },
+    realtime: { reconnectAfterMs: () => realtimeBackoff.next() },
     ...(typeof window === "undefined" ? { global: { fetch: serverFetch } } : {}),
   });
   return client;

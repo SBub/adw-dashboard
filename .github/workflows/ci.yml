@@ -36,5 +36,53 @@ jobs:
       - run: yarn test
       - run: yarn build
       - run: yarn check:og
-      - run: yarn playwright install --with-deps chromium webkit
+      # Playwright caches, see app_docs/ci.md. ImageOS and ImageVersion are runner
+      # environment variables, not in the env context, so they are read here.
+      - id: playwright
+        name: Playwright cache keys
+        run: |
+          version="$(yarn playwright --version | awk '{print $2}')"
+          test -n "$version" && test -n "$ImageOS" && test -n "$ImageVersion"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "os=$ImageOS" >> "$GITHUB_OUTPUT"
+          echo "image=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      # No restore-keys: only an exact key hit is a hit. Bump v2 to bust.
+      - id: playwright-apt
+        name: Restore Playwright system packages
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/playwright-apt
+          key: playwright-apt-v2-${{ steps.playwright.outputs.image }}-${{ steps.playwright.outputs.version }}
+      - name: Install Playwright system packages from cache
+        if: steps.playwright-apt.outputs.cache-hit == 'true'
+        run: sudo dpkg -i "$HOME"/.cache/playwright-apt/*.deb
+      - name: Download Playwright system packages
+        if: steps.playwright-apt.outputs.cache-hit != 'true'
+        # apt-get clean first, so the copied set is exactly what install-deps pulled in.
+        run: |
+          echo 'APT::Keep-Downloaded-Packages "true";' | sudo tee /etc/apt/apt.conf.d/99-keep-debs
+          sudo apt-get clean
+          yarn playwright install-deps chromium webkit
+          mkdir -p ~/.cache/playwright-apt
+          cp /var/cache/apt/archives/*.deb ~/.cache/playwright-apt/
+      # Saved right away, so a later failing step does not lose the cache.
+      - name: Save Playwright system packages
+        if: steps.playwright-apt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/playwright-apt
+          key: ${{ steps.playwright-apt.outputs.cache-primary-key }}
+      - id: playwright-browsers
+        name: Restore Playwright browsers
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-v2-${{ runner.arch }}-${{ steps.playwright.outputs.os }}-${{ steps.playwright.outputs.version }}
+      - run: yarn playwright install chromium webkit
+      - name: Save Playwright browsers
+        if: steps.playwright-browsers.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ steps.playwright-browsers.outputs.cache-primary-key }}
       - run: yarn test:e2e

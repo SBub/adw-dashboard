@@ -8,8 +8,8 @@ import { RunRow } from "./RunRow";
 
 /**
  * The live half of the detail pane for one project: its Active runs (status
- * running or failed). A client component so its data lives in the React Query
- * cache, where the runs Realtime listener can update it in place. It reads the
+ * running, or failed in the last 7 days). A client component so its data
+ * lives in the React Query cache, where the runs Realtime listener can update it in place. It reads the
  * one Active entry, every visible project's active runs, and narrows it to
  * this project with a select (activeRunsOf), so the rows are the same ones the
  * sidebar counts and /projects lists. The entry is read per request on the

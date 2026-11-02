@@ -203,7 +203,7 @@ export type EntryInput =
       reverted: { text: string; issue: number | null; pr: number | null };
     });
 
-const SECTION_HEADINGS: Record<ChangelogSection, string> = {
+export const SECTION_HEADINGS: Record<ChangelogSection, string> = {
   features: "Features",
   fixes: "Fixes",
   chores: "Chores",
@@ -247,6 +247,32 @@ export function renderEntryMdx(input: EntryInput): string {
   const text = `${blocks.join("\n\n")}\n`;
   if (text.includes("\u2014")) throw new Error("Entry contains an em-dash; edit the title first");
   return text;
+}
+
+/**
+ * The develop pull requests a production merge commit M shipped, in log order,
+ * from `git log --first-parent --format=%H%x09%s M^2 ^M^1`.
+ */
+export function shippedPullNumbers(gitLog: string): number[] {
+  return gitLog
+    .split("\n")
+    .map((line) => /^[0-9a-f]+\tMerge pull request #(\d+) /.exec(line)?.[1])
+    .filter((n): n is string => n !== undefined)
+    .map(Number);
+}
+
+/**
+ * The source of src/content/changelog/registry.test.ts with its
+ * `PRODUCTION_PRS` literal replaced by the sorted, unique numbers on one line
+ * (Prettier re-wraps it). Throws unless the literal is there exactly once.
+ */
+export function withProductionPrs(source: string, prs: number[]): string {
+  const pattern = /const PRODUCTION_PRS = \[[^\]]*\];/g;
+  if ((source.match(pattern) ?? []).length !== 1) {
+    throw new Error("registry.test.ts: PRODUCTION_PRS not found");
+  }
+  const sorted = [...new Set(prs)].sort((a, b) => a - b);
+  return source.replace(pattern, () => `const PRODUCTION_PRS = [${sorted.join(", ")}];`);
 }
 
 /** The full text of src/content/changelog/index.ts. */

@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { ProjectSummary, Run } from "@/types/adw";
-import { activeRunCounts, activeRunsOf, groupActiveRuns } from "./active-runs";
+import {
+  activeRunCounts,
+  activeRunsOf,
+  CATCH_UP_OVERLAP_MS,
+  changedRunsSince,
+  FAILED_RUN_WINDOW_DAYS,
+  failedRunCutoff,
+  groupActiveRuns,
+  isInActiveWindow,
+  latestUpdatedAt,
+} from "./active-runs";
 
 const A = "11111111-1111-1111-1111-111111111111";
 const B = "22222222-2222-2222-2222-222222222222";
@@ -17,7 +27,6 @@ function run(projectId: string, adwId: string, status: Run["status"] = "running"
     pr_number: null,
     phase: "adw_build_iso",
     status,
-    state: {},
     toolkit_version: "0.9.3",
     started_at: "2026-10-02T10:00:00Z",
     updated_at: "2026-10-02T10:30:00Z",
@@ -95,5 +104,87 @@ describe("groupActiveRuns", () => {
 
   it("is empty when there are no active runs", () => {
     expect(groupActiveRuns([], [project(A), project(B)])).toEqual([]);
+  });
+});
+
+describe("failedRunCutoff", () => {
+  it("is exactly 7 days before the given time, as ISO", () => {
+    expect(FAILED_RUN_WINDOW_DAYS).toBe(7);
+    expect(failedRunCutoff(Date.parse("2026-10-27T12:00:00.000Z"))).toBe(
+      "2026-10-20T12:00:00.000Z",
+    );
+  });
+});
+
+describe("isInActiveWindow", () => {
+  const cutoff = "2026-10-20T12:00:00.000Z";
+
+  it("keeps a running run however old", () => {
+    expect(
+      isInActiveWindow({ status: "running", updated_at: "2020-01-01T00:00:00Z" }, cutoff),
+    ).toBe(true);
+  });
+
+  it("keeps a failed run at the cutoff and drops one a millisecond before", () => {
+    expect(isInActiveWindow({ status: "failed", updated_at: cutoff }, cutoff)).toBe(true);
+    expect(
+      isInActiveWindow({ status: "failed", updated_at: "2026-10-20T11:59:59.999Z" }, cutoff),
+    ).toBe(false);
+  });
+
+  it("compares by instant, not by string", () => {
+    // The same instant as the cutoff plus a microsecond, in Postgres's format.
+    expect(
+      isInActiveWindow(
+        { status: "failed", updated_at: "2026-10-20 12:00:00.000001+00:00" },
+        cutoff,
+      ),
+    ).toBe(true);
+    expect(
+      isInActiveWindow({ status: "failed", updated_at: "2026-10-20T13:00:00+01:00" }, cutoff),
+    ).toBe(true);
+    expect(
+      isInActiveWindow({ status: "failed", updated_at: "2026-10-20T12:59:59+01:00" }, cutoff),
+    ).toBe(false);
+  });
+
+  it("drops a completed run", () => {
+    expect(
+      isInActiveWindow({ status: "completed", updated_at: "2026-10-27T00:00:00Z" }, cutoff),
+    ).toBe(false);
+  });
+});
+
+describe("changedRunsSince", () => {
+  it("subtracts the 60 s overlap", () => {
+    expect(CATCH_UP_OVERLAP_MS).toBe(60_000);
+    expect(changedRunsSince("2026-10-27T12:00:30.500+00:00")).toBe("2026-10-27T11:59:30.500Z");
+  });
+});
+
+describe("latestUpdatedAt", () => {
+  it("picks the latest by instant and returns the original string", () => {
+    const rows = [
+      { updated_at: "2026-10-27T12:00:00Z" },
+      { updated_at: "2026-10-27T13:10:00+01:00" },
+      { updated_at: "2026-10-27 12:15:00.123456+00:00" },
+    ];
+    expect(latestUpdatedAt(rows, null)).toBe("2026-10-27 12:15:00.123456+00:00");
+  });
+
+  it("keeps seen when no row is later", () => {
+    const seen = "2026-10-27T13:00:00Z";
+    expect(latestUpdatedAt([{ updated_at: "2026-10-27T12:00:00Z" }], seen)).toBe(seen);
+    expect(latestUpdatedAt([], seen)).toBe(seen);
+  });
+
+  it("moves forward to a later row", () => {
+    expect(latestUpdatedAt([{ updated_at: "2026-10-27T14:00:00Z" }], "2026-10-27T13:00:00Z")).toBe(
+      "2026-10-27T14:00:00Z",
+    );
+  });
+
+  it("is null for no rows and no seen", () => {
+    expect(latestUpdatedAt([], null)).toBeNull();
   });
 });

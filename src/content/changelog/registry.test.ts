@@ -8,8 +8,8 @@ import { CHANGELOG_ENTRIES } from "./index";
 // and every merged pull request into master has exactly one entry. load() is
 // never called, so vitest never compiles MDX; the files are read as text.
 
-// `gh pr list --state merged --base master --limit 50` on 2026-10-11. Add the
-// number of every later production pull request together with its entry.
+// Every merged pull request into master. scripts/backfill-changelog.ts rewrites
+// it with every production pull request when it drafts the missing entries.
 const PRODUCTION_PRS = [8, 16, 37, 65, 77, 79, 96, 115, 118, 163];
 
 const DIR = "src/content/changelog";

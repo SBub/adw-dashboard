@@ -9,8 +9,10 @@ import {
   renderEntryMdx,
   renderRegistry,
   sectionForPrefix,
+  shippedPullNumbers,
   SYNC_LINE,
   utcDate,
+  withProductionPrs,
 } from "./changelog-backfill";
 
 describe("sectionForPrefix", () => {
@@ -241,5 +243,47 @@ describe("renderRegistry", () => {
     expect(text.indexOf("2026-10-03-pr8")).toBeLessThan(text.indexOf("2026-10-09-pr163"));
     expect(text).toContain('load: () => import("./2026-10-09-pr163.mdx")');
     expect(text).not.toContain("${");
+  });
+});
+
+describe("shippedPullNumbers", () => {
+  it("reads the develop pull requests of a first-parent log in log order", () => {
+    const log = [
+      "a1b2c3d\tMerge pull request #237 from SBub/feat/x",
+      "b2c3d4e\tfix: a commit straight on develop",
+      "c3d4e5f\tMerge branch 'develop' into feat/y",
+      "d4e5f6a\tMerge pull request #230 from SBub/chore/z",
+      "",
+    ].join("\n");
+    expect(shippedPullNumbers(log)).toEqual([237, 230]);
+  });
+
+  it("returns nothing for an empty log", () => {
+    expect(shippedPullNumbers("")).toEqual([]);
+  });
+});
+
+describe("withProductionPrs", () => {
+  const source = ["// comment", "const PRODUCTION_PRS = [8, 16];", "", "const DIR = 1;", ""].join(
+    "\n",
+  );
+
+  it("rewrites the literal sorted and unique, the rest byte-identical", () => {
+    expect(withProductionPrs(source, [238, 16, 8, 16])).toBe(
+      source.replace("[8, 16]", "[8, 16, 238]"),
+    );
+  });
+
+  it("collapses a wrapped literal onto one line", () => {
+    const wrapped = source.replace("[8, 16]", "[\n  8,\n  16,\n]");
+    expect(withProductionPrs(wrapped, [8, 16, 238])).toBe(
+      source.replace("[8, 16]", "[8, 16, 238]"),
+    );
+  });
+
+  it("throws when the literal is missing", () => {
+    expect(() => withProductionPrs("const OTHER = [1];", [1])).toThrow(
+      "registry.test.ts: PRODUCTION_PRS not found",
+    );
   });
 });

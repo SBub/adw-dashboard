@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { type ReactNode, Suspense } from "react";
 import { ErrorBoundary } from "react-error-boundary";
+import { readAnalyticsContext, reportBoundaryError } from "@/lib/analytics";
 import { ErrorPanel } from "./ErrorPanel";
 
 type SectionBoundaryProps = {
@@ -13,6 +15,12 @@ type SectionBoundaryProps = {
   /** One line under the panel's heading, naming what did not load. */
   detail?: string;
 };
+
+/** Sends a caught error to PostHog (production only, never from an automated browser). */
+function reportError(error: unknown) {
+  const { env, browser } = readAnalyticsContext();
+  reportBoundaryError(env, browser, posthog, error, "section");
+}
 
 /**
  * The boundary for a server-rendered section that can fail on its own: a
@@ -43,6 +51,7 @@ export function SectionBoundary({ children, fallback, detail }: SectionBoundaryP
 
   return (
     <ErrorBoundary
+      onError={reportError}
       fallbackRender={({ resetErrorBoundary }) => (
         <ErrorPanel
           detail={detail}

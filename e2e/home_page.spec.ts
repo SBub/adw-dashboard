@@ -1,4 +1,4 @@
-import { expect, test } from "./fixtures";
+import { clickToNavigate, expect, test } from "./fixtures";
 
 // The intro page at /: heading, role line, location, intro, the two doors into
 // /hire and the header marking. It never submits the /hire form.
@@ -76,8 +76,11 @@ test.describe("home page", () => {
     const offer = page.locator('input[type="hidden"][name="offer"]');
 
     await page.goto("/");
-    await page.getByRole("link", { name: PRODUCT_DOOR }).click();
-    await expect(page).toHaveURL("/hire?offer=product-engineer");
+    // clickToNavigate waits for the door to hydrate first: / has no pill.
+    await clickToNavigate(
+      page.getByRole("link", { name: PRODUCT_DOOR }),
+      "/hire?offer=product-engineer",
+    );
     await expect(page.getByRole("combobox")).toHaveCount(0);
     await expect(offer).toHaveValue("Product engineer");
     await expect(page.getByLabel("What are you building?")).toBeVisible();
@@ -85,8 +88,7 @@ test.describe("home page", () => {
 
     await page.goBack();
     await expect(page).toHaveURL("/");
-    await page.getByRole("link", { name: AI_DOOR }).click();
-    await expect(page).toHaveURL("/hire?offer=ai-consulting");
+    await clickToNavigate(page.getByRole("link", { name: AI_DOOR }), "/hire?offer=ai-consulting");
     await expect(page.getByRole("combobox")).toHaveCount(0);
     await expect(offer).toHaveValue("AI consulting");
     await expect(page.getByLabel("Tell me about your business")).toBeVisible();
@@ -98,8 +100,7 @@ test.describe("home page", () => {
     const watch = page
       .getByRole("navigation", { name: "Sections" })
       .getByRole("link", { name: "Watch me build" });
-    await watch.click();
-    await expect(page).toHaveURL("/projects");
+    await clickToNavigate(watch, "/projects");
     await expect(page.getByRole("heading", { level: 2, name: "Building now" })).toBeVisible();
     await expect(watch).toHaveAttribute("aria-current", "page");
     await expect(
