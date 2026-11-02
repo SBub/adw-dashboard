@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { phaseLabel } from "@/lib/run-phase";
-import { branchTreeHref, costLabel, durationLabel, pullRequestHref } from "@/lib/run-view";
+import { costLabel, durationLabel, pullRequestHref } from "@/lib/run-view";
 import type { Run } from "@/types/adw";
 import { IssueClassBadge } from "./IssueClassBadge";
 import { StatusBadge } from "./StatusBadge";
@@ -51,38 +51,25 @@ function Mono({ value }: { value: string | null }) {
   return <code className="font-mono text-sm">{value}</code>;
 }
 
-// History's branch: the full name, selected whole by one click, with a small
-// link to its tree beside it. The link stays off the name (a merged branch is
-// often deleted, so the tree may 404) and outside the code element, so
-// selecting the name never picks up the glyph.
-function Branch({ branch, projectSlug }: { branch: string | null; projectSlug: string }) {
+// History's branch: the full name as plain text, selected whole by one click,
+// never a link. The toolkit deletes merged and superseded run branches
+// (adw-toolkit#167), so a tree link would 404; the card links to the pull
+// request instead (the PR field).
+function Branch({ branch }: { branch: string | null }) {
   if (!branch) return <Mono value={null} />;
-  return (
-    <>
-      <code className="select-all font-mono text-sm">{branch}</code>
-      <a
-        href={branchTreeHref(projectSlug, branch)}
-        target="_blank"
-        rel="noreferrer"
-        aria-label={`Open branch ${branch} on GitHub`}
-        className="ml-1.5 text-neutral-500 hover:text-neutral-600 dark:text-neutral-400 dark:hover:text-neutral-300"
-      >
-        <span aria-hidden="true">↗</span>
-      </a>
-    </>
-  );
+  return <code className="select-all font-mono text-sm">{branch}</code>;
 }
 
 /**
  * One run, as stored. Every value shown is a column or a pure function of the
  * row's columns: durationLabel for Duration (null while finished_at is null,
  * so a running run shows no duration), phaseLabel for the Active row's phase
- * (the raw step key stays on the hover title), branchTreeHref for the
- * History card's branch link, pullRequestHref for its PR link and costLabel
- * for its Cost (shown only when the run has a metrics row, never as "$0.00"
+ * (the raw step key stays on the hover title), pullRequestHref for the
+ * History card's PR link and costLabel for its Cost (shown only when the run has a metrics row, never as "$0.00"
  * for a missing one). The History card shows the branch in full, Finished,
  * Duration, PR (only when the run has a pr_number) and Cost, with no status
- * pill. Nothing here reads the clock:
+ * pill. The branch is shown as text, never a link: the PR field is the card's
+ * only GitHub link besides the issue. Nothing here reads the clock:
  * "updated 2m ago", the stale badge and the elapsed time of a running run are
  * removed pending issue #3. The issue title is a column shown as stored; runs
  * published before the toolkit started writing it have none and show no title.
@@ -153,7 +140,7 @@ export function RunRow({ run, projectSlug, variant, cost }: RunRowProps) {
       ) : (
         <dl className="mt-3 grid gap-x-6 gap-y-2 sm:grid-cols-4 lg:grid-cols-[minmax(0,1fr)_auto_auto_auto_auto]">
           <Field label="Branch" wrap className="sm:col-span-2 lg:col-span-1">
-            <Branch branch={run.branch_name} projectSlug={projectSlug} />
+            <Branch branch={run.branch_name} />
           </Field>
           <Field label="Finished">
             {run.finished_at ? (

@@ -62,13 +62,23 @@ describe("RunRow, history", () => {
     expect(dd).not.toContain("title=");
   });
 
-  it("links the branch's tree on GitHub beside the name", () => {
-    expect(html).toContain(`href="https://github.com/${SLUG}/tree/${BRANCH}"`);
-    const tree = html.indexOf("/tree/");
-    const link = html.slice(html.lastIndexOf("<a", tree), html.indexOf(">", tree) + 1);
-    expect(link).toContain('target="_blank"');
-    expect(link).toContain('rel="noreferrer"');
-    expect(link).toContain(`aria-label="Open branch ${BRANCH} on GitHub"`);
+  it("a finished run with a PR links the pull request and shows the branch as text", () => {
+    expect(html).toContain(`href="https://github.com/${SLUG}/pull/143"`);
+    expect(html).toMatch(new RegExp(`<code class="[^"]*select-all[^"]*">${BRANCH}</code>`));
+    expect(html).not.toContain("/tree/");
+    const start = html.indexOf(ddAfter(html, "Branch"));
+    const branchDd = html.slice(start, html.indexOf("</dd>", start));
+    expect(branchDd).not.toContain("<a");
+  });
+
+  it("a finished run without a PR shows the branch as text and no link", () => {
+    const noPr = render({ ...completed, pr_number: null }, "history");
+    expect(noPr).toMatch(new RegExp(`<code class="[^"]*select-all[^"]*">${BRANCH}</code>`));
+    expect(noPr).not.toContain("/tree/");
+    expect(noPr).not.toContain("/pull/");
+    const anchors = noPr.match(/<a [^>]*>/g) ?? [];
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]).toContain(`/issues/141`);
   });
 
   it("spans the branch over two columns of a four-column grid", () => {
