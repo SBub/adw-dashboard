@@ -173,7 +173,8 @@ History is rendered below that, by the same page:
    and `src/components/RunHistoryList.tsx` are server components with no
    state: the all/completed/failed toggle is gone because history is
    completed-only now. `RunRow` in the `history` variant shows Branch (in
-   full, spanning two of the 4 `sm` columns), Finished, Duration, PR (only
+   full, spanning two of the 4 `sm` columns, as plain text with no link),
+   Finished, Duration, PR (only
    when the run has a `pr_number`: `#<n>` linking to
    `https://github.com/<slug>/pull/<n>` in a new tab, built by
    `pullRequestHref`) and Cost (only when the run has a metrics row,

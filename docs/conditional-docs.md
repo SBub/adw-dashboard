@@ -2,7 +2,7 @@
 
 One line per feature doc in `app_docs/`, saying when to read it; read the lines whose situation matches your task.
 
-- `app_docs/screens-and-components.md`: read when changing a component's props, a row's layout, a run row's phase label, the History card's fields, its branch link or its pull request link, a section heading, a colour, a timestamp's format, the page background, the sticky header, its z-index layer, the radio footer's layer, the floating Work with me button or the sidebar's sticky offset; when adding or removing `"use client"`; when changing the worker status widget or the sidebar's column layout.
+- `app_docs/screens-and-components.md`: read when changing a component's props, a row's layout, a run row's phase label, the History card's fields, its branch text or its pull request link, a section heading, a colour, a timestamp's format, the page background, the sticky header, its z-index layer, the radio footer's layer, the floating Work with me button or the sidebar's sticky offset; when adding or removing `"use client"`; when changing the worker status widget or the sidebar's column layout.
 - `app_docs/routing-and-navigation.md`: read when changing the route tree, the header's links, the Writing link or their current-section marking; when touching a project page's not-found decision or `generateStaticParams`.
 - `app_docs/types.md`: read when changing `src/types/adw.ts`; when a database column is added, renamed or removed.
 - `app_docs/data-boundary.md`: read when changing `src/data/index.ts`, a query key, the query client or a server prefetch; when adding a database read or an environment variable; when touching `getWorkers`.
