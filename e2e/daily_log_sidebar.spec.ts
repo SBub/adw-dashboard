@@ -1,4 +1,5 @@
 import {
+  clickToNavigate,
   expect,
   expectInDocumentOrder,
   expectNoHorizontalScroll,
@@ -84,8 +85,8 @@ test.describe("daily log sidebar", () => {
     await expect(first).toBeVisible();
     const href = await first.getAttribute("href");
     if (href === null) throw new Error("the first project link has no href");
-    await first.click();
-    await expect(page).toHaveURL(href);
+    // The link is in the server HTML, so it is visible before hydration.
+    await clickToNavigate(first, href);
     await expect(dailyLog(page)).not.toHaveAttribute("aria-current");
   });
 

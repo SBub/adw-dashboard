@@ -1,4 +1,11 @@
-import { expect, sidebarProjectLinks, test, waitForLive, type Page } from "./fixtures";
+import {
+  expect,
+  sidebarProjectLinks,
+  test,
+  waitForHydrated,
+  waitForLive,
+  type Page,
+} from "./fixtures";
 
 // The request budget per page load (issue #240): the Realtime channel opens
 // only after 2 s visible, reconnects back off instead of looping every few
@@ -103,9 +110,18 @@ test("twenty one-second visits open almost no sockets", async ({ page }) => {
   const pool = hrefs.length >= 20 ? hrefs : [...hrefs, "/projects", "/projects/log"];
 
   const counts = countRequests(page);
+  // Each visit is one second from hydration (when the 2 s gate starts), and
+  // about:blank ends it at once. Waiting for `load` instead, or letting the
+  // next goto end it, stretches a visit under a busy `next dev`: islands
+  // stream long after hydration, and the old page stays up until the next
+  // route answers, so the gate could pass and a socket open.
   for (let i = 0; i < 20; i += 1) {
-    await page.goto(pool[i % pool.length] ?? "/projects");
+    await page.goto(pool[i % pool.length] ?? "/projects", { waitUntil: "commit" });
+    await waitForHydrated(
+      page.getByRole("navigation", { name: "Sections" }).getByRole("link").first(),
+    );
     await page.waitForTimeout(1_000);
+    await page.goto("about:blank");
   }
 
   expect(counts.sockets).toBeLessThanOrEqual(2);

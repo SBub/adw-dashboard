@@ -43,14 +43,53 @@ export async function waitForLive(page: Page): Promise<void> {
 // Never hard-code a slug: the public projects change.
 export async function openFirstProject(page: Page): Promise<string> {
   await page.goto("/projects");
+  // The pill reads `live` only once the client has hydrated and the sidebar
+  // has loaded.
+  await waitForLive(page);
   const link = sidebarProjectLinks(page).first();
   await expect(link).toBeVisible();
   const href = await link.getAttribute("href");
   expect(href).toMatch(/^\/projects\/[^/]+\/[^/]+$/);
   if (href === null) throw new Error("the first project link has no href");
-  await link.click();
-  await expect(page).toHaveURL(href);
+  await clickToNavigate(link, href);
   return href;
+}
+
+// Waits until React has hydrated the element `locator` points at: React sets
+// its `__reactProps$<id>` key on every DOM node it hydrates, a deterministic
+// client-only signal.
+export async function waitForHydrated(locator: Locator): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        locator.evaluate((el) => Object.keys(el).some((key) => key.startsWith("__reactProps$"))),
+      { message: "the element was never hydrated", timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
+// Clicks a link and waits for the address to become `url`. The link is in the
+// server HTML, so it is visible before React hydrates; a click then can be
+// lost, and under `next dev` the target route may still have to compile. So
+// it first waits for the link itself to be hydrated (React sets its
+// `__reactProps$<id>` key on every DOM node it hydrates, a deterministic
+// client-only signal, unlike any visible state on pages with no pill), then
+// clicks and gives the navigation 10 s. If the address has not moved at all,
+// it clicks exactly once more; either way it then allows 30 s for a cold
+// compile, and a second failure is the normal Playwright error.
+export async function clickToNavigate(link: Locator, url: string | RegExp): Promise<void> {
+  const page = link.page();
+  await waitForHydrated(link);
+  const before = page.url();
+  await link.click();
+  try {
+    await expect(page).toHaveURL(url, { timeout: 10_000 });
+    return;
+  } catch {
+    // Fall through: retry the click only if the first one went nowhere.
+  }
+  if (page.url() === before) await link.click();
+  await expect(page).toHaveURL(url, { timeout: 30_000 });
 }
 
 // The three sections of a project page; /projects has Building now only.
