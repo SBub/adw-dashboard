@@ -21,6 +21,8 @@ export default defineConfig({
   // e2e/*.md are agent-driven journeys the test phase runs through the MCP;
   // they must never be collected.
   testMatch: "**/*.spec.ts",
+  // Pays the `next dev` compile of every route once so no test does.
+  globalSetup: "./e2e/global-setup.ts",
   forbidOnly: !!process.env.CI,
   // A flaky spec should fail, not be retried into green, locally and in CI.
   retries: 0,

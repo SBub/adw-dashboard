@@ -179,7 +179,19 @@ test("the catch-up after a reconnect reads only changed rows, narrow", async ({ 
   expect(params.has("or")).toBe(false);
   expect(selectOf(second.url)).not.toContain("state");
   for (const row of second.rows) expect(row).not.toHaveProperty("state");
-  expect(second.bytes).toBeLessThan(first.bytes);
+  // Not compared with the full read's bytes: the incremental read carries
+  // every run of any status changed in the last minute, which on live data
+  // can outnumber the active runs. So each property is checked directly: only
+  // rows changed since the bound were read, and they are as narrow per row.
+  const bound = params.get("updated_at");
+  expect(bound).toMatch(/^gte\./);
+  const since = Date.parse((bound ?? "").slice("gte.".length));
+  expect(Number.isNaN(since)).toBe(false);
+  for (const row of second.rows) {
+    expect(typeof row.updated_at).toBe("string");
+    expect(Date.parse(row.updated_at as string)).toBeGreaterThanOrEqual(since);
+  }
+  if (second.rows.length > 0) expect(second.bytes / second.rows.length).toBeLessThanOrEqual(800);
 });
 
 test("a run that completes while the socket is closed is gone after the reconnect", async ({
