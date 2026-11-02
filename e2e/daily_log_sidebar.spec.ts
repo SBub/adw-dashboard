@@ -65,12 +65,14 @@ test.describe("daily log sidebar", () => {
       .filter({ has: page.getByRole("heading", { level: 2, name: /^Today,/ }) });
     await expect(today).toBeVisible();
     // A past day card, or the empty window line: the live data decides which.
+    // The past days island reads 30 days of live data; on a cold cache under
+    // a full suite run that read can take longer than the default 5 seconds.
     const past = page
       .getByRole("article")
       .filter({ hasNot: page.getByRole("heading", { level: 2, name: /^Today,/ }) });
     await expect(
       past.first().or(page.getByText("No finished runs in the previous 30 days.")),
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
 
     await expect(dailyLog(page)).toHaveAttribute("aria-current", "page");
     for (const link of await sidebarProjectLinks(page).all()) {

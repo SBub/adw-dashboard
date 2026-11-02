@@ -50,6 +50,7 @@ import {
   toHistoryPage,
 } from "@/lib/history-bookmark";
 import { historySearchFilter } from "@/lib/history-search";
+import { QUEUE_SECTION_FILTER } from "@/lib/queue-hold";
 import { runCosts } from "@/lib/run-view";
 import type {
   DailyModelSummary,
@@ -421,16 +422,19 @@ export async function getCompletedRuns(
 }
 
 /**
- * One project's queued items (state queued), in ledger order: position, then
+ * One project's Queue section items, in ledger order: position, then
  * issue_number so equal positions (a move in progress) still sort the same
  * way every time. An empty list for an unknown slug: the page has already
  * decided not-found from the project list by the time this is read.
  *
  * Also the queryFn for queryKeys.queue(slug). On the server it runs only
  * inside the page's "use cache" scope (getQueueState); in the browser on a
- * cache miss and in the realtime catch-up. Only state queued is read: every
- * other state is a run, shown in Active or History. It reads no clock and has
- * no fetched_at (nothing needs one; issue #3 is about run labels).
+ * cache miss and in the realtime catch-up. It reads the items the runner
+ * starts on its own: state queued, and state held whose reason starts with
+ * the dependency prefix (QUEUE_SECTION_FILTER, see src/lib/queue-hold.ts).
+ * Every other state, a gate-held `held` included, is a run shown in Active or
+ * History. It reads no clock and has no fetched_at (nothing needs one; issue
+ * #3 is about run labels).
  */
 export async function getQueue(slug: string): Promise<QueueItem[]> {
   const project = await getProjectBySlug(slug);
@@ -440,7 +444,7 @@ export async function getQueue(slug: string): Promise<QueueItem[]> {
     .from("queue_items")
     .select(QUEUE_COLUMNS)
     .eq("project_id", project.id)
-    .eq("state", "queued")
+    .or(QUEUE_SECTION_FILTER)
     .order("position", { ascending: true })
     .order("issue_number", { ascending: true });
   if (error) {

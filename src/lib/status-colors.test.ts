@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { STATUS_COLORS } from "./status-colors";
 
-const HUES = { queued: "amber", running: "emerald", completed: "sky", failed: "rose" } as const;
+const HUES = {
+  queued: "amber",
+  waiting: "indigo",
+  running: "emerald",
+  completed: "sky",
+  failed: "rose",
+} as const;
 
 describe("STATUS_COLORS", () => {
   it("lists the states in sidebar order, then neutral", () => {
     expect(Object.keys(STATUS_COLORS)).toEqual([
       "queued",
+      "waiting",
       "running",
       "completed",
       "failed",
@@ -50,7 +57,7 @@ const SOURCES = Object.entries(
   import.meta.glob("/src/**/*.{ts,tsx,css}", { query: "?raw", import: "default", eager: true }),
 ).filter((entry): entry is [string, string] => typeof entry[1] === "string");
 
-const STATUS_HUE = /\b(?:emerald|amber|sky|rose|red)-\d{2,3}\b/g;
+const STATUS_HUE = /\b(?:emerald|amber|indigo|sky|rose|red)-\d{2,3}\b/g;
 
 describe("status hue guard", () => {
   it("reads the source tree as text", () => {

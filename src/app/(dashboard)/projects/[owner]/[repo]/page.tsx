@@ -101,8 +101,8 @@ export async function generateMetadata({ params }: ProjectPageProps): Promise<Me
 }
 
 /**
- * One project's queued items, prefetched and dehydrated through the shared
- * prefetch helper, inside a "use cache" scope: React Query's query() and
+ * One project's Queue section items (queued, or held on a dependency),
+ * prefetched and dehydrated through the shared prefetch helper, inside a "use cache" scope: React Query's query() and
  * dehydrate read the clock, which under Cache Components is only allowed in a
  * cache scope during the prerender. getQueue itself reads no clock. No tag: no
  * server writer drops it (the queue is not part of the completion move, and

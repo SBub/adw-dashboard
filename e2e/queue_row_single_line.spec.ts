@@ -8,9 +8,11 @@ import {
   test,
 } from "./fixtures";
 
-// Each Queue row is one row (issue number, title, the `queued` pill, the title
-// may wrap) with no `label:` chip, no wait and no start hint, and the rail
-// markers read `next`, then the ordinals.
+// Each Queue row is one row (issue number, title, the `queued` or `waiting`
+// pill, the title may wrap). A queued row has no `label:` chip, no wait and no
+// start hint; a row held on a dependency adds only the toolkit's reason, one
+// line (under the title on a phone, beside it from `sm` up). The rail markers read `next`, then the ordinals, over the
+// queued rows only; a waiting row's marker is empty.
 
 test.describe("queue row single line", () => {
   test("Up next shows the queue or the empty panel", async ({ page }) => {
@@ -33,23 +35,47 @@ test.describe("queue row single line", () => {
 
     // The gutter is the li's first div; it holds the marker.
     const marker = (i: number) => rows.nth(i).locator("xpath=./div").first();
-    await expect(marker(0)).toHaveText("next");
-    if (count > 1) await expect(marker(1)).toHaveText("2");
-    if (count > 2) await expect(marker(2)).toHaveText("3");
+    let ordinal = 0;
 
     for (let i = 0; i < count; i++) {
       const row = rows.nth(i);
       await expect(row).toContainText(/#\d+/);
-      await expect(row.getByText("queued", { exact: true })).toBeVisible();
-      // The forbidden words are row chrome, so the issue title is left out: a
-      // live title can hold them ("awaiting" contains "waiting").
+      const pill = row.getByText(/^(queued|waiting)$/);
+      await expect(pill).toBeVisible();
+      const status = (await pill.textContent())?.trim();
+
+      if (status === "queued") {
+        ordinal += 1;
+        await expect(marker(i)).toHaveText(ordinal === 1 ? "next" : String(ordinal));
+      } else {
+        await expect(marker(i)).toHaveText("");
+      }
+
+      // The forbidden words are row chrome, so the issue title, the reason
+      // and the pill are left out: a live title can hold them ("awaiting"
+      // contains "waiting").
       const chrome = await row.evaluate((li) => {
         const clone = li.cloneNode(true) as HTMLElement;
-        const title = clone.querySelector(":scope > div:last-of-type a")?.nextElementSibling;
-        if (title?.tagName === "SPAN" && title.children.length === 0) title.remove();
+        const card = clone.querySelector(":scope > div:last-of-type");
+        const title = card?.querySelector("a")?.nextElementSibling;
+        if (
+          title?.tagName === "SPAN" &&
+          title.children.length === 0 &&
+          !title.hasAttribute("title")
+        )
+          title.remove();
+        card?.querySelector("span[title]")?.remove();
+        for (const span of Array.from(clone.querySelectorAll("span"))) {
+          const text = span.textContent?.trim();
+          if (text === "queued" || text === "waiting") span.remove();
+        }
         return clone.textContent ?? "";
       });
-      for (const text of ["label:", "waiting", "starts ", "manual", "Removing the label"]) {
+      const forbidden =
+        status === "queued"
+          ? ["label:", "waiting", "starts ", "manual", "Removing the label"]
+          : ["label:"];
+      for (const text of forbidden) {
         expect(chrome, chrome).not.toContain(text);
       }
       // The lower-case pill is expected; a capitalised `Queued` is not.
@@ -61,9 +87,12 @@ test.describe("queue row single line", () => {
       const link = card?.querySelector("a");
       if (!card || !link) throw new Error("the queue row has no card or issue link");
       const next = link.nextElementSibling;
-      const title = next?.tagName === "SPAN" && next.children.length === 0 ? next : null;
-      const pill = Array.from(card.querySelectorAll("span")).find(
-        (s) => s.textContent?.trim() === "queued",
+      const title =
+        next?.tagName === "SPAN" && next.children.length === 0 && !next.hasAttribute("title")
+          ? next
+          : null;
+      const pill = Array.from(card.querySelectorAll("span")).find((s) =>
+        ["queued", "waiting"].includes(s.textContent?.trim() ?? ""),
       );
       if (!pill) throw new Error("the queue row has no pill");
       const style = getComputedStyle(card);

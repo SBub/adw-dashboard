@@ -1,11 +1,13 @@
 // Folds one Realtime change event on the adw.queue_items table into the two
-// cache entries it affects: the queued items of the project the item belongs
-// to (applyQueueChange) and the project list's queued count
+// cache entries it affects: the Queue section items (queued, or held on a
+// dependency, see src/lib/queue-hold.ts) of the project the item belongs to
+// (applyQueueChange) and the project list's queued count
 // (applyQueueChangeToSummaries). Both are pure: they never touch the cache,
 // the client or the clock, they just return the next value, which is what
 // makes them unit-testable without a socket. The realtime module hands their
 // results to queryClient.setQueryData.
 import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
+import { inQueueSection } from "@/lib/queue-hold";
 import { byQueuePosition } from "@/lib/queue-order";
 import type { ProjectSummary, QueueItem } from "@/types/adw";
 
@@ -13,15 +15,22 @@ import type { ProjectSummary, QueueItem } from "@/types/adw";
 export type QueueChange = RealtimePostgresChangesPayload<QueueItem>;
 
 /**
- * Whether the cached queue holds `issueNumber`, or undefined when the queue is
- * not cached at all. The realtime module reads this BEFORE applying the
- * change, so the counts reducer can be told whether the item was queued:
- * Supabase sends `old` with only the primary key columns (project_id,
+ * Whether the cached queue holds `issueNumber` in state queued, or undefined
+ * when the queue is not cached at all. The realtime module reads this BEFORE
+ * applying the change, so the counts reducer can be told whether the item was
+ * queued: Supabase sends `old` with only the primary key columns (project_id,
  * issue_number) under the default replica identity, so an UPDATE or DELETE
- * event does not carry the previous state.
+ * event does not carry the previous state. A cached item held on a dependency
+ * is not queued: the sidebar count (the view's `queued`) leaves it out, so a
+ * held to queued UPDATE moves the count by one.
  */
 export function queuedIn(current: QueueItem[] | undefined, issueNumber: number) {
   if (!current) return undefined;
+  return current.some((item) => item.issue_number === issueNumber && item.state === "queued");
+}
+
+/** Whether the cached list holds a row for `issueNumber`, in any state. */
+function inQueueList(current: QueueItem[], issueNumber: number): boolean {
   return current.some((item) => item.issue_number === issueNumber);
 }
 
@@ -33,16 +42,19 @@ function without(items: QueueItem[], issueNumber: number): QueueItem[] {
 }
 
 /**
- * Returns the project's queued items after applying `ev`:
+ * Returns the project's Queue section items after applying `ev`. An item
+ * belongs there while inQueueSection holds: state queued, or held on a
+ * dependency (the runner starts it on its own once the dependency merges).
  *
- * - INSERT adds the row in position order when its state is queued and
- *   ignores any other state (that is a run, shown in Active or History). An
+ * - INSERT adds the row in position order when it belongs in the section and
+ *   ignores anything else (that is a run, shown in Active or History). An
  *   item already in the list returns the input unchanged, so a replayed event
  *   cannot create a second row.
- * - UPDATE replaces the item with the same issue_number while its state is
- *   queued, or adds it when absent (the event carries the full row), and
- *   re-sorts, since a move changes positions. Any other state REMOVES it: the
- *   item has started, or was stopped, and has left the queue.
+ * - UPDATE replaces the item with the same issue_number while it belongs in
+ *   the section (queued to held on a dependency and back keep the row), or
+ *   adds it when absent (the event carries the full row), and re-sorts, since
+ *   a move changes positions. Anything else REMOVES it: the item has started,
+ *   was stopped or was held by the merge gate, and has left the queue.
  * - DELETE removes the item whose issue_number is `ev.old.issue_number` (the
  *   item left the ledger). The primary key is (project_id, issue_number), so
  *   both are present in `old`; nothing else is relied on.
@@ -52,13 +64,13 @@ function without(items: QueueItem[], issueNumber: number): QueueItem[] {
 export function applyQueueChange(current: QueueItem[], ev: QueueChange): QueueItem[] {
   switch (ev.eventType) {
     case "INSERT": {
-      if (ev.new.state !== "queued") return current;
-      if (queuedIn(current, ev.new.issue_number)) return current;
+      if (!inQueueSection(ev.new)) return current;
+      if (inQueueList(current, ev.new.issue_number)) return current;
       return [...current, ev.new].sort(byQueuePosition);
     }
     case "UPDATE": {
       const issueNumber = ev.new.issue_number;
-      if (ev.new.state !== "queued") return without(current, issueNumber);
+      if (!inQueueSection(ev.new)) return without(current, issueNumber);
       return [...current.filter((item) => item.issue_number !== issueNumber), ev.new].sort(
         byQueuePosition,
       );
@@ -75,7 +87,8 @@ export function applyQueueChange(current: QueueItem[], ev: QueueChange): QueueIt
  * Returns the project list after a queue event, with the matching project's
  * queued count moved by `(queued now) - (queued before)`. The count comes from
  * the adw.project_summaries view, which the projects listener never sees
- * change, so it is maintained here:
+ * change, so it is maintained here. Only state queued counts: an item held on
+ * a dependency is in the Queue section but not in the view's count.
  *
  * - INSERT: queued now if the new state is queued; an inserted row was not
  *   queued before, so an undefined `wasQueued` counts as false.
