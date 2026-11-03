@@ -201,7 +201,9 @@ test.describe("row full title, top aligned", () => {
   }) => {
     await requireProject(page, hasQueuedItem, "no project has a queued item");
     const rows = sectionRows(page, "Up next");
-    const row = await setLongTitle(rows);
+    // A row held on a dependency (waiting pill, reason span) is covered by queue_dependency_held.spec.ts; this test measures a queued row.
+    const queued = rows.filter({ has: page.getByText("queued", { exact: true }) });
+    const row = await setLongTitle(queued);
     test.skip(row === null, "no queued item has a title");
     if (row === null) return;
 

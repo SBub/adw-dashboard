@@ -123,8 +123,11 @@ export async function hasActiveRow(page: Page): Promise<boolean> {
   return (await sectionRows(page, "Building now").count()) > 0;
 }
 
+// A row in state queued (pill `queued`), not one held on a dependency (pill
+// `waiting`), so the queue has a head and its `next` marker.
 export async function hasQueuedItem(page: Page): Promise<boolean> {
-  return (await sectionRows(page, "Up next").count()) > 0;
+  const queued = page.getByText("queued", { exact: true });
+  return (await sectionRows(page, "Up next").filter({ has: queued }).count()) > 0;
 }
 
 export async function hasHistoryRow(page: Page): Promise<boolean> {

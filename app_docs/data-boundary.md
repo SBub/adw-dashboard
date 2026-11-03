@@ -37,12 +37,16 @@ A project's queue is read by `getQueue(slug)`: the project row by slug (an
 unknown slug is an empty list, the page has already decided not-found from
 the project list), then the rows of `adw.queue_items` (the toolkit's mirror of the
 queue ledger, one row per ledger item, primary key `(project_id,
-issue_number)`) where `project_id` matches **and `state` is `queued`**,
-ordered `position asc, issue_number asc` (ledger order, with a deterministic
-tie-break while a move is in flight). Every other state (`QueueState` in
-`src/types/adw.ts`: `running`, `merged`, `failed`, `held`, `skipped` and the
-rest) means the item has left the queue: a started item is a run and shows in
-Active or History, a held or skipped one is not shown. It selects `QUEUE_COLUMNS`, exactly the fields of
+issue_number)`) where `project_id` matches **and the row is in the Queue section**: `state`
+is `queued`, or `state` is `held` with a `reason` starting
+`DEPENDENCY_HOLD_PREFIX`, read through PostgREST `or` with
+`QUEUE_SECTION_FILTER` from `src/lib/queue-hold.ts`. Rows are ordered
+`position asc, issue_number asc` (ledger order, with a deterministic
+tie-break while a move is in flight). Every other row (`QueueState` in
+`src/types/adw.ts`: `running`, `merged`, `failed`, a `held` the merge gate
+set, `skipped` and the rest) means the item has left the queue: a started
+item is a run and shows in Active or History, a gate-held or skipped one is
+not shown. It selects `QUEUE_COLUMNS`, exactly the fields of
 `QueueItem`, and reads no clock.
 
 The runs are read in two halves, because they have two lifetimes:
@@ -191,7 +195,8 @@ enter the query cache.
   `queryKeys.activeRuns` (`["active-runs"]`) for the one Active entry (every
   project's running runs and failed runs from the last 7 days; there is no
   per-project runs key),
-  `queryKeys.queue(slug)` (`["queue", slug]`) for a project's queued items,
+  `queryKeys.queue(slug)` (`["queue", slug]`) for the items a project's Queue
+  section shows (queued and dependency-held),
   `queryKeys.summaryToday(day)` (`["summary-today", day]`) for the summary
   page's today card, and the prefix `queryKeys.allQueues`
   (`["queue"]`) that the catch-up enumerates cached queue entries with. A key is
@@ -364,7 +369,8 @@ option is inert there. It is still the one `createClient` call.
   per run, and never in the query cache, since it is read inside the same
   `history:<slug>` cache scope and drops with the tag), `getQueue(slug)`
   the same view by slug (unknown slug: `[]`) and then `queue_items` by
-  `project_id` with `state = queued`, ordered `position asc, issue_number asc`.
+  `project_id` with `state = queued` or a dependency hold
+  (`QUEUE_SECTION_FILTER`), ordered `position asc, issue_number asc`.
   Changing what is read
   means changing `src/data/index.ts` while keeping those signatures, and
   nothing elsewhere. The
@@ -394,7 +400,7 @@ option is inert there. It is still the one `createClient` call.
   fallback that returns an empty list.
 - Every query key is defined in `src/data/query-keys.ts` (`queryKeys.projects`,
   `queryKeys.activeRuns`, the one Active entry, `queryKeys.queue(slug)`, the
-  queued items, the catch-up prefix `queryKeys.allQueues`, and
+  Queue section's items, the catch-up prefix `queryKeys.allQueues`, and
   `queryKeys.summaryToday(day)`, the summary
   page's today card) and imported from there: in the layout's and the
   pages' prefetches, in `activeRunsQuery`, in `ProjectNav`'s,

@@ -3,6 +3,7 @@
  * a state (StatusBadge, the sidebar counts, the queue rows) reads it here.
  *
  * - queued: amber, waiting, not yet alive.
+ * - waiting: indigo, held until a dependency merges; starts on its own.
  * - running: emerald, with the pulse dot, alive right now.
  * - completed: sky, finished well.
  * - failed: rose, needs attention.
@@ -19,7 +20,7 @@
  */
 import type { RunStatus } from "@/types/adw";
 
-export type StatusKey = RunStatus | "queued";
+export type StatusKey = RunStatus | "queued" | "waiting";
 
 interface StatusColors {
   text: string;
@@ -34,6 +35,12 @@ export const STATUS_COLORS: Record<StatusKey | "neutral", StatusColors> = {
     badge: "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400",
     border: "border-amber-300 dark:border-amber-700",
     dot: "bg-amber-500",
+  },
+  waiting: {
+    text: "text-indigo-700 dark:text-indigo-400",
+    badge: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-400",
+    border: "border-indigo-300 dark:border-indigo-700",
+    dot: "bg-indigo-500",
   },
   running: {
     text: "text-emerald-700 dark:text-emerald-400",

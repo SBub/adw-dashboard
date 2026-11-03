@@ -15,10 +15,14 @@ export function byQueuePosition(a: QueueItem, b: QueueItem): number {
  * next_queued), not position + 1 (the ledger index also counts items that are
  * no longer queued) and not the array index. Not queued_at either: a retry
  * restamps it without moving the item, and a move reorders the ledger without
- * restamping. The input is never mutated.
+ * restamping. Only state queued is ranked: an item held on a dependency cannot
+ * start, so it gets no entry and is never `next`. The input is never mutated.
  */
 export function queuePositions(items: readonly QueueItem[]): Map<number, number> {
   return new Map(
-    [...items].sort(byQueuePosition).map((item, index) => [item.issue_number, index + 1]),
+    items
+      .filter((item) => item.state === "queued")
+      .sort(byQueuePosition)
+      .map((item, index) => [item.issue_number, index + 1]),
   );
 }

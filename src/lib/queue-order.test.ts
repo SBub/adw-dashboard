@@ -64,6 +64,20 @@ describe("queuePositions", () => {
     expect(positions.get(1)).toBe(2);
   });
 
+  it("ranks queued items only and gives held items no ordinal", () => {
+    const held = { state: "held", reason: "waiting on a dependency: blocked by #1" } as const;
+    const positions = queuePositions([
+      item(20, 2, held),
+      item(21, 5),
+      item(22, 9, held),
+      item(23, 11),
+    ]);
+    expect([...positions.entries()]).toEqual([
+      [21, 1],
+      [23, 2],
+    ]);
+  });
+
   it("gives an empty map for an empty list and never mutates the input", () => {
     expect(queuePositions([]).size).toBe(0);
     const items = Object.freeze([item(3, 2), item(1, 0)]);
